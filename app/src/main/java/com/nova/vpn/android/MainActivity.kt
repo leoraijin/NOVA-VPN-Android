@@ -6,10 +6,6 @@ import android.app.StatusBarManager
 import android.content.Intent
 import android.content.ComponentName
 import android.content.pm.PackageManager
-import android.graphics.Bitmap
-import android.graphics.Canvas
-import android.graphics.Rect
-import android.graphics.drawable.Drawable
 import android.graphics.drawable.Icon
 import android.net.Uri
 import android.net.VpnService
@@ -85,7 +81,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.runtime.produceState
+import com.nova.vpn.android.data.AppIconCache
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -240,32 +238,19 @@ private fun designColorScheme(preset: DesignPreset) = when (preset) {
     )
 }
 
-private fun Drawable?.toAppImageBitmap() = this?.let { drawable ->
-    runCatching {
-        val bitmap = Bitmap.createBitmap(96, 96, Bitmap.Config.ARGB_8888)
-        val canvas = Canvas(bitmap)
-        val oldBounds = Rect(drawable.bounds)
-        drawable.setBounds(0, 0, canvas.width, canvas.height)
-        drawable.draw(canvas)
-        drawable.bounds = oldBounds
-        bitmap.asImageBitmap()
-    }.getOrNull()
-}
-
 private fun loadInstalledApps(packageManager: PackageManager, ownPackage: String): List<AppListEntry> {
     val installed = if (Build.VERSION.SDK_INT >= 33) {
-        packageManager.getInstalledApplications(PackageManager.ApplicationInfoFlags.of(PackageManager.GET_META_DATA.toLong()))
+        packageManager.getInstalledApplications(PackageManager.ApplicationInfoFlags.of(0L))
     } else {
         @Suppress("DEPRECATION")
-        packageManager.getInstalledApplications(PackageManager.GET_META_DATA)
+        packageManager.getInstalledApplications(0)
     }
     return installed
         .asSequence()
         .filter { it.packageName != ownPackage }
         .filter { packageManager.getLaunchIntentForPackage(it.packageName) != null }
         .map { info ->
-            val icon = runCatching { packageManager.getApplicationIcon(info) }.getOrNull()
-            AppListEntry(info.packageName, packageManager.getApplicationLabel(info).toString(), icon)
+            AppListEntry(info.packageName, packageManager.getApplicationLabel(info).toString())
         }
         .sortedBy { it.label.lowercase() }
         .toList()
@@ -308,9 +293,10 @@ private fun NovaAndroidApp(
     var installedApps by remember { mutableStateOf(emptyList<AppListEntry>()) }
     var appsLoading by remember { mutableStateOf(true) }
     var appsError by remember { mutableStateOf(false) }
+    var appsLoaded by remember { mutableStateOf(false) }
     var pendingVpnConfig by remember { mutableStateOf<String?>(null) }
     var connectError by remember { mutableStateOf<String?>(null) }
-    val vpnState by VpnRuntime.state.collectAsState()
+    val vpnState by VpnRuntime.state.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
     var reconnectJob by remember { mutableStateOf<Job?>(null) }
     val importFileLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -480,34 +466,37 @@ private fun NovaAndroidApp(
         }.onSuccess(::requestVpnStart)
             .onFailure { error -> connectError = error.message ?: "Не удалось подготовить автоподключение." }
     }
-    LaunchedEffect(routingStore) {
+    LaunchedEffect(page, routingStore) {
+        if (page != Page.Routing || appsLoaded) return@LaunchedEffect
         appsLoading = true
-        runCatching {
-            withContext(Dispatchers.IO) { loadInstalledApps(context.packageManager, context.packageName) }
-        }.onSuccess {
-            installedApps = it
+        try {
+            installedApps = withContext(Dispatchers.IO) { loadInstalledApps(context.packageManager, context.packageName) }
             appsError = false
-        }.onFailure {
+            appsLoaded = true
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
             appsError = true
+        } finally {
+            appsLoading = false
         }
-        appsLoading = false
     }
 
     LaunchedEffect(Unit) {
         if (updateChecksEnabled) checkForUpdates(showCurrentVersion = false)
     }
 
-    LaunchedEffect(vpnState) {
-        val syncState = when {
-            vpnState.connected -> "connected"
-            vpnState.connecting -> "connecting"
-            vpnState.error != null -> "error"
-            else -> "disconnected"
-        }
+    val syncState = when {
+        vpnState.connected -> "connected"
+        vpnState.connecting -> "connecting"
+        vpnState.error != null -> "error"
+        else -> "disconnected"
+    }
+    LaunchedEffect(syncState) {
         WearStatusSync.publish(context, syncState)
     }
 
-    val colors = designColorScheme(designPreset)
+    val colors = remember(designPreset) { designColorScheme(designPreset) }
     MaterialTheme(colorScheme = colors) {
         Scaffold(
             containerColor = colors.background,
@@ -1251,9 +1240,12 @@ private fun RoutingPage(
         }
         if (visibleApps.isEmpty()) item {
             SoftCard { Text("Ничего не найдено. Проверьте запрос или очистите поиск.", color = MaterialTheme.colorScheme.onSurfaceVariant) }
-        } else items(visibleApps, key = { it.packageName }) { app ->
+        } else items(visibleApps, key = { it.packageName }, contentType = { "application" }) { app ->
         val checked = app.packageName in settings.packages
-        val appIcon = remember(app.packageName) { app.icon.toAppImageBitmap() }
+        val iconContext = LocalContext.current.applicationContext
+        val appIcon by produceState(AppIconCache.peek(app.packageName), app.packageName) {
+            value = AppIconCache.load(iconContext.packageManager, app.packageName)
+        }
         SoftCard {
             Row(
                 modifier = Modifier
@@ -1267,10 +1259,12 @@ private fun RoutingPage(
                     },
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                appIcon?.let { bitmap ->
-                    Image(bitmap = bitmap, contentDescription = "Иконка ${app.label}", modifier = Modifier.size(44.dp))
-                    Spacer(Modifier.width(14.dp))
+                Box(Modifier.size(44.dp)) {
+                    appIcon?.let { bitmap ->
+                        Image(bitmap = bitmap, contentDescription = "Иконка ${app.label}", modifier = Modifier.fillMaxSize())
+                    }
                 }
+                Spacer(Modifier.width(14.dp))
                 Column(Modifier.weight(1f)) {
                     Text(app.label, fontWeight = FontWeight.Medium)
                     Text(app.packageName, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)

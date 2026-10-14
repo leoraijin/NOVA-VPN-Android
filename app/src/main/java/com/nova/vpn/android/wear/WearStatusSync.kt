@@ -7,16 +7,18 @@ import com.google.android.gms.wearable.Wearable
 
 /** Shares non-secret connection status only; VPN profiles and credentials never leave the phone. */
 object WearStatusSync {
+    private val publications = StatePublicationGate()
     const val STATUS_PATH = "/nova/status"
     const val TOGGLE_PATH = "/nova/toggle"
 
     fun publish(context: Context, state: String) {
+        val token = publications.begin(state) ?: return
         val request = PutDataMapRequest.create(STATUS_PATH).apply {
             dataMap.putString(KEY_STATE, state)
         }.asPutDataRequest().setUrgent()
         runCatching { Wearable.getDataClient(context).putDataItem(request) }
-            .onFailure { Log.d(TAG, "Wear status sync is unavailable", it) }
-            .onSuccess { task -> task.addOnFailureListener { Log.d(TAG, "Unable to publish Wear status", it) } }
+            .onFailure { publications.failed(token); Log.d(TAG, "Wear status sync is unavailable", it) }
+            .onSuccess { task -> task.addOnFailureListener { publications.failed(token); Log.d(TAG, "Unable to publish Wear status", it) } }
     }
 
     private const val KEY_STATE = "state"

@@ -41,6 +41,7 @@ object VpnRuntime {
     }
 
     private fun publish(next: VpnUiState) {
+        if (mutableState.value == next) return
         mutableState.value = next
         appContext?.let(NovaVpnTileService::requestRefresh)
     }
