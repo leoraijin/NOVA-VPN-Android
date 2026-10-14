@@ -292,6 +292,8 @@ private fun NovaAndroidApp(
     var importError by remember { mutableStateOf<String?>(null) }
     var profileError by remember { mutableStateOf<String?>(null) }
     var profileShareStatus by remember { mutableStateOf<String?>(null) }
+    var profileShareId by remember { mutableStateOf<String?>(null) }
+    var profileTransferBusy by remember { mutableStateOf(false) }
     var profileToDelete by remember { mutableStateOf<ImportedProfile?>(null) }
     var importing by remember { mutableStateOf(false) }
     var routing by remember { mutableStateOf(routingStore.load()) }
@@ -576,6 +578,8 @@ private fun NovaAndroidApp(
                             selectedId = selectedProfileId,
                             error = profileError,
                             shareStatus = profileShareStatus,
+                            shareProfileId = profileShareId,
+                            transferBusy = profileTransferBusy,
                             onAdd = { importError = null; importText = ""; showImport = true },
                             onSelect = {
                                 selectedProfileId = it
@@ -585,13 +589,17 @@ private fun NovaAndroidApp(
                                 applyLiveConfiguration(it, routing)
                             },
                             onSendToWatch = { profile ->
+                                profileShareId = profile.id
+                                profileTransferBusy = true
+                                profileShareStatus = "Передача профиля «${profile.name}»… Ожидаем подтверждение часов."
                                 runCatching { SingBoxConfigFactory.build(profile, ownPackage = context.packageName) }
                                     .onSuccess { config ->
                                         com.nova.vpn.android.wear.WearProfileTransfer.send(context, config) { message ->
-                                            profileShareStatus = message ?: "Профиль отправлен. Он сохранится на часах для независимого подключения."
+                                            profileTransferBusy = false
+                                            profileShareStatus = message ?: "Профиль сохранён на часах. Можно подключить VPN часов независимо от телефона."
                                         }
                                     }
-                                    .onFailure { profileShareStatus = it.message ?: "Не удалось подготовить профиль для часов." }
+                                    .onFailure { profileTransferBusy = false; profileShareStatus = it.message ?: "Не удалось подготовить профиль для часов." }
                             },
                             onDelete = { profileToDelete = it; profileError = null }
                         )
@@ -1023,6 +1031,8 @@ private fun ServersPage(
     selectedId: String,
     error: String?,
     shareStatus: String?,
+    shareProfileId: String?,
+    transferBusy: Boolean,
     onAdd: () -> Unit,
     onSelect: (String) -> Unit,
     onSendToWatch: (ImportedProfile) -> Unit,
@@ -1038,7 +1048,6 @@ private fun ServersPage(
     } }
 
     error?.let { message -> item { SoftCard { Text(message, color = MaterialTheme.colorScheme.error, fontSize = 13.sp) } } }
-    shareStatus?.let { message -> item { SoftCard { Text(message, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp) } } }
 
     if (profiles.isEmpty()) {
         item { SoftCard {
@@ -1058,12 +1067,17 @@ private fun ServersPage(
                     modifier = Modifier.heightIn(min = 48.dp),
                     onClick = { onSelect(profile.id) }
                 ) { Text("Выбрать") }
-                IconButton(onClick = { onSendToWatch(profile) }) {
-                    Icon(Icons.Rounded.Send, contentDescription = "Передать ${profile.name} на часы", tint = MaterialTheme.colorScheme.primary)
-                }
                 IconButton(onClick = { onDelete(profile) }) {
                     Icon(Icons.Rounded.DeleteOutline, contentDescription = "Удалить ${profile.name}", tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
+            }
+            OutlinedButton(onClick = { onSendToWatch(profile) }, enabled = !transferBusy, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                Icon(Icons.Rounded.Send, contentDescription = null)
+                Spacer(Modifier.width(8.dp))
+                Text(if (transferBusy && shareProfileId == profile.id) "Передача…" else "Передать на часы")
+            }
+            if (shareProfileId == profile.id) shareStatus?.let { message ->
+                Text(message, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
             }
         }
     }
@@ -1348,7 +1362,7 @@ private fun SettingsPage(
     } }
     item { SoftCard {
         Text("Отдельный мобильный проект", fontWeight = FontWeight.SemiBold)
-        Text("Android-клиент отделён от Windows-версии. Синхронизация с Wear OS передаёт только состояние подключения и команды, не VPN-ссылки или ключи.", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("Android-клиент отделён от Windows-версии. VPN телефона и часов работают независимо. Профиль с ключами передаётся на часы только вручную: Серверы → Передать на часы.", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
     } }
 }
 
