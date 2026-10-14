@@ -1,16 +1,11 @@
 package com.nova.vpn.android
 
-import android.app.Notification
 import android.annotation.TargetApi
-import android.app.NotificationChannel
-import android.app.NotificationManager
-import android.app.PendingIntent
 import android.content.Context
 import android.content.BroadcastReceiver
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
-import android.graphics.drawable.Icon
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
@@ -68,12 +63,10 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
     private var tunDescriptor: ParcelFileDescriptor? = null
     private val probeQueue = Executors.newSingleThreadExecutor { runnable -> Thread(runnable, "nova-vpn-check").apply { isDaemon = true } }
     @Volatile private var trafficProbe: AndroidTrafficProbe? = null
-    @Volatile private var announcedProfileName: String? = null
     private val notificationRefreshReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             if (intent?.action == ACTION_REFRESH_NOTIFICATION && VpnRuntime.state.value.connected) {
                 updateNotification("Туннель подключён")
-                announceConnection(force = true)
             }
         }
     }
@@ -81,6 +74,7 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
     override fun onCreate() {
         super.onCreate()
         VpnRuntime.attach(applicationContext)
+        VpnNotifications.prepare(this)
         val filter = IntentFilter(ACTION_REFRESH_NOTIFICATION)
         if (Build.VERSION.SDK_INT >= 33) registerReceiver(notificationRefreshReceiver, filter, RECEIVER_NOT_EXPORTED)
         else {
@@ -151,7 +145,6 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
                 VpnRuntime.setConnected()
                 WearStatusSync.publish(this, "connected")
                 updateNotification("VPN подключён")
-                announceConnection()
                 if (probe != null && startId == latestStartId) {
                     VpnRuntime.setTrafficChecking()
                     probeQueue.execute {
@@ -222,8 +215,6 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
     }
 
     private fun closeEngine() {
-        announcedProfileName = null
-        (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).cancel(CONNECTED_NOTIFICATION_ID)
         runCatching { debugLogClient?.disconnect() }
         debugLogClient = null
         runCatching { commandServer?.closeService() }
@@ -312,82 +303,17 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
     }
 
     private fun startForegroundCompat() {
-        val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            manager.createNotificationChannel(
-                NotificationChannel(CHANNEL_ID, "NOVA VPN", NotificationManager.IMPORTANCE_LOW)
-            )
-            manager.createNotificationChannel(
-                NotificationChannel(CONNECTED_CHANNEL_ID, "Подключение к серверу", NotificationManager.IMPORTANCE_HIGH).apply {
-                    description = "Сообщение NOVA VPN с именем сервера при подключении или смене конфигурации"
-                }
-            )
-        }
-        val notification = buildNotification("Подключение…")
+        val notification = VpnNotifications.build(this, activeProfileName, "Подключение…")
         if (Build.VERSION.SDK_INT >= 34) {
-            startForeground(NOTIFICATION_ID, notification, android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SYSTEM_EXEMPTED)
+            startForeground(VpnNotifications.ID, notification, android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SYSTEM_EXEMPTED)
         } else {
-            startForeground(NOTIFICATION_ID, notification)
+            startForeground(VpnNotifications.ID, notification)
         }
     }
 
     private fun updateNotification(status: String) {
-        val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        runCatching { manager.notify(NOTIFICATION_ID, buildNotification(status)) }
+        runCatching { VpnNotifications.update(this, activeProfileName, status) }
             .onFailure { Log.w(TAG, "Unable to update VPN notification", it) }
-    }
-
-    private fun announceConnection(force: Boolean = false) {
-        val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        if (!manager.areNotificationsEnabled() || (!force && announcedProfileName == activeProfileName)) return
-        if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) return
-        runCatching {
-            manager.notify(CONNECTED_NOTIFICATION_ID, buildNotification("Туннель подключён", announce = true))
-            announcedProfileName = activeProfileName
-        }.onFailure { Log.w(TAG, "Unable to show connection notification", it) }
-    }
-
-    private fun buildNotification(status: String, announce: Boolean = false): Notification {
-        val openIntent = PendingIntent.getActivity(
-            this, 0, Intent(this, MainActivity::class.java),
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-        val stopIntent = PendingIntent.getService(
-            this, 1, Intent(this, NovaVpnService::class.java).setAction(ACTION_STOP),
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-        val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            Notification.Builder(this, if (announce) CONNECTED_CHANNEL_ID else CHANNEL_ID)
-        } else {
-            @Suppress("DEPRECATION")
-            Notification.Builder(this)
-        }
-        val content = VpnNotificationPresentation.create(activeProfileName, status)
-        return builder
-            .setSmallIcon(R.drawable.ic_qs_vpn)
-            .setContentTitle(content.title)
-            .setContentText(content.text)
-            .setContentIntent(openIntent)
-            .setOngoing(!announce)
-            .setAutoCancel(announce)
-            .setOnlyAlertOnce(!announce)
-            .setCategory(Notification.CATEGORY_STATUS)
-            .apply {
-                if (announce) {
-                    if (Build.VERSION.SDK_INT >= 26) setTimeoutAfter(15_000)
-                    else {
-                        @Suppress("DEPRECATION")
-                        setPriority(Notification.PRIORITY_HIGH)
-                        setDefaults(Notification.DEFAULT_SOUND)
-                    }
-                }
-            }
-            .addAction(Notification.Action.Builder(
-                Icon.createWithResource(this, android.R.drawable.ic_menu_close_clear_cancel),
-                "Отключить",
-                stopIntent
-            ).build())
-            .build()
     }
 
     // libbox PlatformInterface
@@ -660,10 +586,6 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
         const val EXTRA_PROFILE_NAME = "profile_name"
         const val ACTION_REFRESH_NOTIFICATION = "com.nova.vpn.android.REFRESH_NOTIFICATION"
         private const val TAG = "NovaVpnService"
-        private const val CHANNEL_ID = "nova-vpn-status"
-        private const val NOTIFICATION_ID = 701
-        private const val CONNECTED_CHANNEL_ID = "nova-vpn-connected"
-        private const val CONNECTED_NOTIFICATION_ID = 702
         private val LIBBOX_LOCK = Any()
         @Volatile private var libboxReady = false
     }

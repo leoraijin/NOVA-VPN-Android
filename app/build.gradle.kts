@@ -21,8 +21,8 @@ android {
         applicationId = "com.nova.vpn.android"
         minSdk = 24
         targetSdk = 35
-        versionCode = 27
-        versionName = "0.2.25"
+        versionCode = 28
+        versionName = "0.2.26"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -39,6 +39,14 @@ android {
     buildFeatures {
         compose = true
         buildConfig = true
+    }
+
+    testOptions.unitTests.isIncludeAndroidResources = true
+    testOptions.unitTests.all {
+        val testHome = layout.buildDirectory.dir("test-home").get().asFile
+        it.systemProperty("user.home", testHome.absolutePath)
+        it.systemProperty("robolectric.dependency.repo.url", "https://repo.maven.apache.org/maven2")
+        it.doFirst { testHome.mkdirs() }
     }
 
 }
@@ -63,6 +71,7 @@ dependencies {
     implementation("com.github.singbox-android:libbox:1.14.1")
 
     testImplementation("junit:junit:4.13.2")
+    testImplementation("org.robolectric:robolectric:4.14.1")
     debugImplementation("androidx.compose.ui:ui-tooling")
 }
 
