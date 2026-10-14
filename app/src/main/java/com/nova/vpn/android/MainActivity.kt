@@ -1,6 +1,8 @@
 package com.nova.vpn.android
 
 import android.os.Bundle
+import android.Manifest
+import android.provider.Settings
 import android.app.Activity
 import android.app.StatusBarManager
 import android.content.Intent
@@ -300,6 +302,21 @@ private fun NovaAndroidApp(
     val vpnState by VpnRuntime.state.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
     var reconnectJob by remember { mutableStateOf<Job?>(null) }
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) {
+            context.sendBroadcast(Intent(NovaVpnService.ACTION_REFRESH_NOTIFICATION).setPackage(context.packageName))
+        } else {
+            Toast.makeText(context, "Уведомления выключены. Их можно включить в настройках NOVA; VPN продолжает работать.", Toast.LENGTH_LONG).show()
+        }
+    }
+    LaunchedEffect(Unit) {
+        if (Build.VERSION.SDK_INT >= 33 &&
+            context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED &&
+            !preferencesStore.notificationPermissionRequested()) {
+            preferencesStore.markNotificationPermissionRequested()
+            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
     val importFileLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri == null) {
             showImport = true
@@ -608,6 +625,19 @@ private fun NovaAndroidApp(
                             }
                         )
                         Page.Settings -> SettingsPage(
+                            onNotificationSettings = {
+                                if (Build.VERSION.SDK_INT >= 33 &&
+                                    context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED &&
+                                    (context as? Activity)?.shouldShowRequestPermissionRationale(Manifest.permission.POST_NOTIFICATIONS) == true) {
+                                    notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                                } else {
+                                    val notificationSettings = if (Build.VERSION.SDK_INT >= 26) {
+                                        Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+                                    } else Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${context.packageName}"))
+                                    runCatching { context.startActivity(notificationSettings) }
+                                        .onFailure { settingsError = "Не удалось открыть настройки уведомлений Android." }
+                                }
+                            },
                             autoConnect = autoConnect,
                             designPreset = designPreset,
                             updateChecksEnabled = updateChecksEnabled,
@@ -1292,6 +1322,7 @@ private fun RoutingPage(
 
 @Composable
 private fun SettingsPage(
+    onNotificationSettings: () -> Unit,
     autoConnect: Boolean,
     designPreset: DesignPreset,
     updateChecksEnabled: Boolean,
@@ -1305,6 +1336,13 @@ private fun SettingsPage(
     onCheckUpdates: () -> Unit,
     onAutoConnectChanged: (Boolean) -> Unit
 ) = PageFrame("Настройки", "Конфиденциальность и поведение NOVA") {
+    item { SoftCard {
+        Text("Уведомления о VPN", fontWeight = FontWeight.SemiBold)
+        Text("При подключении — всплывающее сообщение NOVA с именем сервера. Пока туннель работает — постоянная карточка в шторке. Разрешите уведомления и всплывающий показ в Android.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        OutlinedButton(onClick = onNotificationSettings, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+            Text("Настроить уведомления")
+        }
+    } }
     item { SoftCard {
         Row(
             modifier = Modifier

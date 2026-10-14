@@ -7,6 +7,12 @@ class AppPreferencesStore(context: Context) {
 
     fun autoConnectEnabled(): Boolean = preferences.getBoolean(KEY_AUTO_CONNECT, false)
 
+    fun notificationPermissionRequested(): Boolean = preferences.getBoolean("notification_permission_requested", false)
+
+    fun markNotificationPermissionRequested() {
+        preferences.edit().putBoolean("notification_permission_requested", true).apply()
+    }
+
     fun selectedDesign(): String = preferences.getString(KEY_DESIGN, DEFAULT_DESIGN) ?: DEFAULT_DESIGN
 
     fun setSelectedDesign(design: String) {
@@ -36,3 +42,4 @@ class AppPreferencesStore(context: Context) {
         const val DEFAULT_DESIGN = "IOS_GLASS"
     }
 }
+
