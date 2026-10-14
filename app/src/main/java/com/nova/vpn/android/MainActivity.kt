@@ -621,6 +621,10 @@ private fun NovaAndroidApp(
                             checkingUpdates = checkingUpdates,
                             updateStatus = updateStatus,
                             error = settingsError,
+                            onOpenProduct = { url ->
+                                runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
+                                    .onFailure { Toast.makeText(context, "Не удалось открыть GitHub. Установите браузер или приложение GitHub.", Toast.LENGTH_LONG).show() }
+                            },
                             onAddQuickSettingsTile = {
                                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                                     context.getSystemService(StatusBarManager::class.java).requestAddTileService(
@@ -1296,6 +1300,7 @@ private fun SettingsPage(
     updateStatus: String?,
     error: String?,
     onAddQuickSettingsTile: () -> Unit,
+    onOpenProduct: (String) -> Unit,
     onDesignChanged: (DesignPreset) -> Unit,
     onUpdateChecksChanged: (Boolean) -> Unit,
     onCheckUpdates: () -> Unit,
@@ -1359,6 +1364,16 @@ private fun SettingsPage(
             Text(if (checkingUpdates) "Проверка…" else "Проверить обновления")
         }
         updateStatus?.let { Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp) }
+    } }
+    item { SoftCard {
+        Text("Другие продукты", fontWeight = FontWeight.SemiBold)
+        Text("Клиенты NOVA для компьютера и часов. Ссылки открывают их отдельные репозитории GitHub.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        OutlinedButton(onClick = { onOpenProduct("https://github.com/leoraijin/NOVA-VPN") }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+            Text("NOVA VPN для Windows · GitHub")
+        }
+        OutlinedButton(onClick = { onOpenProduct("https://github.com/leoraijin/NOVA-VPN-WearOS") }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+            Text("NOVA VPN для часов · GitHub")
+        }
     } }
     item { SoftCard {
         Text("Отдельный мобильный проект", fontWeight = FontWeight.SemiBold)
