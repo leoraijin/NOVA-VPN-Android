@@ -50,9 +50,11 @@ class WearCommandListenerService : WearableListenerService() {
         val config = SingBoxConfigFactory.build(profile, AppRoutingStore(this).load(), packageName)
         val intent = Intent(this, NovaVpnService::class.java).setAction(NovaVpnService.ACTION_START)
             .putExtra(NovaVpnService.EXTRA_CONFIG, config)
+            .putExtra(NovaVpnService.EXTRA_PROFILE_NAME, profile.name)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(intent) else startService(intent)
         return "connecting"
     }
 
     private companion object { const val TAG = "NovaWearCommand" }
 }
+

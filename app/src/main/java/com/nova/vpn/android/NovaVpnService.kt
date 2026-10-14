@@ -60,6 +60,7 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
         Thread(runnable, "nova-vpn-service").apply { isDaemon = true }
     }
     @Volatile private var latestStartId = 0
+    @Volatile private var activeProfileName = "Выбранная конфигурация"
     private var commandServer: CommandServer? = null
     private var debugLogClient: CommandClient? = null
     private var tunDescriptor: ParcelFileDescriptor? = null
@@ -85,6 +86,10 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
             stopSelfResult(startId)
             return START_NOT_STICKY
         }
+
+        activeProfileName = intent?.getStringExtra(EXTRA_PROFILE_NAME)
+            ?.trim()?.replace(Regex("\\s+"), " ")?.take(48)?.takeIf(String::isNotBlank)
+            ?: "Выбранная конфигурация"
 
         VpnRuntime.setConnecting()
         WearStatusSync.publish(this, "connecting")
@@ -128,7 +133,7 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
                 startDebugLogStream()
                 VpnRuntime.setConnected()
                 WearStatusSync.publish(this, "connected")
-                updateNotification("Туннель включён")
+                updateNotification("VPN подключён")
                 if (probe != null && startId == latestStartId) {
                     VpnRuntime.setTrafficChecking()
                     probeQueue.execute {
@@ -320,10 +325,11 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
             @Suppress("DEPRECATION")
             Notification.Builder(this)
         }
+        val content = VpnNotificationPresentation.create(activeProfileName, status)
         return builder
             .setSmallIcon(android.R.drawable.stat_sys_warning)
-            .setContentTitle("NOVA VPN")
-            .setContentText(status)
+            .setContentTitle(content.title)
+            .setContentText(content.text)
             .setContentIntent(openIntent)
             .setOngoing(true)
             .addAction(Notification.Action.Builder(
@@ -601,6 +607,7 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
         const val ACTION_START = "com.nova.vpn.android.START"
         const val ACTION_STOP = "com.nova.vpn.android.STOP"
         const val EXTRA_CONFIG = "config"
+        const val EXTRA_PROFILE_NAME = "profile_name"
         private const val TAG = "NovaVpnService"
         private const val CHANNEL_ID = "nova-vpn-status"
         private const val NOTIFICATION_ID = 701
@@ -608,3 +615,4 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
         @Volatile private var libboxReady = false
     }
 }
+

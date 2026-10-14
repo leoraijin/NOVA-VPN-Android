@@ -295,6 +295,7 @@ private fun NovaAndroidApp(
     var appsError by remember { mutableStateOf(false) }
     var appsLoaded by remember { mutableStateOf(false) }
     var pendingVpnConfig by remember { mutableStateOf<String?>(null) }
+    var pendingVpnProfileName by remember { mutableStateOf<String?>(null) }
     var connectError by remember { mutableStateOf<String?>(null) }
     val vpnState by VpnRuntime.state.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
@@ -351,23 +352,26 @@ private fun NovaAndroidApp(
     }
     val vpnConsentLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         val config = pendingVpnConfig
+        val profileName = pendingVpnProfileName
         pendingVpnConfig = null
+        pendingVpnProfileName = null
         if (result.resultCode == Activity.RESULT_OK && !config.isNullOrBlank()) {
-            startVpnService(context, config)
+            startVpnService(context, config, profileName.orEmpty())
             connectError = null
         } else if (result.resultCode != Activity.RESULT_OK) {
             connectError = "Для VPN нужно разрешение Android."
         }
     }
 
-    fun requestVpnStart(config: String) {
+    fun requestVpnStart(config: String, profileName: String) {
         runCatching {
             connectError = null
             val consent = VpnService.prepare(context)
             if (consent != null) {
                 pendingVpnConfig = config
+                pendingVpnProfileName = profileName
                 vpnConsentLauncher.launch(consent)
-            } else startVpnService(context, config)
+            } else startVpnService(context, config, profileName)
         }.onFailure { error ->
             connectError = error.message ?: "Не удалось запустить VPN."
         }
@@ -384,7 +388,7 @@ private fun NovaAndroidApp(
                     SingBoxConfigFactory.build(profile, appRouting, context.packageName)
                 }
             }.onSuccess { config ->
-                runCatching { startVpnService(context, config) }
+                runCatching { startVpnService(context, config, profile.name) }
                     .onSuccess { connectError = null }
                     .onFailure { error ->
                         connectError = error.message ?: "Не удалось применить параметры к VPN."
@@ -451,7 +455,7 @@ private fun NovaAndroidApp(
         }
         runCatching {
             withContext(Dispatchers.Default) { SingBoxConfigFactory.build(selected, routing, context.packageName) }
-        }.onSuccess(::requestVpnStart)
+        }.onSuccess { config -> requestVpnStart(config, selected.name) }
             .onFailure { error -> connectError = error.message ?: "Не удалось подготовить конфигурацию VPN." }
     }
     LaunchedEffect(profiles, selectedProfileId, autoConnect, sharedText) {
@@ -463,7 +467,7 @@ private fun NovaAndroidApp(
             withContext(Dispatchers.Default) {
                 SingBoxConfigFactory.build(selected, routing, context.packageName)
             }
-        }.onSuccess(::requestVpnStart)
+        }.onSuccess { config -> requestVpnStart(config, selected.name) }
             .onFailure { error -> connectError = error.message ?: "Не удалось подготовить автоподключение." }
     }
     LaunchedEffect(page, routingStore) {
@@ -555,7 +559,7 @@ private fun NovaAndroidApp(
                                     } else {
                                         runCatching {
                                             SingBoxConfigFactory.build(selected, routing, context.packageName)
-                                        }.onSuccess(::requestVpnStart).onFailure { error ->
+                                        }.onSuccess { config -> requestVpnStart(config, selected.name) }.onFailure { error ->
                                             connectError = error.message ?: "Конфигурация не прошла подготовку."
                                         }
                                     }
@@ -825,10 +829,11 @@ private fun NovaAndroidApp(
     }
 }
 
-private fun startVpnService(context: android.content.Context, config: String) {
+private fun startVpnService(context: android.content.Context, config: String, profileName: String) {
     val intent = Intent(context, NovaVpnService::class.java)
         .setAction(NovaVpnService.ACTION_START)
         .putExtra(NovaVpnService.EXTRA_CONFIG, config)
+        .putExtra(NovaVpnService.EXTRA_PROFILE_NAME, profileName)
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) context.startForegroundService(intent)
     else context.startService(intent)
 }
@@ -1386,3 +1391,4 @@ private fun SettingRow(icon: ImageVector, title: String, detail: String) {
         }
     }
 }
+

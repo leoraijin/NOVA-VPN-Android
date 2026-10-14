@@ -40,8 +40,8 @@ class NovaVpnTileService : TileService() {
                 val profile = profiles.firstOrNull { it.id == selectedId } ?: profiles.firstOrNull()
                     ?: error("Сначала добавьте VPN-конфигурацию в NOVA VPN.")
                 val routing = withContext(Dispatchers.IO) { AppRoutingStore(appContext).load() }
-                SingBoxConfigFactory.build(profile, routing, appContext.packageName)
-            }.onSuccess { config ->
+                profile.name to SingBoxConfigFactory.build(profile, routing, appContext.packageName)
+            }.onSuccess { (profileName, config) ->
                 withContext(Dispatchers.Main) {
                     if (VpnService.prepare(this@NovaVpnTileService) != null) {
                         openAppForConsent()
@@ -49,6 +49,7 @@ class NovaVpnTileService : TileService() {
                         val intent = Intent(this@NovaVpnTileService, NovaVpnService::class.java)
                             .setAction(NovaVpnService.ACTION_START)
                             .putExtra(NovaVpnService.EXTRA_CONFIG, config)
+                            .putExtra(NovaVpnService.EXTRA_PROFILE_NAME, profileName)
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(intent)
                         else startService(intent)
                     }
@@ -117,3 +118,4 @@ class NovaVpnTileService : TileService() {
         }
     }
 }
+
