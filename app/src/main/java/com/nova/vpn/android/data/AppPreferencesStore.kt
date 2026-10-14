@@ -7,6 +7,14 @@ class AppPreferencesStore(context: Context) {
 
     fun autoConnectEnabled(): Boolean = preferences.getBoolean(KEY_AUTO_CONNECT, false)
 
+    fun tutorialDismissed(): Boolean = preferences.getBoolean("tutorial_dismissed", false)
+
+    fun dismissTutorial() {
+        check(preferences.edit().putBoolean("tutorial_dismissed", true).commit()) {
+            "Не удалось сохранить завершение обучения"
+        }
+    }
+
     fun notificationPermissionRequested(): Boolean = preferences.getBoolean("notification_permission_requested", false)
 
     fun markNotificationPermissionRequested() {

@@ -14,6 +14,7 @@ import android.net.VpnService
 import android.widget.Toast
 import android.os.Build
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -43,6 +44,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -269,7 +271,35 @@ private fun NovaAndroidApp(
     onTileConnectHandled: () -> Unit
 ) {
     val context = LocalContext.current
-    var page by remember { mutableStateOf(Page.Home) }
+    var page by rememberSaveable { mutableStateOf(Page.Home) }
+    var tutorialIndex by rememberSaveable { mutableStateOf(if (preferencesStore.tutorialDismissed()) -1 else 0) }
+    val tutorialStep = TutorialStep.at(tutorialIndex)
+    val scope = rememberCoroutineScope()
+    var tutorialClosing by remember { mutableStateOf(false) }
+    fun finishTutorial() {
+        if (tutorialClosing) return
+        tutorialClosing = true
+        scope.launch {
+            runCatching { withContext(Dispatchers.IO) { preferencesStore.dismissTutorial() } }
+                .onSuccess { tutorialIndex = -1 }
+                .onFailure { Toast.makeText(context, "Не удалось сохранить обучение. Повторите попытку.", Toast.LENGTH_LONG).show() }
+            tutorialClosing = false
+        }
+    }
+    BackHandler(enabled = tutorialStep != null) {
+        if (!tutorialClosing) {
+            if (tutorialIndex > 0) tutorialIndex-- else finishTutorial()
+        }
+    }
+    LaunchedEffect(tutorialStep) {
+        page = when (tutorialStep) {
+            TutorialStep.Import, TutorialStep.Servers -> Page.Servers
+            TutorialStep.Apps, TutorialStep.Sites -> Page.Routing
+            TutorialStep.Updates -> Page.Settings
+            TutorialStep.Connect -> Page.Home
+            null -> return@LaunchedEffect
+        }
+    }
     var profiles by remember { mutableStateOf(emptyList<ImportedProfile>()) }
     var profilesLoaded by remember { mutableStateOf(false) }
     var tileConnectFlow by remember { mutableStateOf(false) }
@@ -300,7 +330,6 @@ private fun NovaAndroidApp(
     var pendingVpnProfileName by remember { mutableStateOf<String?>(null) }
     var connectError by remember { mutableStateOf<String?>(null) }
     val vpnState by VpnRuntime.state.collectAsStateWithLifecycle()
-    val scope = rememberCoroutineScope()
     var reconnectJob by remember { mutableStateOf<Job?>(null) }
     val notificationPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) {
@@ -309,8 +338,8 @@ private fun NovaAndroidApp(
             Toast.makeText(context, "Уведомления выключены. Их можно включить в настройках NOVA; VPN продолжает работать.", Toast.LENGTH_LONG).show()
         }
     }
-    LaunchedEffect(Unit) {
-        if (Build.VERSION.SDK_INT >= 33 &&
+    LaunchedEffect(tutorialStep == null) {
+        if (tutorialStep == null && Build.VERSION.SDK_INT >= 33 &&
             context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED &&
             !preferencesStore.notificationPermissionRequested()) {
             preferencesStore.markNotificationPermissionRequested()
@@ -503,8 +532,8 @@ private fun NovaAndroidApp(
         }
     }
 
-    LaunchedEffect(Unit) {
-        if (updateChecksEnabled) checkForUpdates(showCurrentVersion = false)
+    LaunchedEffect(tutorialStep == null) {
+        if (tutorialStep == null && updateChecksEnabled) checkForUpdates(showCurrentVersion = false)
     }
 
     val syncState = when {
@@ -529,8 +558,9 @@ private fun NovaAndroidApp(
                 ) {
                     Page.values().forEach { item ->
                         NavigationBarItem(
+                            enabled = tutorialStep == null,
                             selected = page == item,
-                            onClick = { page = item },
+                            onClick = { if (tutorialStep == null) page = item },
                             icon = { Icon(item.icon, contentDescription = item.title) },
                             label = { Text(item.title, fontSize = 11.sp) }
                         )
@@ -538,14 +568,22 @@ private fun NovaAndroidApp(
                 }
             }
         ) { insets ->
-          CompositionLocalProvider(LocalDesignPreset provides designPreset) {
+          CompositionLocalProvider(LocalDesignPreset provides designPreset, LocalTutorialStep provides tutorialStep) {
             Box(
                 Modifier
                     .fillMaxSize()
                     .background(Brush.verticalGradient(listOf(colors.background, colors.surfaceVariant, colors.background)))
                     .padding(insets)
             ) {
+              Column(Modifier.fillMaxSize()) {
+                tutorialStep?.let { step ->
+                    TutorialPanel(step, closing = tutorialClosing,
+                        onBack = { if (tutorialIndex > 0) tutorialIndex-- },
+                        onNext = { if (step == TutorialStep.Connect) finishTutorial() else tutorialIndex++ },
+                        onSkip = ::finishTutorial)
+                }
                 AnimatedContent(
+                    modifier = Modifier.weight(1f),
                     targetState = page,
                     transitionSpec = { fadeIn() togetherWith fadeOut() },
                     label = "page"
@@ -625,6 +663,7 @@ private fun NovaAndroidApp(
                             }
                         )
                         Page.Settings -> SettingsPage(
+                            onStartTutorial = { tutorialIndex = 0 },
                             onNotificationSettings = {
                                 if (Build.VERSION.SDK_INT >= 33 &&
                                     context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED &&
@@ -697,6 +736,7 @@ private fun NovaAndroidApp(
                         )
                     }
                 }
+              }
             }
           }
         }
@@ -869,8 +909,14 @@ private fun startVpnService(context: android.content.Context, config: String, pr
 }
 
 @Composable
-private fun PageFrame(title: String, subtitle: String, content: LazyListScope.() -> Unit) {
+private fun PageFrame(title: String, subtitle: String, tutorialTargetIndex: Int = 1, content: LazyListScope.() -> Unit) {
+    val listState = rememberLazyListState()
+    val step = LocalTutorialStep.current
+    LaunchedEffect(step, tutorialTargetIndex) {
+        if (step != null) listState.scrollToItem(tutorialTargetIndex)
+    }
     LazyColumn(
+        state = listState,
         modifier = Modifier.fillMaxSize(),
         contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 20.dp, vertical = 22.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
@@ -887,10 +933,13 @@ private fun PageFrame(title: String, subtitle: String, content: LazyListScope.()
 }
 
 @Composable
-private fun SoftCard(onClick: (() -> Unit)? = null, content: @Composable () -> Unit) {
+private fun SoftCard(onClick: (() -> Unit)? = null, tutorialTarget: TutorialStep? = null, content: @Composable () -> Unit) {
+    val highlighted = tutorialTarget != null && LocalTutorialStep.current == tutorialTarget
     Card(
         modifier = Modifier
             .fillMaxWidth()
+            .then(if (highlighted) Modifier.border(2.dp, MaterialTheme.colorScheme.primary,
+                RoundedCornerShape(LocalDesignPreset.current.cardRadius.dp)) else Modifier)
             .then(onClick?.let { Modifier.clickable(role = Role.Button, onClick = it) } ?: Modifier),
         shape = RoundedCornerShape(LocalDesignPreset.current.cardRadius.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f)),
@@ -910,7 +959,7 @@ private fun HomePage(
     onSelectProfile: (String) -> Unit,
     onToggle: () -> Unit
 ) = PageFrame("Добрый день", "Ваше подключение под контролем") {
-    item { SoftCard {
+    item { SoftCard(tutorialTarget = TutorialStep.Connect) {
         Text("СТАТУС", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Text(
             when {
@@ -1065,8 +1114,9 @@ private fun ServersPage(
     onSelect: (String) -> Unit,
     onSendToWatch: (ImportedProfile) -> Unit,
     onDelete: (ImportedProfile) -> Unit
-) = PageFrame("Серверы", "Профили хранятся зашифрованно на устройстве") {
-    item { SoftCard {
+) = PageFrame("Серверы", "Профили хранятся зашифрованно на устройстве",
+    tutorialTargetIndex = if (LocalTutorialStep.current == TutorialStep.Servers) 2 + (if (error != null) 1 else 0) else 1) {
+    item { SoftCard(tutorialTarget = TutorialStep.Import) {
         Text("Вставьте VPN-ссылку, HTTPS-подписку, список ссылок или sing-box JSON. Поддерживаются VLESS, VMess, Trojan, Shadowsocks, Hysteria2 и TUIC.", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Button(onClick = onAdd, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
             Icon(Icons.Rounded.Add, null)
@@ -1078,12 +1128,12 @@ private fun ServersPage(
     error?.let { message -> item { SoftCard { Text(message, color = MaterialTheme.colorScheme.error, fontSize = 13.sp) } } }
 
     if (profiles.isEmpty()) {
-        item { SoftCard {
+        item { SoftCard(tutorialTarget = TutorialStep.Servers) {
             Text("Пока нет профилей", fontWeight = FontWeight.SemiBold)
             Text("Добавьте ссылку или JSON-конфигурацию, чтобы подготовить подключение.", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         } }
     } else items(profiles, key = { it.id }) { profile ->
-        SoftCard(onClick = if (profile.id == selectedId) null else ({ onSelect(profile.id) })) {
+        SoftCard(onClick = if (profile.id == selectedId) null else ({ onSelect(profile.id) }), tutorialTarget = TutorialStep.Servers) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text(profile.name, fontWeight = FontWeight.SemiBold)
@@ -1158,9 +1208,10 @@ private fun RoutingPage(
         )
     }
 
-    PageFrame("Маршрутизация", "Сначала правила сайтов, затем приложений") {
+    PageFrame("Маршрутизация", "Сначала правила сайтов, затем приложений",
+        tutorialTargetIndex = if (LocalTutorialStep.current == TutorialStep.Apps) 2 + settings.sites.size else 1) {
     item {
-        SoftCard {
+        SoftCard(tutorialTarget = TutorialStep.Sites) {
             Text("Маршрутизация по сайтам", fontWeight = FontWeight.SemiBold)
             Text("Введите домен без https://. Правило охватывает домен и его поддомены и имеет приоритет над маршрутом браузера.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1226,7 +1277,7 @@ private fun RoutingPage(
         }
     }
     item {
-        SoftCard {
+        SoftCard(tutorialTarget = TutorialStep.Apps) {
             Text("Режим списка", fontWeight = FontWeight.SemiBold)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(
@@ -1322,6 +1373,7 @@ private fun RoutingPage(
 
 @Composable
 private fun SettingsPage(
+    onStartTutorial: () -> Unit,
     onNotificationSettings: () -> Unit,
     autoConnect: Boolean,
     designPreset: DesignPreset,
@@ -1335,10 +1387,18 @@ private fun SettingsPage(
     onUpdateChecksChanged: (Boolean) -> Unit,
     onCheckUpdates: () -> Unit,
     onAutoConnectChanged: (Boolean) -> Unit
-) = PageFrame("Настройки", "Конфиденциальность и поведение NOVA") {
+) = PageFrame("Настройки", "Конфиденциальность и поведение NOVA", tutorialTargetIndex = 7) {
+    item { SoftCard {
+        Text("Обучение", fontWeight = FontWeight.SemiBold)
+        Text("Шесть шагов: ключи, приложения, сайты, серверы, обновления и подключение.", fontSize = 12.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Button(onClick = onStartTutorial, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+            Text("Начать обучение")
+        }
+    } }
     item { SoftCard {
         Text("Уведомления о VPN", fontWeight = FontWeight.SemiBold)
-        Text("При подключении — всплывающее сообщение NOVA с именем сервера. Пока туннель работает — постоянная карточка в шторке. Разрешите уведомления и всплывающий показ в Android.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("Одна постоянная карточка NOVA с именем сервера и состоянием VPN. По умолчанию без звука, вибрации и всплывающего баннера.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         OutlinedButton(onClick = onNotificationSettings, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
             Text("Настроить уведомления")
         }
@@ -1386,7 +1446,7 @@ private fun SettingsPage(
         SettingRow(Icons.Rounded.MoreHoriz, "Уведомление VPN", "Показывает статус и кнопку отключения во время работы туннеля.")
         SettingRow(Icons.Rounded.Lock, "Хранилище профилей", "Профили шифруются AES-GCM ключом Android Keystore.")
     } }
-    item { SoftCard {
+    item { SoftCard(tutorialTarget = TutorialStep.Updates) {
         Row(
             modifier = Modifier.fillMaxWidth().clickable(role = Role.Button) { onUpdateChecksChanged(!updateChecksEnabled) },
             verticalAlignment = Alignment.CenterVertically
