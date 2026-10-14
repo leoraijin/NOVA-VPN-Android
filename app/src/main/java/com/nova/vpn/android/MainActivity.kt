@@ -51,6 +51,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.DeleteOutline
+import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.MoreHoriz
@@ -115,6 +116,8 @@ import com.nova.vpn.android.data.AppListEntry
 import com.nova.vpn.android.data.filterAppList
 import com.nova.vpn.android.data.AppPreferencesStore
 import com.nova.vpn.android.data.SiteDomain
+import com.nova.vpn.android.data.SiteRuleEditor
+import androidx.compose.runtime.saveable.rememberSaveable
 import com.nova.vpn.android.data.SiteRoutingRule
 import com.nova.vpn.android.data.SiteRoutingTarget
 import com.nova.vpn.android.data.AndroidRelease
@@ -1077,7 +1080,41 @@ private fun RoutingPage(
     var searchQuery by remember { mutableStateOf("") }
     var siteInput by remember { mutableStateOf("") }
     var siteError by remember { mutableStateOf<String?>(null) }
+    var editingDomain by rememberSaveable { mutableStateOf<String?>(null) }
+    var editedDomain by rememberSaveable { mutableStateOf("") }
+    var editError by rememberSaveable { mutableStateOf<String?>(null) }
     val visibleApps = remember(apps, searchQuery) { filterAppList(apps, searchQuery) }
+
+    editingDomain?.let { original ->
+        AlertDialog(
+            onDismissRequest = { editingDomain = null; editError = null },
+            title = { Text("Редактировать домен") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = editedDomain,
+                        onValueChange = { editedDomain = it; editError = null },
+                        label = { Text("Домен") },
+                        singleLine = true,
+                        isError = editError != null,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    editError?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 12.sp) }
+                    Text("Маршрут «Через VPN» или «Напрямую» сохранится. При включённом VPN новые параметры применяются автоматически с переподключением.", fontSize = 12.sp)
+                }
+            },
+            confirmButton = {
+                TextButton(enabled = editedDomain.isNotBlank(), onClick = {
+                    val next = try { SiteRuleEditor.rename(settings, original, editedDomain) }
+                    catch (error: IllegalArgumentException) { editError = error.message; return@TextButton }
+                    onSettingsChanged(next)
+                    editingDomain = null
+                    editError = null
+                }) { Text("Сохранить") }
+            },
+            dismissButton = { TextButton(onClick = { editingDomain = null; editError = null }) { Text("Отмена") } }
+        )
+    }
 
     PageFrame("Маршрутизация", "Сначала правила сайтов, затем приложений") {
     item {
@@ -1122,6 +1159,9 @@ private fun RoutingPage(
                 Column(Modifier.weight(1f)) {
                     Text(rule.domain, fontWeight = FontWeight.SemiBold)
                     Text("Домен и поддомены", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                IconButton(onClick = { editingDomain = rule.domain; editedDomain = rule.domain; editError = null }) {
+                    Icon(Icons.Rounded.Edit, contentDescription = "Редактировать домен ${rule.domain}", tint = MaterialTheme.colorScheme.primary)
                 }
                 IconButton(onClick = {
                     onSettingsChanged(settings.copy(sites = settings.sites.filterNot { it.domain == rule.domain }))
