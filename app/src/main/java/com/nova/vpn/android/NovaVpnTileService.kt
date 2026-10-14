@@ -96,19 +96,12 @@ class NovaVpnTileService : TileService() {
     private fun updateTile(vpnState: VpnUiState, profileName: String?) {
         val tile = qsTile ?: return
         tile.icon = Icon.createWithResource(this, R.drawable.ic_qs_vpn)
-        tile.state = if (vpnState.connected || vpnState.connecting) Tile.STATE_ACTIVE else Tile.STATE_INACTIVE
-        val label = profileName ?: "NOVA VPN"
+        val presentation = NovaTilePresentation.from(vpnState, profileName)
+        tile.state = if (presentation.active) Tile.STATE_ACTIVE else Tile.STATE_INACTIVE
+        tile.contentDescription = presentation.description
+        tile.label = "NOVA VPN"
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            tile.label = "NOVA VPN"
-            tile.subtitle = when {
-                vpnState.connecting -> "Подключение…"
-                vpnState.connected -> label
-                profileName == null -> "Добавьте конфигурацию"
-                else -> label
-            }
-        } else {
-            @Suppress("DEPRECATION")
-            run { tile.label = if (vpnState.connected) label else "NOVA VPN" }
+            tile.subtitle = presentation.subtitle
         }
         tile.updateTile()
     }
