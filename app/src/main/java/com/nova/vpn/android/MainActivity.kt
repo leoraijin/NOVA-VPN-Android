@@ -1,5 +1,8 @@
 package com.nova.vpn.android
 
+import com.nova.vpn.android.data.Appearance
+import com.nova.vpn.android.data.DesignStyle
+import com.nova.vpn.android.data.ThemeMode
 import android.os.Bundle
 import android.Manifest
 import android.provider.Settings
@@ -27,6 +30,7 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -64,8 +68,8 @@ import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Shield
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
+import com.nova.vpn.android.NovaAlertDialog as AlertDialog
+import com.nova.vpn.android.NovaButton as Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
@@ -73,13 +77,13 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.OutlinedButton
+import com.nova.vpn.android.NovaOutlinedButton as OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
+import com.nova.vpn.android.NovaSwitch as Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.TextButton
+import com.nova.vpn.android.NovaTextButton as TextButton
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
@@ -111,6 +115,8 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -138,6 +144,9 @@ import com.nova.vpn.android.data.SubscriptionFetcher
 import com.nova.vpn.android.wear.WearStatusSync
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import androidx.compose.animation.core.tween
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -183,94 +192,6 @@ private enum class Page(val title: String, val icon: ImageVector) {
     Servers("Серверы", Icons.Rounded.Shield),
     Routing("Маршрутизация", Icons.Rounded.Router),
     Settings("Настройки", Icons.Rounded.Settings)
-}
-
-private enum class DesignPreset(val storedValue: String, val label: String, val cardRadius: Int) {
-    IOS_GLASS("IOS_GLASS", "iOS 27 · Liquid Glass", 28),
-    IOS_GLASS_DARK("IOS_GLASS_DARK", "Liquid Glass Dark", 28),
-    MATERIAL_YOU("MATERIAL_YOU", "Material You · система", 28),
-    AMBER_GLASS("AMBER_GLASS", "Amber Glass", 30),
-    ONE_UI("ONE_UI", "One UI 8.0", 30),
-    WINDOWS_LIGHT("WINDOWS_LIGHT", "Windows 11 Light", 16),
-    WINDOWS_DARK("WINDOWS_DARK", "Windows 11 Dark", 12);
-
-    companion object {
-        fun fromStored(value: String): DesignPreset = entries.firstOrNull { it.storedValue == value } ?: when (value) {
-            "LAVENDER" -> ONE_UI
-            "SKY" -> IOS_GLASS
-            "CREAM" -> AMBER_GLASS
-            "NIGHT" -> WINDOWS_DARK
-            else -> IOS_GLASS
-        }
-    }
-}
-
-private val LocalDesignPreset = compositionLocalOf { DesignPreset.IOS_GLASS }
-
-private fun designColorScheme(preset: DesignPreset, context: android.content.Context, systemDark: Boolean): androidx.compose.material3.ColorScheme = when (preset) {
-    DesignPreset.MATERIAL_YOU -> if (Build.VERSION.SDK_INT >= 31) {
-        if (systemDark) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
-    } else if (systemDark) darkColorScheme() else lightColorScheme()
-    DesignPreset.IOS_GLASS_DARK -> darkColorScheme(
-        primary = Color(0xFF8DBBFF), onPrimary = Color(0xFF002C59),
-        primaryContainer = Color(0xFF233E60), onPrimaryContainer = Color(0xFFD9E9FF),
-        secondary = Color(0xFF86D3C9), onSecondary = Color(0xFF003B36),
-        secondaryContainer = Color(0xFF254640), onSecondaryContainer = Color(0xFFCCF5EC),
-        background = Color(0xFF10141E), onBackground = Color(0xFFE9EDF7),
-        surface = Color(0xFF1B2230), onSurface = Color(0xFFE9EDF7),
-        surfaceVariant = Color(0xFF252F40), onSurfaceVariant = Color(0xFFBCC9DC),
-        error = Color(0xFFFFB4AB), outline = Color(0xFF76859D)
-    )
-    DesignPreset.IOS_GLASS -> lightColorScheme(
-        primary = Color(0xFF007AFF), onPrimary = Color.White,
-        primaryContainer = Color(0xFFD6E9FD), onPrimaryContainer = Color(0xFF123B61),
-        secondary = Color(0xFF208783), onSecondary = Color.White,
-        secondaryContainer = Color(0xFFDDEEEB),
-        background = Color(0xFFE9EBF3), onBackground = Color(0xFF162334),
-        surface = Color(0xFFFCFDFF), onSurface = Color(0xFF162334),
-        surfaceVariant = Color(0xFFF4F5FB), onSurfaceVariant = Color(0xFF405369),
-        error = Color(0xFFC63C49), outline = Color(0xFFB3C2D3)
-    )
-    DesignPreset.AMBER_GLASS -> lightColorScheme(
-        primary = Color(0xFFB94710), onPrimary = Color.White,
-        primaryContainer = Color(0xFFF4D5B1), onPrimaryContainer = Color(0xFF54250C),
-        secondary = Color(0xFF347DA5), onSecondary = Color.White,
-        secondaryContainer = Color(0xFFDCECF2),
-        background = Color(0xFFF5D5AE), onBackground = Color(0xFF38281D),
-        surface = Color(0xFFFFF9F1), onSurface = Color(0xFF38281D),
-        surfaceVariant = Color(0xFFFBE9D4), onSurfaceVariant = Color(0xFF503821),
-        error = Color(0xFFB33D32), outline = Color(0xFFDCC09E)
-    )
-    DesignPreset.ONE_UI -> lightColorScheme(
-        primary = Color(0xFF6750A4), onPrimary = Color.White,
-        primaryContainer = Color(0xFFDDD1EF), onPrimaryContainer = Color(0xFF33264E),
-        secondary = Color(0xFF437F68), onSecondary = Color.White,
-        secondaryContainer = Color(0xFFE2EEE8),
-        background = Color(0xFFF1EEF8), onBackground = Color(0xFF241B35),
-        surface = Color(0xFFFFFFFF), onSurface = Color(0xFF241B35),
-        surfaceVariant = Color(0xFFF0EAF8), onSurfaceVariant = Color(0xFF635670),
-        error = Color(0xFFA9344B), outline = Color(0xFFD6CBE5)
-    )
-    DesignPreset.WINDOWS_LIGHT -> lightColorScheme(
-        primary = Color(0xFF0067C0), onPrimary = Color.White,
-        primaryContainer = Color(0xFFD5E8F7), onPrimaryContainer = Color(0xFF153C5B),
-        secondary = Color(0xFF16827D), onSecondary = Color.White,
-        secondaryContainer = Color(0xFFDDEDEA),
-        background = Color(0xFFF0F0F0), onBackground = Color(0xFF202020),
-        surface = Color(0xFFFFFFFF), onSurface = Color(0xFF202020),
-        surfaceVariant = Color(0xFFF5F5F5), onSurfaceVariant = Color(0xFF5C5C5C),
-        error = Color(0xFFB23B52), outline = Color(0xFFCCCCCC)
-    )
-    DesignPreset.WINDOWS_DARK -> darkColorScheme(
-        primary = Color(0xFF60CDFF), onPrimary = Color(0xFF00344D),
-        primaryContainer = Color(0xFF33465C), onPrimaryContainer = Color(0xFFE5F5FF),
-        secondary = Color(0xFF52C9C0), onSecondary = Color(0xFF003B38),
-        secondaryContainer = Color(0xFF263E3D),
-        background = Color(0xFF202020), onBackground = Color(0xFFF5F5F5),
-        surface = Color(0xFF2C2C2C), onSurface = Color(0xFFF5F5F5),
-        surfaceVariant = Color(0xFF333333), onSurfaceVariant = Color(0xFFBFBFBF),
-        error = Color(0xFFF0808C), outline = Color(0xFF4C4C4C)
-    )
 }
 
 private fun loadInstalledApps(packageManager: PackageManager, ownPackage: String): List<AppListEntry> {
@@ -335,8 +256,8 @@ private fun NovaAndroidApp(
     var profilesLoaded by remember { mutableStateOf(false) }
     var tileConnectFlow by remember { mutableStateOf(false) }
     var selectedProfileId by remember { mutableStateOf("") }
-    var showImport by remember { mutableStateOf(false) }
-    var importText by remember { mutableStateOf("") }
+    var showImport by rememberSaveable { mutableStateOf(false) }
+    var importText by rememberSaveable { mutableStateOf("") }
     var importError by remember { mutableStateOf<String?>(null) }
     var profileError by remember { mutableStateOf<String?>(null) }
     var profileShareStatus by remember { mutableStateOf<String?>(null) }
@@ -348,7 +269,10 @@ private fun NovaAndroidApp(
     var autoConnect by remember { mutableStateOf(preferencesStore.autoConnectEnabled()) }
     var autoConnectAttempted by remember { mutableStateOf(false) }
     var settingsError by remember { mutableStateOf<String?>(null) }
-    var designPreset by remember { mutableStateOf(DesignPreset.fromStored(preferencesStore.selectedDesign())) }
+    val systemDark = isSystemInDarkTheme()
+    var appearance by remember { mutableStateOf(preferencesStore.appearance(systemDark)) }
+    val designPreset = appearance.style
+    val appearanceSaveMutex = remember { Mutex() }
     var updateChecksEnabled by remember { mutableStateOf(preferencesStore.updateChecksEnabled()) }
     var checkingUpdates by remember { mutableStateOf(false) }
     var updatePrompt by remember { mutableStateOf<AndroidRelease?>(null) }
@@ -593,25 +517,19 @@ private fun NovaAndroidApp(
         WearStatusSync.publish(context, syncState)
     }
 
-    val systemDark = isSystemInDarkTheme()
     val configuration = LocalConfiguration.current
-    val colors = remember(designPreset, systemDark, configuration) { designColorScheme(designPreset, context, systemDark) }
-    MaterialTheme(colorScheme = colors) {
+    val colors = remember(appearance, configuration) { designColorScheme(designPreset, context, appearance.isDark, appearance.materialHue) }
+    NovaTheme(appearance = appearance, colorScheme = colors) {
         Scaffold(
             containerColor = colors.background,
             bottomBar = {
-                NavigationBar(
-                    containerColor = colors.surface,
-                    tonalElevation = 0.dp,
-                    modifier = Modifier.windowInsetsPadding(WindowInsets.navigationBars)
-                ) {
-                    Page.values().forEach { item ->
-                        NavigationBarItem(
+                NovaNavigationBar {
+                    Page.entries.forEach { item ->
+                        NovaNavigationItem(
                             enabled = tutorialStep == null,
                             selected = page == item,
                             onClick = { if (tutorialStep == null) page = item },
-                            icon = { Icon(item.icon, contentDescription = item.title) },
-                            label = { Text(item.title, fontSize = 11.sp) }
+                            icon = item.icon, label = item.title
                         )
                     }
                 }
@@ -621,8 +539,13 @@ private fun NovaAndroidApp(
             Box(
                 Modifier
                     .fillMaxSize()
-                    .background(Brush.verticalGradient(listOf(colors.background, colors.surfaceVariant, colors.background)))
-                    .padding(insets)
+                    .novaBackdropSource()
+                    .padding(PaddingValues(
+                        start = insets.calculateLeftPadding(LocalLayoutDirection.current),
+                        end = insets.calculateRightPadding(LocalLayoutDirection.current),
+                        top = insets.calculateTopPadding(),
+                        bottom = if (designPreset == DesignStyle.IOS_LIQUID_GLASS) 0.dp else insets.calculateBottomPadding()
+                    ))
             ) {
               Column(Modifier.fillMaxSize()) {
                 tutorialStep?.let { step ->
@@ -634,7 +557,7 @@ private fun NovaAndroidApp(
                 AnimatedContent(
                     modifier = Modifier.weight(1f),
                     targetState = page,
-                    transitionSpec = { fadeIn() togetherWith fadeOut() },
+                    transitionSpec = { fadeIn(tween(if (designPreset == DesignStyle.WINDOWS_11) 120 else 220)) togetherWith fadeOut(tween(120)) },
                     label = "page"
                 ) { selected ->
                     when (selected) {
@@ -658,6 +581,7 @@ private fun NovaAndroidApp(
                                 }
                                 applyLiveConfiguration(it, routing)
                             },
+                            onManageProfiles = { page = Page.Servers },
                             onToggle = {
                                 if (vpnState.connected || vpnState.connecting) {
                                     runCatching {
@@ -747,7 +671,7 @@ private fun NovaAndroidApp(
                                 }
                             },
                             autoConnect = autoConnect,
-                            designPreset = designPreset,
+                            appearance = appearance,
                             updateChecksEnabled = updateChecksEnabled,
                             checkingUpdates = checkingUpdates,
                             updateStatus = updateStatus,
@@ -775,11 +699,18 @@ private fun NovaAndroidApp(
                                     Toast.makeText(context, "Откройте редактирование быстрых настроек и добавьте NOVA VPN.", Toast.LENGTH_LONG).show()
                                 }
                             },
-                            onDesignChanged = { next ->
+                            onAppearanceChanged = { next ->
+                                val previous = appearance
+                                appearance = next
                                 scope.launch {
-                                    runCatching { withContext(Dispatchers.IO) { preferencesStore.setSelectedDesign(next.storedValue) } }
-                                        .onSuccess { designPreset = next; settingsError = null }
-                                        .onFailure { settingsError = "Не удалось сохранить оформление." }
+                                    runCatching { appearanceSaveMutex.withLock {
+                                        withContext(Dispatchers.IO) { preferencesStore.setAppearance(next) }
+                                    } }
+                                        .onSuccess { settingsError = null }
+                                        .onFailure {
+                                            if (appearance == next) appearance = previous
+                                            settingsError = "Не удалось сохранить оформление."
+                                        }
                                 }
                             },
                             onUpdateChecksChanged = { enabled ->
@@ -815,13 +746,13 @@ private fun NovaAndroidApp(
                 onDismissRequest = { if (!importing) showImport = false },
                 title = { Text("Добавить конфигурацию") },
                 text = {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("Добавьте VPN-ссылку, HTTPS-подписку, список ссылок, sing-box или Xray JSON. Можно отсканировать QR-код, выбрать файл или вставить текст. Данные сохраняются зашифрованно на устройстве.", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                    Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(if (LocalDesignPreset.current == DesignStyle.IOS_LIQUID_GLASS || LocalDesignPreset.current == DesignStyle.MATERIAL_YOU || LocalDesignPreset.current == DesignStyle.ONE_UI || LocalDesignPreset.current == DesignStyle.WINDOWS_11) "Вставьте ссылку или JSON-конфигурацию от вашего провайдера. Профиль хранится зашифрованно на устройстве." else "Добавьте VPN-ссылку, HTTPS-подписку, список ссылок, sing-box или Xray JSON. Можно отсканировать QR-код, выбрать файл или вставить текст. Данные сохраняются зашифрованно на устройстве.", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                             OutlinedButton(
                                 enabled = !importing,
                                 onClick = { launchQrScanner() },
-                                modifier = Modifier.weight(1f)
+                                modifier = Modifier.fillMaxWidth()
                             ) { Text("Сканировать QR") }
                             OutlinedButton(
                                 enabled = !importing,
@@ -829,18 +760,21 @@ private fun NovaAndroidApp(
                                     showImport = false
                                     importFileLauncher.launch(arrayOf("*/*"))
                                 },
-                                modifier = Modifier.weight(1f)
+                                modifier = Modifier.fillMaxWidth()
                             ) { Text("Выбрать файл") }
                         }
                         OutlinedTextField(
+                            shape = novaFieldShape(),
                             value = importText,
+                            enabled = !importing,
+                            isError = importError != null,
                             onValueChange = { importText = it; importError = null },
                             modifier = Modifier.fillMaxWidth(),
                             minLines = 4,
                             maxLines = 8,
                             placeholder = { Text("vless://…, QR-ссылка, sing-box или Xray JSON") }
                         )
-                        importError?.let { Text(it, color = Color(0xFFB3261E), fontSize = 12.sp) }
+                        importError?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 12.sp) }
                     }
                 },
                 confirmButton = {
@@ -898,7 +832,7 @@ private fun NovaAndroidApp(
                 onDismissRequest = { updatePrompt = null },
                 title = { Text("Доступно обновление NOVA VPN") },
                 text = {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text("На GitHub доступна версия ${release.version}.", color = MaterialTheme.colorScheme.onSurfaceVariant)
                         if (release.notes.isNotBlank()) {
                             Text(release.notes, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
@@ -978,7 +912,20 @@ private fun startVpnService(context: android.content.Context, config: String, pr
 }
 
 @Composable
-private fun PageFrame(title: String, subtitle: String, tutorialTargetIndex: Int = 1, content: LazyListScope.() -> Unit) {
+internal fun PageFrame(title: String, subtitle: String, tutorialTargetIndex: Int = 1, content: LazyListScope.() -> Unit) {
+    if (LocalDesignPreset.current == DesignStyle.MATERIAL_YOU) {
+        MaterialFrame(title, subtitle, tutorialTargetIndex, content)
+        return
+    }
+    if (LocalDesignPreset.current == DesignStyle.WINDOWS_11) {
+        WindowsFrame(title, subtitle, tutorialTargetIndex, content = content)
+        return
+    }
+    if (LocalDesignPreset.current == DesignStyle.ONE_UI) {
+        OneUIFrame(title, subtitle, tutorialTargetIndex, content = content)
+        return
+    }
+    val ios = LocalDesignPreset.current == DesignStyle.IOS_LIQUID_GLASS
     val listState = rememberLazyListState()
     val step = LocalTutorialStep.current
     LaunchedEffect(step, tutorialTargetIndex) {
@@ -987,14 +934,15 @@ private fun PageFrame(title: String, subtitle: String, tutorialTargetIndex: Int 
     LazyColumn(
         state = listState,
         modifier = Modifier.fillMaxSize(),
-        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 20.dp, vertical = 22.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+        contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 22.dp,
+            bottom = if (LocalDesignPreset.current == DesignStyle.IOS_LIQUID_GLASS) 120.dp else 22.dp),
+        verticalArrangement = Arrangement.spacedBy(if (ios) 20.dp else 16.dp)
     ) {
         item(contentType = "page-header") {
-            Column(Modifier.padding(bottom = 4.dp)) {
-                Text(title, fontSize = 28.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
+            Column(Modifier.padding(top = if (LocalDesignPreset.current == DesignStyle.ONE_UI && LocalConfiguration.current.screenHeightDp >= 700) 48.dp else 0.dp, bottom = 4.dp)) {
+                Text(title, style = if (ios) MaterialTheme.typography.headlineLarge else if (LocalDesignPreset.current == DesignStyle.ONE_UI) MaterialTheme.typography.headlineLarge else MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.onSurface)
                 Spacer(Modifier.height(4.dp))
-                Text(subtitle, fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(subtitle, fontSize = if (ios) 13.sp else 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
         content()
@@ -1002,7 +950,8 @@ private fun PageFrame(title: String, subtitle: String, tutorialTargetIndex: Int 
 }
 
 @Composable
-private fun SoftCard(onClick: (() -> Unit)? = null, tutorialTarget: TutorialStep? = null, content: @Composable () -> Unit) {
+internal fun SoftCard(onClick: (() -> Unit)? = null, tutorialTarget: TutorialStep? = null, content: @Composable () -> Unit) {
+    val ios = LocalDesignPreset.current == DesignStyle.IOS_LIQUID_GLASS
     val highlighted = tutorialTarget != null && LocalTutorialStep.current == tutorialTarget
     Card(
         modifier = Modifier
@@ -1012,16 +961,16 @@ private fun SoftCard(onClick: (() -> Unit)? = null, tutorialTarget: TutorialStep
             .then(onClick?.let { Modifier.clickable(role = Role.Button, onClick = it) } ?: Modifier),
         shape = RoundedCornerShape(LocalDesignPreset.current.cardRadius.dp),
         // Opaque flat cards avoid alpha blending and rounded shadow layers while scrolling.
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        colors = CardDefaults.cardColors(containerColor = if (LocalDesignPreset.current == DesignStyle.MATERIAL_YOU) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.18f))
+        border = if (ios || LocalDesignPreset.current == DesignStyle.MATERIAL_YOU || LocalDesignPreset.current == DesignStyle.ONE_UI) null else androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.18f))
     ) {
-        Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) { content() }
+        Column(Modifier.padding(if (ios) 16.dp else 20.dp), verticalArrangement = Arrangement.spacedBy(if (ios) 10.dp else 14.dp)) { content() }
     }
 }
 
 @Composable
-private fun HomePage(
+internal fun StandardHomePage(
     profiles: List<ImportedProfile>,
     selectedProfileId: String,
     profile: ImportedProfile?,
@@ -1066,7 +1015,7 @@ private fun HomePage(
                 modifier = Modifier.padding(horizontal = 11.dp, vertical = 6.dp),
                 color = when {
                     vpnState.warning != null -> MaterialTheme.colorScheme.onErrorContainer
-                    vpnState.connected -> MaterialTheme.colorScheme.secondary
+                    vpnState.connected -> MaterialTheme.colorScheme.onSecondaryContainer
                     else -> MaterialTheme.colorScheme.onSurfaceVariant
                 },
                 fontSize = 12.sp,
@@ -1084,7 +1033,12 @@ private fun HomePage(
             Text(notice, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Box(Modifier.fillMaxWidth().padding(top = 2.dp), contentAlignment = Alignment.Center) {
-            val controlShape = CircleShape
+            val controlShape = when (LocalDesignPreset.current) {
+                DesignStyle.WINDOWS_11 -> RoundedCornerShape(8.dp)
+                DesignStyle.MATERIAL_YOU -> RoundedCornerShape(topStart = 48.dp, topEnd = 24.dp, bottomEnd = 48.dp, bottomStart = 24.dp)
+                DesignStyle.ONE_UI -> RoundedCornerShape(36.dp)
+                else -> CircleShape
+            }
             Box(
                 modifier = Modifier
                     .size(148.dp)
@@ -1093,6 +1047,7 @@ private fun HomePage(
                     .background(Brush.radialGradient(
                         listOf(MaterialTheme.colorScheme.surface, MaterialTheme.colorScheme.surfaceVariant)
                     ))
+                    .then(if (LocalDesignPreset.current == DesignStyle.IOS_LIQUID_GLASS) Modifier.novaGlass() else Modifier)
                     .border(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.56f), controlShape)
                     .clickable(
                         enabled = !vpnState.connecting,
@@ -1194,7 +1149,7 @@ private fun HomePage(
 }
 
 @Composable
-private fun ServersPage(
+internal fun StandardServersPage(
     profiles: List<ImportedProfile>,
     selectedId: String,
     vpnState: VpnUiState,
@@ -1262,15 +1217,26 @@ private fun ServersPage(
 }
 
 @Composable
-private fun RoutingPage(
+internal fun RoutingPage(
     apps: List<AppListEntry>,
     loading: Boolean,
     failed: Boolean,
     settings: AppRoutingSettings,
     onSettingsChanged: (AppRoutingSettings) -> Unit
 ) {
-    var searchQuery by remember { mutableStateOf("") }
-    var siteInput by remember { mutableStateOf("") }
+    val materialRouting = LocalDesignPreset.current == DesignStyle.MATERIAL_YOU
+    val iosRouting = LocalDesignPreset.current == DesignStyle.IOS_LIQUID_GLASS
+    val oneUIRouting = LocalDesignPreset.current == DesignStyle.ONE_UI
+    val windowsRouting = LocalDesignPreset.current == DesignStyle.WINDOWS_11
+    val tabbedRouting = iosRouting || materialRouting || oneUIRouting || windowsRouting
+    var iosRoutingTab by rememberSaveable { mutableStateOf(0) }
+    val routingTutorial = LocalTutorialStep.current
+    LaunchedEffect(routingTutorial) {
+        if (routingTutorial == TutorialStep.Apps) iosRoutingTab = 1
+        if (routingTutorial == TutorialStep.Sites) iosRoutingTab = 0
+    }
+    var searchQuery by rememberSaveable { mutableStateOf("") }
+    var siteInput by rememberSaveable { mutableStateOf("") }
     var siteError by remember { mutableStateOf<String?>(null) }
     var editingDomain by rememberSaveable { mutableStateOf<String?>(null) }
     var editedDomain by rememberSaveable { mutableStateOf("") }
@@ -1288,6 +1254,7 @@ private fun RoutingPage(
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedTextField(
+                            shape = novaFieldShape(),
                         value = editedDomain,
                         onValueChange = { editedDomain = it; editError = null },
                         label = { Text("Домен") },
@@ -1312,15 +1279,22 @@ private fun RoutingPage(
         )
     }
 
-    PageFrame("Маршрутизация", "Сначала правила сайтов, затем приложений",
-        tutorialTargetIndex = if (LocalTutorialStep.current == TutorialStep.Apps) 2 + settings.sites.size else 1) {
+    PageFrame(if (tabbedRouting) "Маршруты" else "Маршрутизация", "Сначала правила сайтов, затем приложений",
+        tutorialTargetIndex = if (tabbedRouting) 2 else if (LocalTutorialStep.current == TutorialStep.Apps) 2 + settings.sites.size else 1) {
+    if (iosRouting) item { IOSRoutingTabs(iosRoutingTab) { iosRoutingTab = it } }
+    if (materialRouting) item { MaterialRouteTabs(iosRoutingTab) { iosRoutingTab = it } }
+    if (windowsRouting) item { WindowsRouteTabs(iosRoutingTab) { iosRoutingTab = it } }
+    if (oneUIRouting) item { OneUIRouteTabs(iosRoutingTab) { iosRoutingTab = it } }
+    if (!tabbedRouting || iosRoutingTab == 0) {
     item {
         SoftCard(tutorialTarget = TutorialStep.Sites) {
             Text("Маршрутизация по сайтам", fontWeight = FontWeight.SemiBold)
-            Text("Введите домен без https://. Правило охватывает домен и его поддомены и имеет приоритет над маршрутом браузера.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(if (tabbedRouting) "Правило применяется к домену и поддоменам." else "Введите домен без https://. Правило охватывает домен и его поддомены и имеет приоритет над маршрутом браузера.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(
+                            shape = novaFieldShape(),
                     value = siteInput,
+                    isError = siteError != null,
                     onValueChange = { siteInput = it; siteError = null },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
@@ -1380,9 +1354,20 @@ private fun RoutingPage(
             }
         }
     }
+    }
+    if (!tabbedRouting || iosRoutingTab == 1) {
     item {
         SoftCard(tutorialTarget = TutorialStep.Apps) {
-            Text("Режим списка", fontWeight = FontWeight.SemiBold)
+            Text(if (tabbedRouting) "Выбранные приложения" else "Режим списка", fontWeight = FontWeight.SemiBold)
+            if (windowsRouting) WindowsRouteMode(if (settings.mode == AppRoutingMode.INCLUDE_SELECTED) 0 else 1) {
+                onSettingsChanged(settings.copy(mode = if (it == 0) AppRoutingMode.INCLUDE_SELECTED else AppRoutingMode.EXCLUDE_SELECTED))
+            } else if (oneUIRouting) OneUIRouteMode(if (settings.mode == AppRoutingMode.INCLUDE_SELECTED) 0 else 1) {
+                onSettingsChanged(settings.copy(mode = if (it == 0) AppRoutingMode.INCLUDE_SELECTED else AppRoutingMode.EXCLUDE_SELECTED))
+            } else if (materialRouting) MaterialRouteMode(if (settings.mode == AppRoutingMode.INCLUDE_SELECTED) 0 else 1) {
+                onSettingsChanged(settings.copy(mode = if (it == 0) AppRoutingMode.INCLUDE_SELECTED else AppRoutingMode.EXCLUDE_SELECTED))
+            } else if (iosRouting) IOSRoutingTabs(if (settings.mode == AppRoutingMode.INCLUDE_SELECTED) 0 else 1, labels = listOf("Через VPN", "Напрямую")) {
+                onSettingsChanged(settings.copy(mode = if (it == 0) AppRoutingMode.INCLUDE_SELECTED else AppRoutingMode.EXCLUDE_SELECTED))
+            } else {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(
                     onClick = { onSettingsChanged(settings.copy(mode = AppRoutingMode.INCLUDE_SELECTED)) },
@@ -1395,10 +1380,11 @@ private fun RoutingPage(
                     modifier = Modifier.weight(1f).heightIn(min = 52.dp)
                 ) { Text("Выбранные напрямую", color = if (settings.mode == AppRoutingMode.EXCLUDE_SELECTED) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface, fontSize = 12.sp) }
             }
+            }
             Text(
                 if (settings.mode == AppRoutingMode.INCLUDE_SELECTED)
-                    "Отмеченные приложения идут через VPN, остальные — напрямую. Сайтовые правила имеют приоритет."
-                else "Все приложения идут через VPN, кроме отмеченных. Сайтовые правила имеют приоритет.",
+                    if (tabbedRouting) "Через VPN — только отмеченные приложения." else "Отмеченные приложения идут через VPN, остальные — напрямую. Сайтовые правила имеют приоритет."
+                else if (tabbedRouting) "Через VPN — все приложения, кроме отмеченных." else "Все приложения идут через VPN, кроме отмеченных. Сайтовые правила имеют приоритет.",
                 fontSize = 12.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -1406,7 +1392,7 @@ private fun RoutingPage(
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text("IPv6 через VPN", fontWeight = FontWeight.Medium)
-                    Text("Включайте, если сервер поддерживает IPv6. По умолчанию обычные профили используют IPv4 для совместимости; DNS из полного JSON сохраняется.",
+                    Text(if (tabbedRouting) "Если сервер поддерживает IPv6." else "Включайте, если сервер поддерживает IPv6. По умолчанию обычные профили используют IPv4 для совместимости; DNS из полного JSON сохраняется.",
                         fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 Switch(checked = settings.ipv6Enabled,
@@ -1421,6 +1407,7 @@ private fun RoutingPage(
         item {
             SoftCard {
                 OutlinedTextField(
+                            shape = novaFieldShape(),
                     value = searchQuery,
                     onValueChange = { searchQuery = it },
                     modifier = Modifier.fillMaxWidth(),
@@ -1468,7 +1455,7 @@ private fun RoutingPage(
                     Text(app.label, fontWeight = FontWeight.Medium)
                     Text(app.packageName, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                androidx.compose.material3.Switch(
+                Switch(
                     checked = checked,
                     onCheckedChange = { enabled ->
                         val next = settings.packages.toMutableSet().apply {
@@ -1483,20 +1470,21 @@ private fun RoutingPage(
     }
 }
 }
+}
 
 @Composable
-private fun SettingsPage(
+internal fun StandardSettingsPage(
     onStartTutorial: () -> Unit,
     onNotificationSettings: () -> Unit,
     autoConnect: Boolean,
-    designPreset: DesignPreset,
+    appearance: Appearance,
     updateChecksEnabled: Boolean,
     checkingUpdates: Boolean,
     updateStatus: String?,
     error: String?,
     onAddQuickSettingsTile: () -> Unit,
     onOpenProduct: (String) -> Unit,
-    onDesignChanged: (DesignPreset) -> Unit,
+    onAppearanceChanged: (Appearance) -> Unit,
     onUpdateChecksChanged: (Boolean) -> Unit,
     onCheckUpdates: () -> Unit,
     onAutoConnectChanged: (Boolean) -> Unit
@@ -1540,23 +1528,7 @@ private fun SettingsPage(
         }
     } }
     item { SoftCard {
-        Text("Оформление", fontWeight = FontWeight.SemiBold)
-        Text("Выберите цветовую тему мобильного клиента.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text("Material You использует цвета обоев на Android 12+ и переключается вместе с системной светлой/тёмной темой.",
-            fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        DesignPreset.entries.chunked(2).forEach { row ->
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                row.forEach { preset ->
-                    FilterChip(
-                        modifier = Modifier.weight(1f).heightIn(min = 48.dp),
-                        selected = designPreset == preset,
-                        onClick = { onDesignChanged(preset) },
-                        label = { Text(preset.label) }
-                    )
-                }
-                if (row.size == 1) Spacer(Modifier.weight(1f))
-            }
-        }
+        AppearancePicker(appearance = appearance, onChange = onAppearanceChanged)
     } }
     item { SoftCard {
         SettingRow(Icons.Rounded.MoreHoriz, "Уведомление VPN", "Показывает статус и кнопку отключения во время работы туннеля.")
@@ -1607,5 +1579,4 @@ private fun SettingRow(icon: ImageVector, title: String, detail: String) {
         }
     }
 }
-
 

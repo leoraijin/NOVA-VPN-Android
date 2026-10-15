@@ -21,6 +21,28 @@ class AppPreferencesStore(context: Context) {
         preferences.edit().putBoolean("notification_permission_requested", true).apply()
     }
 
+    /** Migrate once, saving both dimensions in the same transaction. */
+    @Synchronized
+    fun appearance(systemDark: Boolean): Appearance {
+        val style = preferences.getString("appearance_style", null)
+            ?.let { value -> if (value == "AMBER_GLASS") DesignStyle.IOS_LIQUID_GLASS else DesignStyle.entries.firstOrNull { it.name == value } }
+        val mode = preferences.getString("appearance_mode", null)
+            ?.let { value -> ThemeMode.entries.firstOrNull { it.name == value } }
+        if (style != null && mode != null) return Appearance(style, mode, preferences.getFloat("material_hue", 275f).let { if (it.isFinite()) it.coerceIn(0f, 360f) else 275f }, preferences.getFloat("glass_frost", .65f).let { if (it.isFinite()) it.coerceIn(0f, 1f) else .65f })
+            .also { if (preferences.getString("appearance_style", null) == "AMBER_GLASS") setAppearance(it) }
+        return Appearance.migrate(preferences.getString(KEY_DESIGN, null), systemDark)
+            .also { setAppearance(it) }
+    }
+
+    @Synchronized
+    fun setAppearance(appearance: Appearance) {
+        check(preferences.edit()
+            .putString("appearance_style", appearance.style.name)
+            .putString("appearance_mode", appearance.mode.name)
+            .putFloat("material_hue", appearance.materialHue.coerceIn(0f, 360f))
+            .putFloat("glass_frost", appearance.glassFrost.coerceIn(0f, 1f))
+            .commit()) { "Не удалось сохранить оформление" }
+    }
     fun selectedDesign(): String = preferences.getString(KEY_DESIGN, DEFAULT_DESIGN) ?: DEFAULT_DESIGN
 
     fun setSelectedDesign(design: String) {

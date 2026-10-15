@@ -4,6 +4,10 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
+import com.nova.vpn.android.NovaSwitch as Switch
+import com.nova.vpn.android.NovaTextButton as TextButton
+import com.nova.vpn.android.NovaOutlinedButton as OutlinedButton
+import com.nova.vpn.android.NovaButton as Button
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.compositionLocalOf

@@ -7,6 +7,7 @@ plugins {
 android {
     namespace = "com.nova.vpn.android"
     compileSdk = 35
+    buildToolsVersion = "35.0.0"
     testBuildType = if (providers.gradleProperty("novaMapSmoke").isPresent) "maptest" else "debug"
 
     splits {
@@ -22,8 +23,8 @@ android {
         applicationId = "com.nova.vpn.android"
         minSdk = 24
         targetSdk = 35
-        versionCode = 36
-        versionName = "0.2.34"
+        versionCode = 45
+        versionName = "0.2.43"
         testInstrumentationRunner = if (providers.gradleProperty("novaMapSmoke").isPresent)
             "com.nova.vpn.android.ServerMapSmokeRunner" else "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -43,14 +44,33 @@ android {
         buildConfig = true
     }
 
+    signingConfigs.getByName("debug") {
+        // The transferred preview key is private and must never be committed.
+        // Use it when supplied locally; otherwise Android's normal debug key is used.
+        val previewKey = rootProject.file("signing/debug.keystore")
+        if (previewKey.isFile) storeFile = previewKey
+    }
+
     buildTypes {
+        create("designreview") {
+            initWith(getByName("debug"))
+            applicationIdSuffix = ".designreview"
+            versionNameSuffix = "-design-preview"
+            matchingFallbacks += listOf("debug")
+        }
         create("optimized") {
             initWith(getByName("release"))
             isDebuggable = false
             isJniDebuggable = false
-            // Preserve update compatibility with existing experimental installations.
+            // The handoff does not include the original signing key. Distribute designpreview separately.
             signingConfig = signingConfigs.getByName("debug")
             matchingFallbacks += listOf("release")
+        }
+        create("designpreview") {
+            initWith(getByName("optimized"))
+            applicationIdSuffix = ".designpreview"
+            versionNameSuffix = "-design"
+            matchingFallbacks += listOf("optimized", "release")
         }
         create("maptest") {
             initWith(getByName("optimized"))
@@ -92,5 +112,4 @@ dependencies {
     testImplementation("org.robolectric:robolectric:4.14.1")
     debugImplementation("androidx.compose.ui:ui-tooling")
 }
-
 

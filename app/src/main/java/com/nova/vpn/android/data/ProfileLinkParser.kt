@@ -493,4 +493,3 @@ object ProfileLinkParser {
         value.replace("+", "%2B"), StandardCharsets.UTF_8.name()
     )
 }
-

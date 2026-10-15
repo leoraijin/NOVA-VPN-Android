@@ -12,6 +12,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
+import com.nova.vpn.android.NovaSwitch as Switch
+import com.nova.vpn.android.NovaTextButton as TextButton
+import com.nova.vpn.android.NovaOutlinedButton as OutlinedButton
+import com.nova.vpn.android.NovaButton as Button
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -45,7 +49,7 @@ internal fun serverCheckLabel(result: ServerCheckResult?, checking: Boolean = fa
 
 @Composable internal fun ServerCheckBadge(result: ServerCheckResult?, checking: Boolean = false) {
     val color = checkColor(result, MaterialTheme.colorScheme.surface.luminance() > .5f)
-    Surface(color = color.copy(alpha = .12f), shape = RoundedCornerShape(12.dp)) {
+    Surface(color = color.copy(alpha = .12f), shape = MaterialTheme.shapes.small) {
         Text(serverCheckLabel(result, checking), Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
             color = if(checking) MaterialTheme.colorScheme.primary else color, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
     }
@@ -78,7 +82,7 @@ private data class MapMarker(val members: List<LocatedProfile>, val selected: Lo
     val selected = profiles.firstOrNull { it.id == selectedId } ?: profiles.firstOrNull()
     val selectedLocation = locations.firstOrNull { it.profile.id == selected?.id }?.location
     val colors = MaterialTheme.colorScheme
-    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(colors.surface)) {
+    Column(Modifier.fillMaxWidth().clip(MaterialTheme.shapes.large).background(colors.surface)) {
         Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text("Карта серверов", fontWeight = FontWeight.SemiBold, fontSize = 19.sp)

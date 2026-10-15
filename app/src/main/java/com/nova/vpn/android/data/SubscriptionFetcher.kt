@@ -105,4 +105,3 @@ object SubscriptionFetcher {
         308
     )
 }
-

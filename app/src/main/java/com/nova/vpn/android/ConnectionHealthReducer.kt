@@ -7,5 +7,6 @@ internal object ConnectionHealthReducer {
 
     fun probeResult(state: VpnUiState, success: Boolean): VpnUiState =
         if (state.connected) state.copy(trafficChecking = false, trafficVerified = success,
-            trafficCheckFailed = !success, warning = null) else state
+            trafficCheckFailed = !success, warning = null,
+            transportNotice = if (success) null else state.transportNotice) else state
 }
