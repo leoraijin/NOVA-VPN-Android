@@ -21,6 +21,7 @@ object ProfileLinkParser {
         val decoded = decodeSubscription(text.trim().removePrefix("\uFEFF")).trim().removePrefix("\uFEFF")
         val normalized = decoded.trim()
         if (normalized.startsWith("{")) {
+            parseXraySubscription(normalized)?.let { return ImportedProfile.distinctByConfiguration(it) }
             return listOf(parseFullConfig(normalized))
         }
         val lines = decoded.lineSequence().map { it.trim().removePrefix("\uFEFF").trim() }
@@ -40,6 +41,134 @@ object ProfileLinkParser {
             failures.firstOrNull() ?: "Не найдено поддерживаемых VPN-конфигураций"
         }
         return ImportedProfile.distinctByConfiguration(profiles)
+    }
+
+    /** Converts common Xray subscription JSON into native single-server sing-box profiles. */
+    private fun parseXraySubscription(text: String): List<ImportedProfile>? {
+        val json = runCatching { JSONObject(text) }.getOrNull() ?: return null
+        val outbounds = json.optJSONArray("outbounds") ?: return null
+        val xrayOutbounds = (0 until outbounds.length()).mapNotNull(outbounds::optJSONObject)
+            .filter { it.has("protocol") && it.has("settings") }
+        if (xrayOutbounds.isEmpty()) return null
+
+        val profiles = mutableListOf<ImportedProfile>()
+        xrayOutbounds.forEach { xray ->
+            val protocol = xray.optString("protocol").lowercase()
+            val settings = xray.optJSONObject("settings") ?: return@forEach
+            val stream = xray.optJSONObject("streamSettings") ?: JSONObject()
+            val name = xray.optString("remarks")
+                .ifBlank { json.optString("remarks") }
+                .ifBlank { xray.optString("tag") }
+            when (protocol) {
+                "vless", "vmess" -> {
+                    val servers = settings.optJSONArray("vnext") ?: return@forEach
+                    for (serverIndex in 0 until servers.length()) {
+                        val server = servers.optJSONObject(serverIndex) ?: continue
+                        val users = server.optJSONArray("users") ?: continue
+                        for (userIndex in 0 until users.length()) {
+                            val user = users.optJSONObject(userIndex) ?: continue
+                            val uuid = user.optString("id")
+                            val port = server.optInt("port")
+                            if (server.optString("address").isBlank() || port !in 1..65535 || uuid.isBlank()) continue
+                            val outbound = JSONObject()
+                                .put("type", protocol)
+                                .put("tag", "proxy")
+                                .put("server", server.getString("address"))
+                                .put("server_port", port)
+                                .put("uuid", uuid)
+                            if (protocol == "vmess") outbound.put("alter_id", user.optInt("alterId"))
+                            user.optString("flow").takeIf(String::isNotBlank)?.let { outbound.put("flow", it) }
+                            applyXrayStream(outbound, stream)
+                            profiles += imported(outbound, name.ifBlank { "$protocol · ${server.getString("address")}" })
+                        }
+                    }
+                }
+                "trojan", "shadowsocks" -> {
+                    val servers = settings.optJSONArray("servers") ?: return@forEach
+                    for (serverIndex in 0 until servers.length()) {
+                        val server = servers.optJSONObject(serverIndex) ?: continue
+                        val address = server.optString("address")
+                        val port = server.optInt("port")
+                        if (address.isBlank() || port !in 1..65535) continue
+                        val outbound = JSONObject()
+                            .put("type", if (protocol == "shadowsocks") "shadowsocks" else "trojan")
+                            .put("tag", "proxy")
+                            .put("server", address)
+                            .put("server_port", port)
+                        val credential = server.optString("password")
+                        if (protocol == "shadowsocks") {
+                            val method = server.optString("method")
+                            if (method.isBlank() || credential.isBlank()) continue
+                            outbound.put("method", method).put("password", credential)
+                        } else {
+                            if (credential.isBlank()) continue
+                            outbound.put("password", credential)
+                        }
+                        applyXrayStream(outbound, stream)
+                        profiles += imported(outbound, name.ifBlank { "$protocol · $address" })
+                    }
+                }
+            }
+        }
+        require(profiles.isNotEmpty()) { "Xray JSON не содержит поддерживаемых VLESS, VMess, Trojan или Shadowsocks серверов" }
+        return profiles
+    }
+
+    private fun imported(outbound: JSONObject, name: String) = ImportedProfile(
+        name = name.take(96),
+        protocol = outbound.getString("type"),
+        server = outbound.getString("server"),
+        port = outbound.getInt("server_port"),
+        outboundJson = outbound.toString()
+    )
+
+    private fun applyXrayStream(outbound: JSONObject, stream: JSONObject) {
+        when (stream.optString("network", "tcp").lowercase()) {
+            "tcp", "raw", "" -> Unit
+            "ws" -> {
+                val ws = stream.optJSONObject("wsSettings") ?: JSONObject()
+                val headers = ws.optJSONObject("headers") ?: JSONObject()
+                val host = headers.optString("Host").ifBlank { ws.optString("host") }
+                outbound.put("transport", JSONObject().put("type", "ws")
+                    .put("path", ws.optString("path", "/"))
+                    .put("headers", JSONObject().apply { if (host.isNotBlank()) put("Host", host) }))
+            }
+            "grpc" -> {
+                val grpc = stream.optJSONObject("grpcSettings") ?: JSONObject()
+                outbound.put("transport", JSONObject().put("type", "grpc")
+                    .put("service_name", grpc.optString("serviceName")))
+            }
+            "http", "h2" -> {
+                val http = stream.optJSONObject("httpSettings") ?: JSONObject()
+                val hosts = http.optJSONArray("host")
+                val headers = JSONObject()
+                if (hosts != null && hosts.length() > 0) headers.put("Host", hosts.optString(0))
+                outbound.put("transport", JSONObject().put("type", "http")
+                    .put("path", http.optString("path", "/")).put("headers", headers))
+            }
+            else -> throw IllegalArgumentException("Транспорт Xray ${stream.optString("network")} пока не поддержан")
+        }
+        val security = stream.optString("security").lowercase()
+        if (security == "tls" || security == "reality") {
+            val settings = stream.optJSONObject(if (security == "reality") "realitySettings" else "tlsSettings") ?: JSONObject()
+            val serverName = settings.optString("serverName").ifBlank { outbound.optString("server") }
+            val tls = JSONObject().put("enabled", true).put("server_name", serverName)
+            settings.optJSONArray("alpn")?.let { tls.put("alpn", it) }
+            if (settings.optBoolean("allowInsecure")) tls.put("insecure", true)
+            settings.optString("fingerprint").takeIf(String::isNotBlank)?.let {
+                tls.put("utls", JSONObject().put("enabled", true).put("fingerprint", it))
+            }
+            if (security == "reality") {
+                val publicKey = settings.optString("publicKey")
+                require(publicKey.isNotBlank()) { "Xray Reality не содержит publicKey" }
+                if (!tls.has("utls")) tls.put("utls", JSONObject().put("enabled", true).put("fingerprint", "chrome"))
+                tls.put("reality", JSONObject().put("enabled", true)
+                    .put("public_key", publicKey).put("short_id", settings.optString("shortId")))
+            }
+            outbound.put("tls", tls)
+        } else if (security.isNotBlank() && security != "none") {
+            throw IllegalArgumentException("Защита Xray $security пока не поддержана")
+        }
     }
 
     private fun parseFullConfig(text: String): ImportedProfile {
@@ -364,3 +493,4 @@ object ProfileLinkParser {
         value.replace("+", "%2B"), StandardCharsets.UTF_8.name()
     )
 }
+

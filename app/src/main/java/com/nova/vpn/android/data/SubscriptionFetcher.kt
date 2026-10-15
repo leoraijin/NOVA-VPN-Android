@@ -24,10 +24,28 @@ object SubscriptionFetcher {
             "Некорректная HTTPS-ссылка на подписку."
         }
         require(text.length <= 4096) { "Ссылка на подписку слишком длинная." }
-        return download(uri)
+        val response = download(uri, "NOVA-VPN-Android")
+        // Some subscription panels select a client-specific format from User-Agent.
+        // Retry only when the first response is the known unusable 0.0.0.0:1 placeholder.
+        return if (isUnsupportedPlaceholder(response)) {
+            download(uri, "v2raytun/android")
+        } else response
     }
 
-    private fun download(initialUri: URI): String {
+    private fun isUnsupportedPlaceholder(body: String): Boolean = runCatching {
+        val raw = body.trim()
+        val decoded = if (raw.startsWith("vless://")) raw else {
+            val padded = raw.replace('-', '+').replace('_', '/') + "=".repeat((4 - raw.length % 4) % 4)
+            runCatching { String(java.util.Base64.getMimeDecoder().decode(padded), Charsets.UTF_8) }
+                .getOrDefault(raw).trim()
+        }
+        val link = decoded.lineSequence().firstOrNull { it.trimStart().startsWith("vless://") }
+            ?.trim()?.substringBefore('#') ?: return@runCatching false
+        val uri = URI(link)
+        uri.host == "0.0.0.0" && uri.port == 1
+    }.getOrDefault(false)
+
+    private fun download(initialUri: URI, userAgent: String): String {
         var current = initialUri
         repeat(MAX_REDIRECTS + 1) { redirectIndex ->
             require(current.scheme.equals("https", ignoreCase = true)) {
@@ -41,7 +59,7 @@ object SubscriptionFetcher {
                 connection.readTimeout = READ_TIMEOUT_MS
                 connection.requestMethod = "GET"
                 connection.setRequestProperty("Accept", "text/plain, application/json, */*;q=0.5")
-                connection.setRequestProperty("User-Agent", "NOVA-VPN-Android")
+                connection.setRequestProperty("User-Agent", userAgent)
 
                 val status = connection.responseCode
                 if (status in REDIRECT_CODES) {
@@ -87,3 +105,4 @@ object SubscriptionFetcher {
         308
     )
 }
+

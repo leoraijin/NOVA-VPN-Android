@@ -816,7 +816,7 @@ private fun NovaAndroidApp(
                 title = { Text("Добавить конфигурацию") },
                 text = {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("Добавьте VPN-ссылку, HTTPS-подписку, список ссылок или sing-box JSON. Можно отсканировать QR-код, выбрать файл или вставить текст. Данные сохраняются зашифрованно на устройстве.", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("Добавьте VPN-ссылку, HTTPS-подписку, список ссылок, sing-box или Xray JSON. Можно отсканировать QR-код, выбрать файл или вставить текст. Данные сохраняются зашифрованно на устройстве.", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                             OutlinedButton(
                                 enabled = !importing,
@@ -838,7 +838,7 @@ private fun NovaAndroidApp(
                             modifier = Modifier.fillMaxWidth(),
                             minLines = 4,
                             maxLines = 8,
-                            placeholder = { Text("vless://…, QR-ссылка или sing-box JSON") }
+                            placeholder = { Text("vless://…, QR-ссылка, sing-box или Xray JSON") }
                         )
                         importError?.let { Text(it, color = Color(0xFFB3261E), fontSize = 12.sp) }
                     }
@@ -1216,7 +1216,7 @@ private fun ServersPage(
         ServerMapPanel(profiles, selectedId, checks, vpnState, onCheck, onCancelCheck, onSelect, onConnect)
     }
     item { SoftCard(tutorialTarget = TutorialStep.Import) {
-        Text("Вставьте VPN-ссылку, HTTPS-подписку, список ссылок или sing-box JSON. Поддерживаются VLESS, VMess, Trojan, Shadowsocks, Hysteria2 и TUIC.", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("Вставьте VPN-ссылку, HTTPS-подписку, список ссылок, sing-box или Xray JSON. Поддерживаются VLESS, VMess, Trojan, Shadowsocks, Hysteria2 и TUIC.", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Button(onClick = onAdd, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
             Icon(Icons.Rounded.Add, null)
             Spacer(Modifier.width(8.dp))
@@ -1607,4 +1607,5 @@ private fun SettingRow(icon: ImageVector, title: String, detail: String) {
         }
     }
 }
+
 
