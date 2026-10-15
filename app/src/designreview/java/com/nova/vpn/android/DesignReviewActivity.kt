@@ -1,6 +1,10 @@
 package com.nova.vpn.android
 
 import android.os.Bundle
+import android.content.res.Configuration
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Density
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
@@ -32,13 +36,18 @@ class DesignReviewActivity : ComponentActivity() {
             val colors = designColorScheme(appearance.style, this, appearance.isDark, appearance.materialHue)
             val profile = remember { ImportedProfile(id = "preview-nl", name = "Netherlands · Amsterdam", protocol = "vless", server = "preview.invalid", port = 443, outboundJson = "{}") }
             val profiles = remember { listOf(profile, profile.copy(id = "preview-fi", name = "Finland · Helsinki")) }
+            var selectedProfileId by remember { mutableStateOf(profile.id) }
             val vpn = when (state) {
                 "connected" -> VpnUiState(connected = true, trafficVerified = true)
                 "loading" -> VpnUiState(connecting = true)
                 "warning" -> VpnUiState(connected = true, warning = "Контрольный запрос не ответил", trafficCheckFailed = true)
                 else -> VpnUiState()
             }
-            CompositionLocalProvider(LocalGlassTierOverride provides intent.getIntExtra("glassTier", 2)) {
+            val reviewFont = intent.getFloatExtra("font", LocalConfiguration.current.fontScale)
+            val reviewConfiguration = Configuration(LocalConfiguration.current).apply { fontScale = reviewFont }
+            CompositionLocalProvider(LocalGlassTierOverride provides intent.getIntExtra("glassTier", 2),
+                LocalConfiguration provides reviewConfiguration,
+                LocalDensity provides Density(LocalDensity.current.density, reviewFont)) {
             NovaTheme(appearance, colors) {
                 Scaffold(containerColor = colors.background, bottomBar = {
                     NovaNavigationBar {
@@ -63,8 +72,27 @@ class DesignReviewActivity : ComponentActivity() {
                                     x += stripe; i++
                                 }
                             }
+                            "Tutorial" -> BoxWithConstraints(Modifier.fillMaxSize()) {
+                                val available = maxHeight
+                                var index by remember { mutableIntStateOf(intent.getIntExtra("step", 0)) }
+                                val step = TutorialStep.at(index) ?: TutorialStep.Import
+                                Column(Modifier.fillMaxSize()) {
+                                    TutorialPanel(step, false, { index = (index - 1).coerceAtLeast(0) },
+                                        { index = (index + 1) % 6 }, { page = "Home" }, available)
+                                    Box(Modifier.weight(1f)) {
+                                        CompositionLocalProvider(LocalTutorialStep provides step) {
+                                            when (step) {
+                                                TutorialStep.Import, TutorialStep.Servers -> ServersPage(profiles, selectedProfileId, vpn, ServerCheckState(), {}, {}, {}, null, null, null, false, {}, { selectedProfileId = it }, {}, {})
+                                                TutorialStep.Apps, TutorialStep.Sites -> RoutingPage(emptyList(), false, false, AppRoutingSettings(), {})
+                                                TutorialStep.Updates -> SettingsPage({}, {}, false, appearance, true, false, null, null, {}, {}, { appearance = it }, {}, {}, {})
+                                                TutorialStep.Connect -> HomePage(profiles, profile.id, profile, vpn, null, {}, {}, {})
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                             "Home" -> HomePage(profiles, profile.id, profile, vpn, null, {}, {}, {})
-                            "Servers" -> ServersPage(profiles, profile.id, vpn, ServerCheckState(), {}, {}, {}, null, null, null, false, {}, {}, {}, {})
+                            "Servers" -> ServersPage(profiles, selectedProfileId, vpn, ServerCheckState(), {}, {}, {}, null, null, null, false, {}, { selectedProfileId = it }, {}, {})
                             "Routing" -> RoutingPage(emptyList(), false, false, AppRoutingSettings(), {})
                             "Settings" -> SettingsPage({}, {}, false, appearance, true, false, null, null, {}, {}, { appearance = it }, {}, {}, {})
                             "Appearance" -> PageFrame("Оформление", "Четыре стиля · два режима") { item { SoftCard { AppearancePicker(appearance) { appearance = it } } } }

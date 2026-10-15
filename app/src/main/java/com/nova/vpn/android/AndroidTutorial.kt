@@ -1,3 +1,4 @@
+@file:OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 package com.nova.vpn.android
 
 import androidx.compose.foundation.layout.*
@@ -13,6 +14,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
@@ -32,25 +34,27 @@ internal enum class TutorialStep(val title: String, val detail: String, val targ
 internal val LocalTutorialStep = compositionLocalOf<TutorialStep?> { null }
 
 @Composable
-internal fun TutorialPanel(step: TutorialStep, closing: Boolean, onBack: () -> Unit, onNext: () -> Unit, onSkip: () -> Unit) {
+internal fun TutorialPanel(step: TutorialStep, closing: Boolean, onBack: () -> Unit, onNext: () -> Unit, onSkip: () -> Unit, availableHeight: Dp) {
     val detailsScroll = rememberScrollState()
     LaunchedEffect(step) { detailsScroll.scrollTo(0) }
     Surface(color = MaterialTheme.colorScheme.primaryContainer, shape = MaterialTheme.shapes.large,
         modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)) {
-        Column(Modifier.heightIn(max = 280.dp).padding(16.dp),
+        Column(Modifier.heightIn(max = availableHeight * .62f).padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(Modifier.weight(1f, fill = false).verticalScroll(detailsScroll),
+                verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("Знакомство с NOVA · ${step.ordinal + 1} из ${TutorialStep.entries.size}", fontSize = 12.sp)
             LinearProgressIndicator(progress = { (step.ordinal + 1).toFloat() / TutorialStep.entries.size }, modifier = Modifier.fillMaxWidth())
             Text(step.title, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
-            Column(Modifier.weight(1f, fill = false).verticalScroll(detailsScroll),
-                verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(step.detail, fontSize = 13.sp)
                 Text("↓ ${step.target} — карточка выделена ниже", fontSize = 12.sp, fontWeight = FontWeight.Medium)
             }
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                TextButton(onClick = onSkip, enabled = !closing, modifier = Modifier.weight(1.2f)) { Text("Пропустить", fontSize = 13.sp) }
-                TextButton(onClick = onBack, enabled = !closing && step.ordinal > 0, modifier = Modifier.weight(0.8f)) { Text("Назад", fontSize = 13.sp) }
-                Button(onClick = onNext, enabled = !closing, modifier = Modifier.weight(1f)) { Text(if (closing) "…" else if (step == TutorialStep.Connect) "Готово" else "Далее", fontSize = 14.sp) }
+            if (detailsScroll.canScrollForward) Text("Ещё текст ↓", fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onPrimaryContainer)
+            FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                TextButton(onClick = onSkip, enabled = !closing) { Text("Пропустить", fontSize = 13.sp) }
+                TextButton(onClick = onBack, enabled = !closing && step.ordinal > 0) { Text("Назад", fontSize = 13.sp) }
+                Button(onClick = onNext, enabled = !closing) { Text(if (closing) "…" else if (step == TutorialStep.Connect) "Готово" else "Далее", fontSize = 14.sp) }
             }
         }
     }

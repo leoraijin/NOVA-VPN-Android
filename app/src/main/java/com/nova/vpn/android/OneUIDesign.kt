@@ -76,7 +76,7 @@ internal fun OneUIDivider() { HorizontalDivider(Modifier.padding(start = 64.dp, 
 @Composable
 internal fun OneUIRow(title: String, detail: String? = null, icon: ImageVector? = null,
     tint: Color = MaterialTheme.colorScheme.primary, onClick: (() -> Unit)? = null,
-    trailing: (@Composable () -> Unit)? = null) {
+    trailing: (@Composable () -> Unit)? = null, expanded: Boolean? = null) {
     Row(Modifier.fillMaxWidth().then(if (onClick != null) Modifier.clickable(role = Role.Button, onClick = onClick) else Modifier)
         .heightIn(min = 68.dp).padding(horizontal = 20.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
         icon?.let {
@@ -90,6 +90,7 @@ internal fun OneUIRow(title: String, detail: String? = null, icon: ImageVector? 
             detail?.let { Text(it, fontSize = 13.sp, lineHeight = 18.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) }
         }
         if (trailing != null) { Spacer(Modifier.width(12.dp)); trailing() }
+        else if (expanded != null) { NovaDisclosure(expanded) }
         else if (onClick != null) { Spacer(Modifier.width(8.dp)); Icon(Icons.Rounded.ChevronRight, null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant) }
     }
 }
@@ -141,7 +142,7 @@ internal fun OneUIHome(profiles: List<ImportedProfile>, selectedId: String, prof
         item {
             OneUIGroup {
                 OneUIRow("Сервер", profile?.name ?: "Не выбран", Icons.Rounded.Public, Color(0xFF3478C9),
-                    { if (profiles.isEmpty()) onManage() else choose = !choose })
+                    { if (profiles.isEmpty()) onManage() else choose = !choose }, expanded = if (profiles.isEmpty()) null else choose)
                 AnimatedVisibility(choose) {
                     Column(Modifier.selectableGroup()) {
                         profiles.forEach { p ->
@@ -159,7 +160,7 @@ internal fun OneUIHome(profiles: List<ImportedProfile>, selectedId: String, prof
         }
         item {
             OneUIGroup {
-                OneUIRow("Состояние и диагностика", "Сведения о подключении", Icons.Rounded.Info, Color(0xFF8971BE), { details = !details })
+                OneUIRow("Состояние и диагностика", "Сведения о подключении", Icons.Rounded.Info, Color(0xFF8971BE), { details = !details }, expanded = details)
                 AnimatedVisibility(details) {
                     Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text("NOVA VPN ${BuildConfig.VERSION_NAME}", fontSize = 13.sp)
@@ -181,7 +182,7 @@ internal fun OneUISettings(onTutorial: () -> Unit, onNotifications: () -> Unit, 
     OneUIFrame("Настройки", "NOVA VPN", tutorialTargetIndex = 3) {
         item {
             OneUIGroup {
-                OneUIRow("Оформление", "One UI 9 · " + if (appearance.isDark) "Тёмная" else "Светлая", Icons.Rounded.Palette, Color(0xFF8270BE), { appearanceOpen = !appearanceOpen })
+                OneUIRow("Оформление", "One UI 9 · " + if (appearance.isDark) "Тёмная" else "Светлая", Icons.Rounded.Palette, Color(0xFF8270BE), { appearanceOpen = !appearanceOpen }, expanded = appearanceOpen)
                 AnimatedVisibility(appearanceOpen) { Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) { AppearancePicker(appearance, onAppearance) } }
             }
         }
@@ -238,7 +239,7 @@ internal fun OneUIServers(profiles: List<ImportedProfile>, selectedId: String, s
         }
         item {
             OneUIGroup(TutorialStep.Servers) {
-                OneUIRow("Карта серверов", "Расположение и проверка", Icons.Rounded.Map, Color(0xFF558A47), { showMap = !showMap })
+                OneUIRow("Карта серверов", "Расположение и проверка", Icons.Rounded.Map, Color(0xFF558A47), { showMap = !showMap }, expanded = showMap)
                 AnimatedVisibility(showMap) { ServerMapPanel(profiles, selectedId, checks, state, onCheck, onCancel, onSelect, onConnect) }
             }
         }
@@ -256,7 +257,6 @@ internal fun OneUIServers(profiles: List<ImportedProfile>, selectedId: String, s
             OneUIGroup { OneUIRow("Ничего не найдено", "Измените запрос или очистите поиск.") }
         }
         items(visible, key = { it.id }) { profile ->
-            var expanded by rememberSaveable(profile.id) { mutableStateOf(false) }
             OneUIGroup {
                 Row(Modifier.fillMaxWidth().selectable(profile.id == selectedId, role = Role.RadioButton, onClick = { onSelect(profile.id) })
                     .heightIn(min = 76.dp).padding(start = 20.dp, end = 8.dp, top = 12.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -264,15 +264,10 @@ internal fun OneUIServers(profiles: List<ImportedProfile>, selectedId: String, s
                         Text(profile.name, fontSize = 17.sp, lineHeight = 23.sp, fontWeight = FontWeight.Medium)
                         Text(profile.protocol.uppercase() + if (profile.id == selectedId) " · Выбран" else "", fontSize = 13.sp, color = MaterialTheme.colorScheme.primary)
                     }
-                    IconButton({ expanded = !expanded }) { Icon(Icons.Rounded.MoreVert, "Действия с профилем ${profile.name}") }
+                    ProfileActionsMenu(profile, busy, onWatch, onDelete)
                 }
-                AnimatedVisibility(expanded) {
-                    Column(Modifier.padding(horizontal = 20.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text(profile.server, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        NovaOutlinedButton({ onWatch(profile) }, enabled = !busy, modifier = Modifier.fillMaxWidth()) { Text(if (busy && shareId == profile.id) "Передача…" else "Передать на часы") }
-                        if (shareId == profile.id) shareStatus?.let { Text(it, fontSize = 13.sp) }
-                        NovaTextButton({ onDelete(profile) }) { Text("Удалить профиль", color = MaterialTheme.colorScheme.error) }
-                    }
+                if (shareId == profile.id) shareStatus?.let {
+                    Text(it, Modifier.padding(horizontal = 20.dp, vertical = 12.dp), fontSize = 13.sp)
                 }
             }
         }

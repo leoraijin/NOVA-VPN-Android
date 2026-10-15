@@ -114,7 +114,7 @@ internal fun HomePage(profiles: List<ImportedProfile>, selectedProfileId: String
             IOSSection("СЕРВЕР") {
                 IOSGroup {
                     IOSRow(Icons.Rounded.Public, profile?.name ?: "Добавить сервер", profile?.protocol?.uppercase() ?: "Ссылка, QR-код или файл",
-                        onClick = { if (profiles.isEmpty()) onManageProfiles() else serversExpanded = !serversExpanded })
+                        onClick = { if (profiles.isEmpty()) onManageProfiles() else serversExpanded = !serversExpanded }, expanded = if (profiles.isEmpty()) null else serversExpanded)
                     AnimatedVisibility(serversExpanded) {
                         Column {
                             profiles.forEach { p ->
@@ -132,7 +132,7 @@ internal fun HomePage(profiles: List<ImportedProfile>, selectedProfileId: String
         }
         item {
             IOSGroup {
-                IOSRow(Icons.Rounded.Info, "О соединении", if (detailsExpanded) "Скрыть подробности" else "Состояние и диагностика", onClick = { detailsExpanded = !detailsExpanded })
+                IOSRow(Icons.Rounded.Info, "О соединении", if (detailsExpanded) "Скрыть подробности" else "Состояние и диагностика", onClick = { detailsExpanded = !detailsExpanded }, expanded = detailsExpanded)
                 AnimatedVisibility(detailsExpanded) {
                     Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         Text("NOVA VPN ${BuildConfig.VERSION_NAME}", fontSize = 13.sp, color = c.onSurfaceVariant)
@@ -162,7 +162,7 @@ internal fun IOSSection(title: String, content: @Composable () -> Unit) {
 
 @Composable
 internal fun IOSRow(icon: ImageVector, title: String, detail: String? = null, onClick: (() -> Unit)? = null,
-    trailing: (@Composable () -> Unit)? = null) {
+    trailing: (@Composable () -> Unit)? = null, expanded: Boolean? = null) {
     val c = MaterialTheme.colorScheme
     Row(Modifier.fillMaxWidth().then(if (onClick != null) Modifier.clickable(role = Role.Button, onClick = onClick) else Modifier)
         .heightIn(min = 56.dp).padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -175,7 +175,7 @@ internal fun IOSRow(icon: ImageVector, title: String, detail: String? = null, on
             detail?.let { Text(it, fontSize = 12.sp, lineHeight = 17.sp, color = c.onSurfaceVariant) }
         }
         Spacer(Modifier.width(8.dp))
-        if (trailing != null) trailing() else if (onClick != null) Icon(Icons.Rounded.ChevronRight, null, tint = c.onSurfaceVariant.copy(alpha = .6f), modifier = Modifier.size(20.dp))
+        if (trailing != null) trailing() else if (expanded != null) NovaDisclosure(expanded) else if (onClick != null) Icon(Icons.Rounded.ChevronRight, null, tint = c.onSurfaceVariant.copy(alpha = .6f), modifier = Modifier.size(20.dp))
     }
 }
 
@@ -210,7 +210,7 @@ internal fun SettingsPage(onStartTutorial: () -> Unit, onNotificationSettings: (
         item {
             IOSSection("ПЕРСОНАЛИЗАЦИЯ") {
                 IOSGroup {
-                    IOSRow(Icons.Rounded.Palette, "Оформление", "iOS 27 Liquid Glass · " + if (appearance.isDark) "Тёмная" else "Светлая", onClick = { appearanceOpen = !appearanceOpen })
+                    IOSRow(Icons.Rounded.Palette, "Оформление", "iOS 27 Liquid Glass · " + if (appearance.isDark) "Тёмная" else "Светлая", onClick = { appearanceOpen = !appearanceOpen }, expanded = appearanceOpen)
                     AnimatedVisibility(appearanceOpen) { Column(Modifier.padding(16.dp)) { AppearancePicker(appearance, onAppearanceChanged) } }
                 }
             }
@@ -294,7 +294,7 @@ internal fun ServersPage(
         }
         item {
             IOSGroup(tutorialTarget = TutorialStep.Servers) {
-                IOSRow(Icons.Rounded.Public, "Карта серверов", if (showMap) "Скрыть карту" else "Расположение и доступность", onClick = { showMap = !showMap })
+                IOSRow(Icons.Rounded.Public, "Карта серверов", if (showMap) "Скрыть карту" else "Расположение и доступность", onClick = { showMap = !showMap }, expanded = showMap)
                 AnimatedVisibility(showMap) { ServerMapPanel(profiles, selectedId, checks, vpnState, onCheck, onCancelCheck, onSelect, onConnect) }
             }
         }
@@ -312,7 +312,7 @@ internal fun ServersPage(
                 IOSGroup {
                     IOSRow(Icons.Rounded.Public, profile.name, profile.protocol.uppercase(), onClick = { expanded = !expanded }, trailing = {
                         if (profile.id == selectedId) Icon(Icons.Rounded.CheckCircle, "Выбран", tint = c.primary, modifier = Modifier.size(22.dp))
-                        else Icon(Icons.Rounded.ChevronRight, "Подробности", tint = c.onSurfaceVariant, modifier = Modifier.size(20.dp))
+                        NovaDisclosure(expanded)
                     })
                     AnimatedVisibility(expanded) {
                         Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {

@@ -23,8 +23,8 @@ android {
         applicationId = "com.nova.vpn.android"
         minSdk = 24
         targetSdk = 35
-        versionCode = 45
-        versionName = "0.2.43"
+        versionCode = 46
+        versionName = "0.2.44"
         testInstrumentationRunner = if (providers.gradleProperty("novaMapSmoke").isPresent)
             "com.nova.vpn.android.ServerMapSmokeRunner" else "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -45,8 +45,7 @@ android {
     }
 
     signingConfigs.getByName("debug") {
-        // The transferred preview key is private and must never be committed.
-        // Use it when supplied locally; otherwise Android's normal debug key is used.
+        // Keep private signing files outside the public repository.
         val suppliedKey = providers.gradleProperty("novaSigningKeystore").orNull?.let { file(it) }
         val previewKey = rootProject.file("signing/debug.keystore")
         if (suppliedKey != null) {

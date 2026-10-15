@@ -34,6 +34,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -536,7 +537,7 @@ private fun NovaAndroidApp(
             }
         ) { insets ->
           CompositionLocalProvider(LocalDesignPreset provides designPreset, LocalTutorialStep provides tutorialStep) {
-            Box(
+            BoxWithConstraints(
                 Modifier
                     .fillMaxSize()
                     .novaBackdropSource()
@@ -547,12 +548,13 @@ private fun NovaAndroidApp(
                         bottom = if (designPreset == DesignStyle.IOS_LIQUID_GLASS) 0.dp else insets.calculateBottomPadding()
                     ))
             ) {
+              val tutorialAvailableHeight = maxHeight
               Column(Modifier.fillMaxSize()) {
                 tutorialStep?.let { step ->
                     TutorialPanel(step, closing = tutorialClosing,
                         onBack = { if (tutorialIndex > 0) tutorialIndex-- },
                         onNext = { if (step == TutorialStep.Connect) finishTutorial() else tutorialIndex++ },
-                        onSkip = ::finishTutorial)
+                        onSkip = ::finishTutorial, availableHeight = tutorialAvailableHeight)
                 }
                 AnimatedContent(
                     modifier = Modifier.weight(1f),

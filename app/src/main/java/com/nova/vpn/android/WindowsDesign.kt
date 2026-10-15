@@ -65,7 +65,8 @@ private fun WindowsRow(title: String, detail: String? = null, icon: ImageVector 
             detail?.let { Text(it, fontSize = 12.sp, lineHeight = 17.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) }
         }
         if (trailing != null) trailing()
-        else if (onClick != null) Icon(if (expanded == true) Icons.Outlined.ExpandLess else if (expanded == false) Icons.Outlined.ExpandMore else Icons.Outlined.ChevronRight, null, Modifier.size(18.dp))
+        else if (expanded != null) NovaDisclosure(expanded)
+        else if (onClick != null) Icon(Icons.Outlined.ChevronRight, null, Modifier.size(18.dp))
     }
 }
 
@@ -242,7 +243,7 @@ internal fun WindowsServers(profiles: List<ImportedProfile>, selectedId: String,
                             Text(profile.protocol.uppercase() + if (selectedId == profile.id) " · Выбран" else "", fontSize = 12.sp, color = c.onSurfaceVariant)
                         }
                     }
-                    IconButton({ expanded = !expanded }) { Icon(if (expanded) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore, "Свойства ${profile.name}", Modifier.size(20.dp)) }
+                    IconButton({ expanded = !expanded }) { NovaDisclosure(expanded) }
                 }
                 AnimatedVisibility(expanded) {
                     Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {

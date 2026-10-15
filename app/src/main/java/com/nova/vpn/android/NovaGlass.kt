@@ -2,7 +2,6 @@ package com.nova.vpn.android
 
 import android.app.ActivityManager
 import android.content.Context
-import android.graphics.RuntimeShader
 import android.os.Build
 import android.provider.Settings
 import androidx.annotation.RequiresApi
@@ -101,9 +100,9 @@ internal fun Modifier.novaGlass(useContent: Boolean = false, acrylic: Boolean = 
     }.drawWithCache {
         val fallback = Brush.verticalGradient(listOf(surface, colors.surfaceVariant, surface))
         val dimensions = IntSize(size.width.roundToInt().coerceAtLeast(1), size.height.roundToInt().coerceAtLeast(1))
-        val effect = if (tier > 0 && Build.VERSION.SDK_INT >= 31) backdropEffect(tier, size.width, size.height, (if (liquid) 1f + frost * 31f else 14f) * density, acrylic) else null
+        val effect = if (tier > 0 && Build.VERSION.SDK_INT >= 31) backdropEffect(tier, size.width, size.height, (if (liquid) 8f + kotlin.math.sqrt(frost) * 48f else 14f) * density, acrylic) else null
         crop.renderEffect = effect
-        val tintAlpha = if (acrylic) .78f else if (liquid) .06f + frost * .86f else if (dark) .58f else .64f
+        val tintAlpha = if (acrylic) .78f else if (liquid) .06f + frost * frost * .82f else if (dark) .58f else .64f
         val sheen = Brush.verticalGradient(listOf(Color.White.copy(alpha = if (dark) .12f else .28f), Color.Transparent, Color.Black.copy(alpha = .06f)))
         onDrawBehind {
             if (tier > 0 && backdrop != null && backdrop.recorded) {
@@ -135,28 +134,7 @@ internal fun Modifier.novaGlass(useContent: Boolean = false, acrylic: Boolean = 
 @RequiresApi(31)
 private fun backdropEffect(tier: Int, width: Float, height: Float, blur: Float, acrylic: Boolean): RenderEffect {
     val softened = android.graphics.RenderEffect.createBlurEffect(blur, blur, android.graphics.Shader.TileMode.CLAMP)
-    if (tier < 2 || acrylic) return softened.asComposeRenderEffect()
-    return refractedEffect(width, height, softened).asComposeRenderEffect()
-}
-
-@RequiresApi(33)
-private fun refractedEffect(width: Float, height: Float, softened: android.graphics.RenderEffect): android.graphics.RenderEffect {
-    val shader = RuntimeShader("""
-        uniform shader backdrop;
-        uniform float2 bounds;
-        half4 main(float2 p) {
-            float2 centre = bounds * 0.5;
-            float radius = min(centre.x, centre.y);
-            float2 q = abs(p - centre) - (centre - radius);
-            float distance = length(max(q, float2(0.0))) + min(max(q.x, q.y), 0.0) - radius;
-            float lens = exp(-abs(distance + 2.0) * 0.16);
-            float2 direction = (p - centre) / max(length(p - centre), 1.0);
-            float2 sampleAt = clamp(p - direction * lens * 7.0, float2(0.0), bounds);
-            half4 sampled = backdrop.eval(sampleAt);
-            float rim = exp(-abs(distance + 1.0) * 0.75);
-            return half4(clamp(sampled.rgb + half3(half(rim * .10)), 0.0, 1.0), sampled.a);
-        }
-    """).apply { setFloatUniform("bounds", width, height) }
-    return android.graphics.RenderEffect.createChainEffect(
-        android.graphics.RenderEffect.createRuntimeShaderEffect(shader, "backdrop"), softened)
+    // A synthetic capsule rim created visible ovals inside rectangular panels.
+    // The actual component shape clips the blur; no second contour is painted here.
+    return softened.asComposeRenderEffect()
 }

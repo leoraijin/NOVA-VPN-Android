@@ -34,18 +34,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.nova.vpn.android.data.*
 
-private val ExpressiveFlower = GenericShape { size, _ ->
-    val radius = minOf(size.width, size.height) / 2f
-    for (i in 0..160) {
-        val angle = i * Math.PI * 2 / 160
-        val r = radius * (.88f + .12f * cos(angle * 8).toFloat())
-        val x = size.width / 2 + cos(angle).toFloat() * r
-        val y = size.height / 2 + sin(angle).toFloat() * r
-        if (i == 0) moveTo(x, y) else lineTo(x, y)
-    }
-    close()
-}
-
 @Composable
 internal fun MaterialFrame(title: String, subtitle: String, tutorialTargetIndex: Int = 1, content: LazyListScope.() -> Unit) {
     val state = rememberLazyListState()
@@ -54,7 +42,7 @@ internal fun MaterialFrame(title: String, subtitle: String, tutorialTargetIndex:
     LazyColumn(Modifier.fillMaxSize(), state = state, contentPadding = PaddingValues(16.dp, 24.dp, 16.dp, 24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item {
             Column(Modifier.padding(horizontal = 8.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(title, fontSize = 36.sp, lineHeight = 40.sp, fontWeight = FontWeight.Bold, letterSpacing = (-1).sp)
+                Text(title, fontSize = 32.sp, lineHeight = 38.sp, fontWeight = FontWeight.Normal)
                 Text(subtitle, fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
@@ -67,7 +55,7 @@ internal fun MaterialFrame(title: String, subtitle: String, tutorialTargetIndex:
 internal fun MaterialPanel(color: Color = MaterialTheme.colorScheme.surfaceContainerLow,
     foreground: Color = MaterialTheme.colorScheme.onSurface, target: TutorialStep? = null,
     content: @Composable ColumnScope.() -> Unit) {
-    val shape = if (target == TutorialStep.Connect) RoundedCornerShape(40.dp, 40.dp, 12.dp, 40.dp) else RoundedCornerShape(28.dp)
+    val shape = RoundedCornerShape(24.dp)
     Surface(Modifier.fillMaxWidth().then(if (target != null && LocalTutorialStep.current == target)
         Modifier.border(2.dp, MaterialTheme.colorScheme.primary, shape) else Modifier),
         shape = shape, color = color, contentColor = foreground) {
@@ -77,10 +65,10 @@ internal fun MaterialPanel(color: Color = MaterialTheme.colorScheme.surfaceConta
 
 @Composable
 internal fun MaterialActionRow(icon: ImageVector, title: String, detail: String,
-    onClick: (() -> Unit)? = null, trailing: (@Composable () -> Unit)? = null) {
+    onClick: (() -> Unit)? = null, trailing: (@Composable () -> Unit)? = null, expanded: Boolean? = null) {
     Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
         .then(if (onClick != null) Modifier.clickable(role = Role.Button, onClick = onClick) else Modifier)
-        .background(MaterialTheme.colorScheme.surfaceContainerHigh).heightIn(min = 76.dp).padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+        .heightIn(min = 72.dp).padding(horizontal = 4.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
         Icon(icon, null, Modifier.size(24.dp), tint = MaterialTheme.colorScheme.primary)
         Spacer(Modifier.width(16.dp))
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -88,7 +76,7 @@ internal fun MaterialActionRow(icon: ImageVector, title: String, detail: String,
             Text(detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Spacer(Modifier.width(8.dp))
-        if (trailing != null) trailing() else if (onClick != null) Icon(Icons.Rounded.ArrowForward, null, Modifier.size(20.dp))
+        if (trailing != null) trailing() else if (expanded != null) NovaDisclosure(expanded) else if (onClick != null) Icon(Icons.Rounded.ArrowForward, null, Modifier.size(20.dp))
     }
 }
 
@@ -106,19 +94,19 @@ internal fun MaterialHome(profiles: List<ImportedProfile>, selectedId: String, p
         state.trafficVerified -> "Вы подключены"
         state.connected -> "Туннель включён"
         state.connecting -> "Подключаемся"
-        else -> "Ваш интернет.\nВаш маршрут."
+        else -> "VPN выключен"
     }
-    PageFrame("NOVA VPN", "Соединение под вашим контролем") {
+    PageFrame("Интернет и VPN", "NOVA VPN") {
         item {
             MaterialPanel(if (warning != null) c.errorContainer else c.primaryContainer,
                 if (warning != null) c.onErrorContainer else c.onPrimaryContainer, TutorialStep.Connect) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                    Text(if (state.connected) "СОЕДИНЕНИЕ" else "ЛИЧНЫЙ VPN", style = MaterialTheme.typography.labelMedium)
-                    Surface(shape = ExpressiveFlower, color = c.tertiaryContainer, contentColor = c.onTertiaryContainer) {
-                        Icon(if (warning != null) Icons.Rounded.PriorityHigh else Icons.Rounded.Shield, null, Modifier.padding(24.dp).size(38.dp))
+                    Text("Состояние VPN", style = MaterialTheme.typography.labelLarge)
+                    Surface(shape = RoundedCornerShape(20.dp), color = c.secondaryContainer, contentColor = c.onSecondaryContainer) {
+                        Icon(if (warning != null) Icons.Rounded.PriorityHigh else Icons.Rounded.Shield, null, Modifier.padding(14.dp).size(28.dp))
                     }
                 }
-                Text(headline, fontSize = 44.sp, lineHeight = 46.sp, fontWeight = FontWeight.Bold, letterSpacing = (-1).sp)
+                Text(headline, fontSize = 32.sp, lineHeight = 38.sp, fontWeight = FontWeight.Normal)
                 Text(when {
                     warning != null -> warning
                     state.trafficVerified -> "Доступ через VPN подтверждён HTTPS-запросом."
@@ -129,10 +117,10 @@ internal fun MaterialHome(profiles: List<ImportedProfile>, selectedId: String, p
                 }, style = MaterialTheme.typography.bodyMedium)
                 val interactions = remember { MutableInteractionSource() }
                 val pressed by interactions.collectIsPressedAsState()
-                val radius by animateDpAsState(if (pressed) 16.dp else 38.dp, spring(.75f, 450f), label = "material-connect-shape")
+                val radius by animateDpAsState(if (pressed) 16.dp else 28.dp, spring(.75f, 450f), label = "material-connect-shape")
                 Button(onClick = if (profile == null && !state.connected) onManage else onToggle,
                     enabled = !state.connecting, interactionSource = interactions, shape = RoundedCornerShape(radius),
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 76.dp)) {
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 60.dp)) {
                     if (state.connecting) CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
                     else Icon(if (profile == null && !state.connected) Icons.Rounded.Add else Icons.Rounded.PowerSettingsNew, null)
                     Spacer(Modifier.width(12.dp))
@@ -145,7 +133,7 @@ internal fun MaterialHome(profiles: List<ImportedProfile>, selectedId: String, p
             MaterialPanel {
                 Text("Точка подключения", style = MaterialTheme.typography.titleMedium)
                 MaterialActionRow(Icons.Rounded.Public, profile?.name ?: "Сервер не выбран", profile?.protocol?.uppercase() ?: "Ссылка, QR-код или файл",
-                    onClick = { if (profiles.isEmpty()) onManage() else choose = !choose })
+                    onClick = { if (profiles.isEmpty()) onManage() else choose = !choose }, expanded = if (profiles.isEmpty()) null else choose)
                 AnimatedVisibility(choose) {
                     Column(Modifier.selectableGroup()) {
                         profiles.forEach { p ->
@@ -161,7 +149,7 @@ internal fun MaterialHome(profiles: List<ImportedProfile>, selectedId: String, p
             }
         }
         item {
-            MaterialPanel(c.secondaryContainer, c.onSecondaryContainer) {
+            MaterialPanel {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Rounded.Tune, null); Spacer(Modifier.width(12.dp))
                     Text("Вы выбираете маршрут", style = MaterialTheme.typography.titleMedium)
@@ -170,7 +158,7 @@ internal fun MaterialHome(profiles: List<ImportedProfile>, selectedId: String, p
             }
         }
         item {
-            TextButton({ diagnostics = !diagnostics }) { Icon(Icons.Rounded.Info, null); Spacer(Modifier.width(8.dp)); Text("Состояние и диагностика") }
+            TextButton({ diagnostics = !diagnostics }) { Icon(Icons.Rounded.Info, null); Spacer(Modifier.width(8.dp)); Text("Состояние и диагностика"); Spacer(Modifier.width(8.dp)); NovaDisclosure(diagnostics) }
             AnimatedVisibility(diagnostics) {
                 MaterialPanel {
                     Text("NOVA VPN ${BuildConfig.VERSION_NAME}")
@@ -189,20 +177,16 @@ internal fun MaterialSettings(onTutorial: () -> Unit, onNotifications: () -> Uni
     onUpdateChecks: (Boolean) -> Unit, onCheck: () -> Unit, onAuto: (Boolean) -> Unit) {
     var appearanceOpen by rememberSaveable { mutableStateOf(false) }
     val c = MaterialTheme.colorScheme
-    PageFrame("Настройки", "Сделайте NOVA своей", tutorialTargetIndex = 4) {
+    PageFrame("Настройки", "Параметры NOVA", tutorialTargetIndex = 4) {
         item {
-            MaterialPanel(c.tertiaryContainer, c.onTertiaryContainer) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Rounded.Palette, null, Modifier.size(32.dp)); Spacer(Modifier.width(12.dp))
-                    Text("Ваш цвет. Ваш стиль.", fontSize = 24.sp, lineHeight = 28.sp)
-                }
-                Text("Material 3 Expressive · " + if (appearance.isDark) "Тёмная тема" else "Светлая тема")
-                FilledTonalButton({ appearanceOpen = !appearanceOpen }, Modifier.heightIn(min = 48.dp)) {
-                    Text(if (appearanceOpen) "Скрыть оформление" else "Оформление")
-                    Spacer(Modifier.width(8.dp)); Icon(if (appearanceOpen) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore, null)
+            MaterialPanel {
+                MaterialActionRow(Icons.Rounded.Palette, "Цвет и оформление",
+                    "Pixel · " + if (appearance.isDark) "Тёмная тема" else "Светлая тема",
+                    onClick = { appearanceOpen = !appearanceOpen }, expanded = appearanceOpen)
+                AnimatedVisibility(appearanceOpen) {
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) { AppearancePicker(appearance, onAppearance) }
                 }
             }
-            AnimatedVisibility(appearanceOpen) { Column(Modifier.padding(top = 16.dp)) { MaterialPanel { AppearancePicker(appearance, onAppearance) } } }
         }
         item {
             MaterialPanel {
@@ -215,8 +199,8 @@ internal fun MaterialSettings(onTutorial: () -> Unit, onNotifications: () -> Uni
             }
         }
         item {
-            MaterialPanel(c.secondaryContainer, c.onSecondaryContainer) {
-                Text("Начните с простого", style = MaterialTheme.typography.titleLarge)
+            MaterialPanel {
+                Text("Помощь", style = MaterialTheme.typography.titleMedium)
                 Text("Шесть шагов: от первого сервера до правил маршрутизации.", style = MaterialTheme.typography.bodyMedium)
                 TextButton(onTutorial) { Text("Знакомство с NOVA"); Spacer(Modifier.width(8.dp)); Icon(Icons.Rounded.ArrowForward, null) }
             }
@@ -252,33 +236,27 @@ internal fun MaterialServers(profiles: List<ImportedProfile>, selectedId: String
     LaunchedEffect(tutorial) { if (tutorial == TutorialStep.Servers) showMap = true }
     PageFrame("Серверы", "Выберите точку подключения", tutorialTargetIndex = if (tutorial == TutorialStep.Servers) 2 else 1) {
         item {
-            MaterialPanel(c.secondaryContainer, c.onSecondaryContainer, TutorialStep.Import) {
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text("${profiles.size}", fontSize = 64.sp, lineHeight = 68.sp, fontWeight = FontWeight.Bold)
-                        Text("профилей на устройстве", style = MaterialTheme.typography.bodyMedium)
-                    }
-                    Surface(shape = ExpressiveFlower, color = c.tertiaryContainer, contentColor = c.onTertiaryContainer) { Icon(Icons.Rounded.Public, null, Modifier.padding(20.dp).size(40.dp)) }
-                }
-                NovaButton(onAdd, Modifier.fillMaxWidth().heightIn(min = 56.dp)) { Icon(Icons.Rounded.Add, null); Spacer(Modifier.width(8.dp)); Text("Добавить конфигурацию") }
+            MaterialPanel(target = TutorialStep.Import) {
+                MaterialActionRow(Icons.Rounded.Add, "Добавить конфигурацию", "Ссылка, QR-код или файл", onAdd)
+                Text("Сохранено профилей: ${profiles.size}", style = MaterialTheme.typography.bodySmall,
+                    color = c.onSurfaceVariant)
             }
         }
         item {
             MaterialPanel(target = TutorialStep.Servers) {
-                MaterialActionRow(Icons.Rounded.Map, "Карта и проверка", "Расположение и доступность", { showMap = !showMap })
+                MaterialActionRow(Icons.Rounded.Map, "Карта и проверка", "Расположение и доступность", { showMap = !showMap }, expanded = showMap)
                 AnimatedVisibility(showMap) { ServerMapPanel(profiles, selectedId, checks, state, onCheck, onCancel, onSelect, onConnect) }
             }
         }
         error?.let { item { MaterialPanel(c.errorContainer, c.onErrorContainer) { Text(it) } } }
         if (profiles.isEmpty()) item {
             Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("Следующая остановка —\nваш сервер", fontSize = 26.sp, lineHeight = 32.sp)
+                Text("Нет сохранённых серверов", fontSize = 26.sp, lineHeight = 32.sp)
                 Text("Добавьте ссылку, отсканируйте QR-код или выберите файл конфигурации вашего провайдера.", color = c.onSurfaceVariant)
             }
         }
         items(profiles, key = { it.id }) { profile ->
             val selected = selectedId == profile.id
-            var details by rememberSaveable(profile.id) { mutableStateOf(false) }
             MaterialPanel(if (selected) c.primaryContainer else c.surfaceContainerLow, if (selected) c.onPrimaryContainer else c.onSurface) {
                 Row(Modifier.fillMaxWidth().selectable(selected, role = Role.RadioButton, onClick = { onSelect(profile.id) }).heightIn(min = 56.dp), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
@@ -289,18 +267,9 @@ internal fun MaterialServers(profiles: List<ImportedProfile>, selectedId: String
                 }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                     Text(if (selected) "Выбран для подключения" else "Нажмите, чтобы выбрать", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
-                    IconButton({ details = !details }) { Icon(if (details) Icons.Rounded.ExpandLess else Icons.Rounded.MoreHoriz, "Действия с профилем ${profile.name}") }
+                    ProfileActionsMenu(profile, busy, onWatch, onDelete)
                 }
-                AnimatedVisibility(details) {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text(profile.server, style = MaterialTheme.typography.bodySmall)
-                        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            OutlinedButton({ onWatch(profile) }, enabled = !busy) { Text(if (busy && shareId == profile.id) "Передача…" else "На часы") }
-                            TextButton({ onDelete(profile) }) { Text("Удалить", color = c.error) }
-                        }
-                        if (shareId == profile.id) shareStatus?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
-                    }
-                }
+                if (shareId == profile.id) shareStatus?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
             }
         }
     }

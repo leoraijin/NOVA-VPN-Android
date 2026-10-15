@@ -3,7 +3,7 @@ package com.nova.vpn.android.data
 /** Style and brightness are independent persisted choices. */
 enum class DesignStyle(val label: String, val cardRadius: Int) {
     IOS_LIQUID_GLASS("iOS 27 · Liquid Glass", 22),
-    MATERIAL_YOU("Material You", 28),
+    MATERIAL_YOU("Pixel", 28),
     ONE_UI("One UI 9", 28),
     WINDOWS_11("Windows 11", 8)
 }

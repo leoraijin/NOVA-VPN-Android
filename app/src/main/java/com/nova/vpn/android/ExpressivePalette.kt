@@ -18,8 +18,8 @@ internal fun expressiveColorScheme(hue: Float, dark: Boolean): ColorScheme {
         return Color(ColorUtils.HSLToColor(floatArrayOf((h % 360f + 360f) % 360f, saturation, (lo + hi) / 2)))
     }
     fun a(t: Float) = tone(hue, .72f, t)
-    fun b(t: Float) = tone(hue + 30f, .32f, t)
-    fun c(t: Float) = tone(hue + 70f, .55f, t)
+    fun b(t: Float) = tone(hue, .32f, t)
+    fun c(t: Float) = tone(hue, .55f, t)
     fun n(t: Float) = tone(hue, .12f, t)
     val base = if (dark) darkColorScheme() else lightColorScheme()
     return base.copy(

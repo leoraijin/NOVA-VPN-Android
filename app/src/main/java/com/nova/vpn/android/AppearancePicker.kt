@@ -1,5 +1,7 @@
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 package com.nova.vpn.android
 
+import androidx.compose.foundation.border
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -55,10 +57,15 @@ internal fun AppearancePicker(appearance: Appearance, onChange: (Appearance) -> 
         Text("Цвет интерфейса", style = MaterialTheme.typography.titleMedium)
         Text("Оттенок · ${appearance.materialHue.toInt()}°", style = MaterialTheme.typography.bodySmall)
         Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-            Box(Modifier.fillMaxWidth().height(12.dp).clip(CircleShape).background(Brush.horizontalGradient(
+            Box(Modifier.fillMaxWidth().padding(horizontal = 10.dp).height(12.dp).clip(CircleShape).background(Brush.horizontalGradient(
                 (0..12).map { Color.hsv(it * 30f, .7f, .85f) })))
             Slider(appearance.materialHue, { onChange(appearance.copy(materialHue = it)) }, valueRange = 0f..360f,
                 modifier = Modifier.fillMaxWidth().semantics { contentDescription = "Оттенок интерфейса" },
+                thumb = {
+                    Box(Modifier.size(width = 20.dp, height = 40.dp).clip(CircleShape)
+                        .background(Color.hsv(appearance.materialHue, .7f, .85f))
+                        .then(Modifier.border(2.dp, MaterialTheme.colorScheme.onSurface, CircleShape)))
+                },
                 colors = SliderDefaults.colors(activeTrackColor = Color.Transparent, inactiveTrackColor = Color.Transparent))
         }
     }
@@ -84,7 +91,7 @@ internal fun AppearancePicker(appearance: Appearance, onChange: (Appearance) -> 
             }
         }
     }
-    Text("Цвет Material и прозрачность Liquid Glass сохраняются отдельно. Светлый и тёмный режим доступны для любого стиля.",
+    Text("Цвет Pixel и прозрачность Liquid Glass сохраняются отдельно. Светлый и тёмный режим доступны для любого стиля.",
         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
 }
 
