@@ -921,7 +921,7 @@ private fun PageFrame(title: String, subtitle: String, tutorialTargetIndex: Int 
         contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 20.dp, vertical = 22.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        item {
+        item(contentType = "page-header") {
             Column(Modifier.padding(bottom = 4.dp)) {
                 Text(title, fontSize = 28.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
                 Spacer(Modifier.height(4.dp))
@@ -942,8 +942,10 @@ private fun SoftCard(onClick: (() -> Unit)? = null, tutorialTarget: TutorialStep
                 RoundedCornerShape(LocalDesignPreset.current.cardRadius.dp)) else Modifier)
             .then(onClick?.let { Modifier.clickable(role = Role.Button, onClick = it) } ?: Modifier),
         shape = RoundedCornerShape(LocalDesignPreset.current.cardRadius.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f)),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        // Opaque flat cards avoid alpha blending and rounded shadow layers while scrolling.
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.18f))
     ) {
         Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) { content() }
     }
@@ -1132,7 +1134,7 @@ private fun ServersPage(
             Text("Пока нет профилей", fontWeight = FontWeight.SemiBold)
             Text("Добавьте ссылку или JSON-конфигурацию, чтобы подготовить подключение.", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         } }
-    } else items(profiles, key = { it.id }) { profile ->
+    } else items(profiles, key = { it.id }, contentType = { "server" }) { profile ->
         SoftCard(onClick = if (profile.id == selectedId) null else ({ onSelect(profile.id) }), tutorialTarget = TutorialStep.Servers) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
@@ -1246,7 +1248,7 @@ private fun RoutingPage(
             }
         }
     }
-    items(settings.sites, key = { "site:${it.domain}" }) { rule ->
+    items(settings.sites, key = { "site:${it.domain}" }, contentType = { "site-rule" }) { rule ->
         SoftCard {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {

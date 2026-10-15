@@ -10,6 +10,7 @@ import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.NetworkRequest
+import android.net.LinkProperties
 import android.net.VpnService
 import android.os.Build
 import android.os.ParcelFileDescriptor
@@ -53,6 +54,7 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
     private val connectivity by lazy { getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager }
     private val monitors = ConcurrentHashMap<InterfaceUpdateListener, ConnectivityManager.NetworkCallback>()
     private val availableUnderlays = ConcurrentHashMap<Network, NetworkCapabilities>()
+    private val interfacePublications = ConcurrentHashMap<InterfaceUpdateListener, InterfacePublicationGate>()
     private val serviceQueue = Executors.newSingleThreadExecutor { runnable ->
         Thread(runnable, "nova-vpn-service").apply { isDaemon = true }
     }
@@ -183,6 +185,7 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
         probeQueue.shutdownNow()
         monitors.values.forEach { runCatching { connectivity.unregisterNetworkCallback(it) } }
         monitors.clear()
+        interfacePublications.clear()
         availableUnderlays.clear()
         runCatching {
             serviceQueue.execute {
@@ -430,6 +433,7 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
     }
 
     override fun startDefaultInterfaceMonitor(listener: InterfaceUpdateListener) {
+        interfacePublications[listener] = InterfacePublicationGate()
         connectivity.allNetworks.forEach { network ->
             connectivity.getNetworkCapabilities(network)?.takeIf {
                 it.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN)
@@ -448,6 +452,12 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
             override fun onLost(network: Network) {
                 availableUnderlays.remove(network)
                 publishDefaultInterface(listener, selectUnderlay())
+            }
+            override fun onLinkPropertiesChanged(network: Network, properties: LinkProperties) {
+                // Interface/DNS can become ready after onAvailable/onCapabilitiesChanged.
+                if (availableUnderlays.containsKey(network)) {
+                    publishDefaultInterface(listener, selectUnderlay())
+                }
             }
         }
         monitors.put(listener, callback)?.let { runCatching { connectivity.unregisterNetworkCallback(it) } }
@@ -475,13 +485,16 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
     private fun publishDefaultInterface(listener: InterfaceUpdateListener, network: Network?) {
         val name = network?.let { connectivity.getLinkProperties(it)?.interfaceName }.orEmpty()
         val index = runCatching { JNetworkInterface.getByName(name)?.index ?: 0 }.getOrDefault(0)
-        runCatching { setUnderlyingNetworks(network?.let { arrayOf(it) }) }
-        if (name.isNotBlank() && index > 0) listener.updateDefaultInterface(name, index, false, false)
-        else listener.updateDefaultInterface("", 0, false, false)
+        interfacePublications[listener]?.publish(network?.networkHandle, name, index) {
+            runCatching { setUnderlyingNetworks(network?.let { arrayOf(it) }) }
+            if (name.isNotBlank() && index > 0) listener.updateDefaultInterface(name, index, false, false)
+            else listener.updateDefaultInterface("", 0, false, false)
+        }
     }
 
     override fun closeDefaultInterfaceMonitor(listener: InterfaceUpdateListener) {
         monitors.remove(listener)?.let { runCatching { connectivity.unregisterNetworkCallback(it) } }
+        interfacePublications.remove(listener)
         if (monitors.isEmpty()) {
             availableUnderlays.clear()
             runCatching { setUnderlyingNetworks(null) }

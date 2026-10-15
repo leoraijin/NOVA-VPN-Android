@@ -22,11 +22,16 @@ $env:ANDROID_HOME = $sdkRoot
 $env:ANDROID_SDK_ROOT = $sdkRoot
 $env:ANDROID_USER_HOME = $androidUserHome
 $env:GRADLE_USER_HOME = $gradleHome
+$buildTemp = Join-Path $toolchainRoot 'tmp'
+New-Item -ItemType Directory -Path $buildTemp -Force | Out-Null
+$env:TEMP = $buildTemp
+$env:TMP = $buildTemp
+$env:JAVA_TOOL_OPTIONS = "$env:JAVA_TOOL_OPTIONS -Djava.io.tmpdir=$buildTemp -Duser.home=$androidUserHome".Trim()
 $env:PATH = "$javaHome\bin;$sdkRoot\platform-tools;$env:PATH"
 New-Item -ItemType Directory -Path $androidUserHome -Force | Out-Null
 
 if (-not $GradleArguments -or $GradleArguments.Count -eq 0) {
-    $GradleArguments = @('assembleDebug')
+    $GradleArguments = @('assembleOptimized')
 }
 
 Push-Location $PSScriptRoot

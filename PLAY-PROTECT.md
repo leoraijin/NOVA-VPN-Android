@@ -2,7 +2,7 @@
 
 The reported screenshot says Google has never scanned an app from this developer. It does not identify a specific malware family. That is not proof that an app is safe, and changing an icon/version/signing key does not guarantee removal of the warning.
 
-This project currently distributes experimental debug APKs, not Google Play-reviewed production releases. Do not disable Play Protect. If offered, use Google's app scan; if classification persists, the owner should use Google's official appeal workflow with the exact APK URL, SHA-256, package ID and signing certificate fingerprint. Do not submit personal VPN profiles or logs containing credentials.
+Since 0.2.28 this project distributes experimental non-debug `optimized` APKs signed with the existing development certificate for update compatibility. They have not been reviewed for production distribution by Google Play. The 0.2.27 APK was submitted separately to Play Protect; that submission does not approve subsequent APKs. Do not disable Play Protect. If offered, use Google's app scan; if classification persists, use Google's official appeal workflow with the exact APK URL, SHA-256, package ID and signing certificate fingerprint. Do not submit personal VPN profiles or logs containing credentials.
 
 Official guidance and appeal link: https://developers.google.com/android/play-protect/warning-dev-guidance
 
