@@ -474,10 +474,10 @@ private fun NovaAndroidApp(
 
     fun checkForUpdates(showCurrentVersion: Boolean) {
         if (checkingUpdates) return
-        if (!showCurrentVersion && !preferencesStore.automaticUpdateCheckDue(System.currentTimeMillis())) return
+        if (!showCurrentVersion && !preferencesStore.automaticUpdateCheckDue(System.currentTimeMillis(), BuildConfig.VERSION_NAME)) return
         scope.launch {
             checkingUpdates = true
-            preferencesStore.markUpdateCheck(System.currentTimeMillis())
+            preferencesStore.markUpdateCheck(System.currentTimeMillis(), BuildConfig.VERSION_NAME)
             updateStatus = "Проверка наличия обновлений…"
             val latest = withContext(Dispatchers.IO) { runCatching { AndroidReleaseChecker.fetchLatest() }.getOrNull() }
             checkingUpdates = false
@@ -1523,6 +1523,8 @@ private fun SettingsPage(
         SettingRow(Icons.Rounded.Lock, "Хранилище профилей", "Профили шифруются AES-GCM ключом Android Keystore.")
     } }
     item { SoftCard(tutorialTarget = TutorialStep.Updates) {
+        Text("Установленная версия: ${BuildConfig.VERSION_NAME}", fontSize = 12.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
         Row(
             modifier = Modifier.fillMaxWidth().clickable(role = Role.Button) { onUpdateChecksChanged(!updateChecksEnabled) },
             verticalAlignment = Alignment.CenterVertically

@@ -31,11 +31,12 @@ class AppPreferencesStore(context: Context) {
 
     fun updateChecksEnabled(): Boolean = preferences.getBoolean(KEY_UPDATE_CHECKS, true)
 
-    fun automaticUpdateCheckDue(now: Long): Boolean =
-        UpdateCheckPolicy.isDue(preferences.getLong("last_update_check", 0L), now)
+    fun automaticUpdateCheckDue(now: Long, version: String): Boolean =
+        UpdateCheckPolicy.isDue(preferences.getLong("last_update_check", 0L),
+            preferences.getString("last_update_check_version", null), version, now)
 
-    fun markUpdateCheck(now: Long) {
-        preferences.edit().putLong("last_update_check", now).apply()
+    fun markUpdateCheck(now: Long, version: String) {
+        preferences.edit().putLong("last_update_check", now).putString("last_update_check_version", version).apply()
     }
 
     fun setUpdateChecksEnabled(enabled: Boolean) {
