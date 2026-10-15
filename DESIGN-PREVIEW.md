@@ -1,5 +1,7 @@
 # Android 0.2.43 design preview
 
+The same interface is also available as the normal stable-package 0.2.43 update at https://github.com/leoraijin/NOVA-VPN-Android/releases/tag/v0.2.43. The notes below describe only the separate preview APKs.
+
 This branch contains the transferred Android design work. Download the ARM64 or ARMv7 APK from https://github.com/leoraijin/NOVA-VPN-Android/releases/tag/v0.2.43-design.
 
 The published APKs use application ID `com.nova.vpn.android.designpreview`, versionCode 45, and versionName `0.2.43-design`. They install alongside the stable client. They cannot update the stable app or automatically share its encrypted profiles.

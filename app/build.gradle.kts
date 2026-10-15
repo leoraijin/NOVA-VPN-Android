@@ -47,8 +47,12 @@ android {
     signingConfigs.getByName("debug") {
         // The transferred preview key is private and must never be committed.
         // Use it when supplied locally; otherwise Android's normal debug key is used.
+        val suppliedKey = providers.gradleProperty("novaSigningKeystore").orNull?.let { file(it) }
         val previewKey = rootProject.file("signing/debug.keystore")
-        if (previewKey.isFile) storeFile = previewKey
+        if (suppliedKey != null) {
+            require(suppliedKey.isFile) { "Specified signing keystore does not exist" }
+            storeFile = suppliedKey
+        } else if (previewKey.isFile) storeFile = previewKey
     }
 
     buildTypes {
