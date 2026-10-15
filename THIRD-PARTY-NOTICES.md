@@ -1,5 +1,9 @@
 # Third-party components
 
+## Natural Earth geographic data
+
+The offline server map uses country boundaries from Natural Earth 1:110m Admin 0 Countries and city labels from Natural Earth 1:50m Populated Places. A compact derivative is bundled as `assets/world-map.json`; geographic data is public domain. Sources: <https://www.naturalearthdata.com/> and <https://www.naturalearthdata.com/about/terms-of-use/>. Profile locations are inferred locally from profile names and are not verified physical server locations.
+
 ## sing-box / libbox Android binding
 
 The Android app directly uses `com.github.singbox-android:libbox:1.14.1` as its VPN engine. The Android binding is maintained at <https://github.com/singbox-android/libbox> and is based on <https://github.com/SagerNet/sing-box>.

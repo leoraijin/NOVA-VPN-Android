@@ -22,11 +22,11 @@ internal class AndroidTrafficProbe private constructor(
 
     fun cancel() { cancelled.set(true); runCatching { socket?.close() } }
 
-    fun check(): Boolean {
+    fun check(timeoutMillis: Int = 18_000): Boolean {
         var stage = "local_socket"
         VpnDiagnostics.record("probe_start")
         val deadline = java.util.Timer("nova-probe-deadline", true)
-        deadline.schedule(object : java.util.TimerTask() { override fun run() { cancelProbe() } }, 18000)
+        deadline.schedule(object : java.util.TimerTask() { override fun run() { cancelProbe() } }, timeoutMillis.toLong())
         return try {
         check(!cancelled.get())
         Socket().use { raw ->

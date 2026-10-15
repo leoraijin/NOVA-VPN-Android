@@ -7,6 +7,7 @@ plugins {
 android {
     namespace = "com.nova.vpn.android"
     compileSdk = 35
+    testBuildType = if (providers.gradleProperty("novaMapSmoke").isPresent) "maptest" else "debug"
 
     splits {
         abi {
@@ -21,9 +22,10 @@ android {
         applicationId = "com.nova.vpn.android"
         minSdk = 24
         targetSdk = 35
-        versionCode = 34
-        versionName = "0.2.32"
-        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        versionCode = 35
+        versionName = "0.2.33"
+        testInstrumentationRunner = if (providers.gradleProperty("novaMapSmoke").isPresent)
+            "com.nova.vpn.android.ServerMapSmokeRunner" else "androidx.test.runner.AndroidJUnitRunner"
     }
 
     compileOptions {
@@ -49,6 +51,11 @@ android {
             // Preserve update compatibility with existing experimental installations.
             signingConfig = signingConfigs.getByName("debug")
             matchingFallbacks += listOf("release")
+        }
+        create("maptest") {
+            initWith(getByName("optimized"))
+            applicationIdSuffix = ".maptest"
+            matchingFallbacks += listOf("optimized", "release")
         }
     }
 

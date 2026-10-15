@@ -87,8 +87,12 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.compose.runtime.produceState
 import com.nova.vpn.android.data.AppIconCache
 import androidx.compose.runtime.compositionLocalOf
@@ -357,6 +361,20 @@ private fun NovaAndroidApp(
     var pendingVpnProfileName by remember { mutableStateOf<String?>(null) }
     var connectError by remember { mutableStateOf<String?>(null) }
     val vpnState by VpnRuntime.state.collectAsStateWithLifecycle()
+    val serverChecks = remember { ServerChecks(context.applicationContext, scope) }
+    val serverCheckState by serverChecks.state.collectAsStateWithLifecycle()
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner, serverChecks) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_STOP) serverChecks.cancel()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer); serverChecks.cancel() }
+    }
+    LaunchedEffect(page, vpnState.connecting) {
+        if (page != Page.Servers || vpnState.connecting) serverChecks.cancel()
+    }
+    LaunchedEffect(profiles) { serverChecks.reset() }
     var reconnectJob by remember { mutableStateOf<Job?>(null) }
     val notificationPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) {
@@ -662,6 +680,19 @@ private fun NovaAndroidApp(
                         Page.Servers -> ServersPage(
                             profiles = profiles,
                             selectedId = selectedProfileId,
+                            vpnState = vpnState,
+                            checks = serverCheckState,
+                            onCheck = { serverChecks.start(profiles) },
+                            onCancelCheck = { serverChecks.cancel() },
+                            onConnect = {
+                                serverChecks.cancel()
+                                val selected = profiles.firstOrNull { it.id == selectedProfileId }
+                                if (selected != null) scope.launch {
+                                    runCatching { withContext(Dispatchers.Default) { SingBoxConfigFactory.build(selected, routing, context.packageName) } }
+                                        .onSuccess { requestVpnStart(it, selected.name) }
+                                        .onFailure { connectError = "Не удалось подготовить подключение." }
+                                }
+                            },
                             error = profileError,
                             shareStatus = profileShareStatus,
                             shareProfileId = profileShareId,
@@ -1166,6 +1197,11 @@ private fun HomePage(
 private fun ServersPage(
     profiles: List<ImportedProfile>,
     selectedId: String,
+    vpnState: VpnUiState,
+    checks: ServerCheckState,
+    onCheck: () -> Unit,
+    onCancelCheck: () -> Unit,
+    onConnect: () -> Unit,
     error: String?,
     shareStatus: String?,
     shareProfileId: String?,
@@ -1175,7 +1211,10 @@ private fun ServersPage(
     onSendToWatch: (ImportedProfile) -> Unit,
     onDelete: (ImportedProfile) -> Unit
 ) = PageFrame("Серверы", "Профили хранятся зашифрованно на устройстве",
-    tutorialTargetIndex = if (LocalTutorialStep.current == TutorialStep.Servers) 2 + (if (error != null) 1 else 0) else 1) {
+    tutorialTargetIndex = if (LocalTutorialStep.current == TutorialStep.Servers) 3 + (if (error != null) 1 else 0) else 2) {
+    item(contentType = "server-map") {
+        ServerMapPanel(profiles, selectedId, checks, vpnState, onCheck, onCancelCheck, onSelect, onConnect)
+    }
     item { SoftCard(tutorialTarget = TutorialStep.Import) {
         Text("Вставьте VPN-ссылку, HTTPS-подписку, список ссылок или sing-box JSON. Поддерживаются VLESS, VMess, Trojan, Shadowsocks, Hysteria2 и TUIC.", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Button(onClick = onAdd, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
@@ -1198,6 +1237,7 @@ private fun ServersPage(
                 Column(Modifier.weight(1f)) {
                     Text(profile.name, fontWeight = FontWeight.SemiBold)
                     Text("${profile.protocol.uppercase()}${if (profile.server.isNotBlank()) " · ${profile.server}:${profile.port}" else ""}", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    ServerCheckBadge(checks.results[profile.id], checks.currentId == profile.id)
                 }
                 if (profile.id == selectedId) {
                     Text("Выбран", color = MaterialTheme.colorScheme.primary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)

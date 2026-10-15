@@ -48,6 +48,10 @@
             </intent-filter>
         </service>
         <service
+            android:name=".ServerCheckService"
+            android:exported="false"
+            android:process=":server_checks" />
+        <service
             android:name=".NovaVpnTileService"
             android:label="NOVA VPN"
             android:icon="@drawable/ic_qs_vpn"
