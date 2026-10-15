@@ -16,6 +16,8 @@ import kotlinx.coroutines.withContext
 internal object AppIconCache {
     private val icons = LruCache<String, ImageBitmap>(64)
     private val loading = Mutex()
+    fun clear() = icons.evictAll()
+    fun trim() = icons.trimToSize(16)
     fun peek(packageName: String): ImageBitmap? = icons.get(packageName)
     suspend fun load(manager: PackageManager, packageName: String): ImageBitmap? =
         withContext(Dispatchers.IO) {

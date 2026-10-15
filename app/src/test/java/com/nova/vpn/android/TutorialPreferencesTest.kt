@@ -11,6 +11,18 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
 class TutorialPreferencesTest {
+    @Test fun updateCooldownSurvivesStoreRecreationWithoutChangingPreferences() {
+        val context = RuntimeEnvironment.getApplication()
+        val store = AppPreferencesStore(context)
+        assertTrue(store.automaticUpdateCheckDue(1000))
+        store.markUpdateCheck(1000)
+        val reopened = AppPreferencesStore(context)
+        assertFalse(reopened.automaticUpdateCheckDue(1001))
+        assertTrue(reopened.automaticUpdateCheckDue(1000 + 6 * 60 * 60 * 1000L))
+        assertTrue(reopened.updateChecksEnabled())
+        assertFalse(reopened.autoConnectEnabled())
+    }
+
     @Test fun freshInstallationOffersTutorialUntilExplicitlyDismissed() {
         val context = RuntimeEnvironment.getApplication()
         assertFalse(AppPreferencesStore(context).tutorialDismissed())

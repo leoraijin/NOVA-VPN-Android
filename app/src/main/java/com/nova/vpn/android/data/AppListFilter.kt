@@ -7,7 +7,11 @@ data class AppListEntry(
     val packageName: String,
     val label: String,
     val icon: Drawable? = null
-)
+) {
+    // Built once when package metadata loads, rather than allocating two strings per keystroke.
+    internal val searchLabel = label.lowercase(Locale.ROOT)
+    internal val searchPackage = packageName.lowercase(Locale.ROOT)
+}
 
 /** Filters installed apps by their visible name or Android package identifier. */
 fun filterAppList(apps: List<AppListEntry>, query: String): List<AppListEntry> {
@@ -15,7 +19,6 @@ fun filterAppList(apps: List<AppListEntry>, query: String): List<AppListEntry> {
     if (normalizedQuery.isEmpty()) return apps
 
     return apps.filter { app ->
-        app.label.lowercase(Locale.ROOT).contains(normalizedQuery) ||
-            app.packageName.lowercase(Locale.ROOT).contains(normalizedQuery)
+        app.searchLabel.contains(normalizedQuery) || app.searchPackage.contains(normalizedQuery)
     }
 }

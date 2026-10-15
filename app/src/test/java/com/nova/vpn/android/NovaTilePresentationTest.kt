@@ -4,6 +4,14 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class NovaTilePresentationTest {
+    @Test fun transportNoticesDoNotRequireSystemTileRefresh() {
+        val connected = VpnUiState(connected = true)
+        assertEquals(NovaTilePresentation.from(connected, null),
+            NovaTilePresentation.from(connected.copy(transportNotice = "timeout", warning = "warning"), null))
+        assertNotEquals(NovaTilePresentation.from(connected, null),
+            NovaTilePresentation.from(connected.copy(trafficVerified = true), null))
+    }
+
     @Test fun unconfirmedIsStillActiveAndNotAnError() {
         val tile = NovaTilePresentation.from(VpnUiState(connected = true, trafficCheckFailed = true), "Poland")
         assertTrue(tile.active)

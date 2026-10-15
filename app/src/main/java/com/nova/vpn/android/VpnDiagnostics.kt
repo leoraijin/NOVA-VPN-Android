@@ -8,6 +8,7 @@ import org.json.JSONObject
 internal object VpnDiagnostics {
     private val events = ArrayDeque<String>()
     private var started = System.nanoTime()
+    private val validCode = Regex("[a-z0-9_:=.-]{1,96}")
 
     @Synchronized fun reset() {
         events.clear()
@@ -16,7 +17,7 @@ internal object VpnDiagnostics {
     }
 
     @Synchronized fun record(code: String) {
-        require(code.matches(Regex("[a-z0-9_:=.-]{1,96}")))
+        require(code.matches(validCode))
         val event = "${(System.nanoTime() - started) / 1_000_000_000}s $code"
         if (events.lastOrNull() == event) return
         if (events.size == 40) events.removeFirst()

@@ -31,6 +31,13 @@ class AppPreferencesStore(context: Context) {
 
     fun updateChecksEnabled(): Boolean = preferences.getBoolean(KEY_UPDATE_CHECKS, true)
 
+    fun automaticUpdateCheckDue(now: Long): Boolean =
+        UpdateCheckPolicy.isDue(preferences.getLong("last_update_check", 0L), now)
+
+    fun markUpdateCheck(now: Long) {
+        preferences.edit().putLong("last_update_check", now).apply()
+    }
+
     fun setUpdateChecksEnabled(enabled: Boolean) {
         check(preferences.edit().putBoolean(KEY_UPDATE_CHECKS, enabled).commit()) {
             "Не удалось сохранить настройку обновлений"

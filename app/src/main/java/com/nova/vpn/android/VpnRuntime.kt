@@ -41,8 +41,13 @@ object VpnRuntime {
     }
 
     private fun publish(next: VpnUiState) {
-        if (mutableState.value == next) return
+        val previous = mutableState.value
+        if (previous == next) return
         mutableState.value = next
-        appContext?.let(NovaVpnTileService::requestRefresh)
+        // A transport notice does not change the tile. Avoid waking SystemUI and
+        // decrypting the profile vault again for every different core warning.
+        if (NovaTilePresentation.from(previous, null) != NovaTilePresentation.from(next, null)) {
+            appContext?.let(NovaVpnTileService::requestRefresh)
+        }
     }
 }

@@ -425,7 +425,7 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
         processPath = ""
         setAndroidPackageNames(StringArrayIterator(emptyList()))
         if (Build.VERSION.SDK_INT >= 29 && sourceAddress != null && destinationAddress != null
-            && ipProtocol in setOf(OsConstants.IPPROTO_TCP, OsConstants.IPPROTO_UDP)) {
+            && (ipProtocol == OsConstants.IPPROTO_TCP || ipProtocol == OsConstants.IPPROTO_UDP)) {
             // Failure remains a non-null unknown owner; successful lookups enable app rules.
             runCatching {
                 val uid = connectivity.getConnectionOwnerUid(ipProtocol,

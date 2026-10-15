@@ -164,6 +164,14 @@ class MainActivity : ComponentActivity() {
         setIntent(intent)
         if (intent.action == NovaVpnTileService.ACTION_CONNECT_FROM_TILE) tileConnectRequested = true
     }
+
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        if (level >= android.content.ComponentCallbacks2.TRIM_MEMORY_BACKGROUND ||
+            level == android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL) AppIconCache.clear()
+        else if (level >= android.content.ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN ||
+            level >= android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW) AppIconCache.trim()
+    }
 }
 
 private enum class Page(val title: String, val icon: ImageVector) {
@@ -466,8 +474,10 @@ private fun NovaAndroidApp(
 
     fun checkForUpdates(showCurrentVersion: Boolean) {
         if (checkingUpdates) return
+        if (!showCurrentVersion && !preferencesStore.automaticUpdateCheckDue(System.currentTimeMillis())) return
         scope.launch {
             checkingUpdates = true
+            preferencesStore.markUpdateCheck(System.currentTimeMillis())
             updateStatus = "Проверка наличия обновлений…"
             val latest = withContext(Dispatchers.IO) { runCatching { AndroidReleaseChecker.fetchLatest() }.getOrNull() }
             checkingUpdates = false
@@ -551,7 +561,7 @@ private fun NovaAndroidApp(
         }
     }
 
-    LaunchedEffect(tutorialStep == null) {
+    LaunchedEffect(tutorialStep == null, updateChecksEnabled) {
         if (tutorialStep == null && updateChecksEnabled) checkForUpdates(showCurrentVersion = false)
     }
 
@@ -1096,7 +1106,17 @@ private fun HomePage(
         if (profiles.isEmpty()) {
             Text("Добавьте VPN-конфигурацию во вкладке «Серверы», и она появится здесь.", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         } else {
-            profiles.sortedBy { it.id != selectedProfileId }.take(3).forEach { item ->
+            val quickProfiles = remember(profiles, selectedProfileId) {
+                val selected = profiles.firstOrNull { it.id == selectedProfileId }
+                buildList {
+                    if (selected != null) add(selected)
+                    for (profile in profiles) {
+                        if (size == 3) break
+                        if (profile.id != selectedProfileId) add(profile)
+                    }
+                }
+            }
+            quickProfiles.forEach { item ->
                 val selected = item.id == selectedProfileId
                 Surface(
                     modifier = Modifier
@@ -1215,7 +1235,11 @@ private fun RoutingPage(
     var editingDomain by rememberSaveable { mutableStateOf<String?>(null) }
     var editedDomain by rememberSaveable { mutableStateOf("") }
     var editError by rememberSaveable { mutableStateOf<String?>(null) }
-    val visibleApps = remember(apps, searchQuery) { filterAppList(apps, searchQuery) }
+    val visibleApps by produceState(apps, apps, searchQuery) {
+        // Cancel superseded searches and keep package scans off the UI thread.
+        if (searchQuery.isNotBlank()) delay(120)
+        value = withContext(Dispatchers.Default) { filterAppList(apps, searchQuery) }
+    }
 
     editingDomain?.let { original ->
         AlertDialog(

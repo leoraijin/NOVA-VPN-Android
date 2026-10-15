@@ -12,6 +12,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.withContext
 import com.nova.vpn.android.data.AppRoutingStore
 import com.nova.vpn.android.data.ProfileVault
@@ -19,6 +21,14 @@ import com.nova.vpn.android.data.SelectedProfileStore
 import com.nova.vpn.android.data.SingBoxConfigFactory
 
 class NovaVpnTileService : TileService() {
+    private val tileScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private var refreshJob: Job? = null
+
+    override fun onDestroy() {
+        tileScope.cancel()
+        super.onDestroy()
+    }
+
     override fun onStartListening() {
         super.onStartListening()
         refreshTile()
@@ -40,7 +50,9 @@ class NovaVpnTileService : TileService() {
                 val profile = profiles.firstOrNull { it.id == selectedId } ?: profiles.firstOrNull()
                     ?: error("Сначала добавьте VPN-конфигурацию в NOVA VPN.")
                 val routing = withContext(Dispatchers.IO) { AppRoutingStore(appContext).load() }
-                profile.name to SingBoxConfigFactory.build(profile, routing, appContext.packageName)
+                profile.name to withContext(Dispatchers.Default) {
+                    SingBoxConfigFactory.build(profile, routing, appContext.packageName)
+                }
             }.onSuccess { (profileName, config) ->
                 withContext(Dispatchers.Main) {
                     if (VpnService.prepare(this@NovaVpnTileService) != null) {
@@ -82,7 +94,8 @@ class NovaVpnTileService : TileService() {
     private fun refreshTile() {
         val vpnState = VpnRuntime.state.value
         updateTile(vpnState, null)
-        tileScope.launch {
+        refreshJob?.cancel()
+        refreshJob = tileScope.launch {
             val profileName = withContext(Dispatchers.IO) {
                 runCatching {
                     val profiles = ProfileVault(applicationContext).load()
@@ -109,7 +122,6 @@ class NovaVpnTileService : TileService() {
 
     companion object {
         const val ACTION_CONNECT_FROM_TILE = "com.nova.vpn.android.CONNECT_FROM_TILE"
-        private val tileScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
         fun requestRefresh(context: android.content.Context) {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
