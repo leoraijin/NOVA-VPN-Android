@@ -104,6 +104,8 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
             ?.trim()?.replace(Regex("\\s+"), " ")?.take(48)?.takeIf(String::isNotBlank)
             ?: "Выбранная конфигурация"
 
+        VpnDiagnostics.reset()
+
         VpnRuntime.setConnecting()
         WearStatusSync.publish(this, "connecting")
         try {
@@ -121,9 +123,11 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
                 Log.i(TAG, "VPN engine startup stage=$stage")
                 if (VpnService.prepare(this) != null) error("Не выдано разрешение Android на VPN")
                 stage = "libbox-setup"
+                VpnDiagnostics.record("engine_setup")
                 Log.i(TAG, "VPN engine startup stage=$stage")
                 ensureLibboxSetup()
                 stage = "config-validation"
+                VpnDiagnostics.record("config_validation")
                 Log.i(TAG, "VPN engine startup stage=$stage")
                 trafficProbe?.cancel()
                 val probe = runCatching { AndroidTrafficProbe.prepare(config) }.getOrNull()
@@ -143,8 +147,10 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
                 stage = "tunnel-start-or-reload"
                 Log.i(TAG, "VPN engine startup stage=$stage")
                 server.startOrReloadService(runtimeConfig, OverrideOptions())
+                VpnDiagnostics.record("engine_started")
                 startDebugLogStream()
                 VpnRuntime.setConnected()
+                VpnDiagnostics.record("tunnel_active")
                 WearStatusSync.publish(this, "connected")
                 updateNotification("VPN подключён")
                 if (probe != null && startId == latestStartId) {
@@ -159,6 +165,7 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
                     }
                 }
             } catch (error: Throwable) {
+                VpnDiagnostics.record("startup_failed")
                 trafficProbe?.cancel(); trafficProbe = null
                 Log.e(TAG, "VPN start failed at stage=$stage", error)
                 runCatching { commandServer?.close() }
@@ -264,6 +271,7 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
                 while (messageList.hasNext()) {
                     val entry = messageList.next()
                     val rawMessage = entry.message.orEmpty()
+                    if (entry.level <= 3) VpnDiagnostics.coreMessage(rawMessage)
                     VpnTransportHealth.warningFor(rawMessage)?.let { warning ->
                         VpnRuntime.setTransportWarning(warning)
                         // Keep the per-request diagnostic; do not mark the whole VPN or watch as failed.
@@ -487,6 +495,14 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
         val name = network?.let { connectivity.getLinkProperties(it)?.interfaceName }.orEmpty()
         val index = runCatching { JNetworkInterface.getByName(name)?.index ?: 0 }.getOrDefault(0)
         interfacePublications[listener]?.publish(network?.networkHandle, name, index) {
+            val caps = network?.let { connectivity.getNetworkCapabilities(it) }
+            VpnDiagnostics.record(when {
+                network == null -> "underlay_none"
+                caps?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true -> "underlay_wifi"
+                caps?.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) == true -> "underlay_cellular"
+                else -> "underlay_other"
+            })
+            if (name.isBlank() || index <= 0) VpnDiagnostics.record("underlay_interface_not_ready")
             runCatching { setUnderlyingNetworks(network?.let { arrayOf(it) }) }
             if (name.isNotBlank() && index > 0) listener.updateDefaultInterface(name, index, false, false)
             else listener.updateDefaultInterface("", 0, false, false)

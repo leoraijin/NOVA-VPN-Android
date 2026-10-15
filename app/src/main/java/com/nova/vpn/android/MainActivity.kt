@@ -616,6 +616,13 @@ private fun NovaAndroidApp(
                             profile = profiles.firstOrNull { it.id == selectedProfileId },
                             vpnState = vpnState,
                             error = connectError ?: vpnState.error,
+                            onCopyDiagnostics = {
+                                val report = VpnDiagnostics.report(profiles.firstOrNull { it.id == selectedProfileId }, routing,
+                                    Build.VERSION.SDK_INT, vpnState)
+                                val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                                clipboard.setPrimaryClip(android.content.ClipData.newPlainText("NOVA VPN diagnostics", report))
+                                Toast.makeText(context, "Диагностика скопирована. Отправьте этот текст разработчику.", Toast.LENGTH_LONG).show()
+                            },
                             onSelectProfile = {
                                 selectedProfileId = it
                                 scope.launch(Dispatchers.IO) {
@@ -979,6 +986,7 @@ private fun HomePage(
     profile: ImportedProfile?,
     vpnState: VpnUiState,
     error: String?,
+    onCopyDiagnostics: () -> Unit,
     onSelectProfile: (String) -> Unit,
     onToggle: () -> Unit
 ) = PageFrame("Добрый день", "Ваше подключение под контролем") {
@@ -1069,6 +1077,12 @@ private fun HomePage(
                 }
             }
         }
+        Text("NOVA VPN ${BuildConfig.VERSION_NAME}", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        OutlinedButton(onClick = onCopyDiagnostics, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+            Text("Скопировать диагностику")
+        }
+        Text("Последние события подключения без ключей, адресов сервера и посещённых сайтов.",
+            fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
     } }
     if (!error.isNullOrBlank()) item { SoftCard { Text(error, color = MaterialTheme.colorScheme.error, fontSize = 13.sp) } }
     item { SoftCard {

@@ -23,6 +23,8 @@ internal class AndroidTrafficProbe private constructor(
     fun cancel() { cancelled.set(true); runCatching { socket?.close() } }
 
     fun check(): Boolean {
+        var stage = "local_socket"
+        VpnDiagnostics.record("probe_start")
         val deadline = java.util.Timer("nova-probe-deadline", true)
         deadline.schedule(object : java.util.TimerTask() { override fun run() { cancelProbe() } }, 18000)
         return try {
@@ -32,6 +34,7 @@ internal class AndroidTrafficProbe private constructor(
             check(!cancelled.get())
             raw.connect(InetSocketAddress("127.0.0.1", port), 3000)
             raw.soTimeout = 7000
+            stage = "socks_auth"
             val input = raw.getInputStream()
             val output = raw.getOutputStream()
             // SOCKS5 username/password: another local app cannot use this test listener.
@@ -41,9 +44,13 @@ internal class AndroidTrafficProbe private constructor(
             val secret = password.toByteArray(StandardCharsets.UTF_8)
             output.write(byteArrayOf(1, user.size.toByte()) + user + byteArrayOf(secret.size.toByte()) + secret)
             output.flush(); check(input.read() == 1 && input.read() == 0)
+            stage = "proxy_connect"
             // A numeric destination avoids bootstrap dependence on Android/browser DNS.
             output.write(byteArrayOf(5, 1, 0, 1, 1, 1, 1, 1, 1, -69)); output.flush()
-            check(input.read() == 5 && input.read() == 0 && input.read() == 0)
+            check(input.read() == 5)
+            val reply = input.read()
+            if (reply in 1..8) VpnDiagnostics.record("probe_socks_reply_$reply")
+            check(reply == 0 && input.read() == 0)
             val addressBytes = when (input.read()) { 1 -> 4; 4 -> 16; 3 -> input.read().also { check(it >= 0) }; else -> error("SOCKS address") }
             repeat(addressBytes + 2) { check(input.read() >= 0) }
             check(!cancelled.get())
@@ -52,7 +59,9 @@ internal class AndroidTrafficProbe private constructor(
                 check(!cancelled.get())
                 tls.soTimeout = 7000
                 tls.sslParameters = tls.sslParameters.apply { endpointIdentificationAlgorithm = "HTTPS" }
+                stage = "target_tls"
                 tls.startHandshake()
+                stage = "https_response"
                 tls.getOutputStream().apply {
                     write("GET /cdn-cgi/trace HTTP/1.1\r\nHost: 1.1.1.1\r\nConnection: close\r\n\r\n".toByteArray(StandardCharsets.US_ASCII))
                     flush()
@@ -65,10 +74,22 @@ internal class AndroidTrafficProbe private constructor(
                     response.append(line).append('\n')
                     if (line.startsWith("ip=")) break
                 }
-                validTrace(response.toString())
+                validTrace(response.toString()).also {
+                    VpnDiagnostics.record(if (it) "probe_success" else "probe_invalid_response")
+                }
             }
         }
-        } catch (_: Exception) { false } finally { deadline.cancel(); socket = null }
+        } catch (error: Exception) {
+            val category = when (error) {
+                is java.net.SocketTimeoutException -> "timeout"
+                is javax.net.ssl.SSLException -> "tls_error"
+                is java.net.ConnectException -> "connect_error"
+                is java.io.IOException -> "io_error"
+                else -> "protocol_error"
+            }
+            VpnDiagnostics.record("probe_failed_${stage}_$category")
+            false
+        } finally { deadline.cancel(); socket = null }
     }
 
     private fun cancelProbe() = cancel()
