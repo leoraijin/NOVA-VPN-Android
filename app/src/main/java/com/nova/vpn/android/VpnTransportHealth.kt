@@ -5,6 +5,12 @@ internal object VpnTransportHealth {
     fun warningFor(logMessage: String): String? {
         val message = logMessage.lowercase()
         return when {
+            "no application protocol" in message || "alpn" in message ->
+                "Не удалось согласовать TLS/ALPN. Проверьте параметры TLS профиля; gRPC требует HTTP/2."
+            "grpc" in message && ("unimplemented" in message || "unexpected http status" in message || "unexpected status" in message || "404" in message) ->
+                "Сервер не принял gRPC-запрос. Проверьте serviceName и транспорт профиля."
+            "dns" in message && ("timeout" in message || "exchange failed" in message || "no such host" in message) ->
+                "Не удалось разрешить DNS-имя через настроенный сервер. Проверьте DNS профиля и доступность узла."
             "x509: certificate has expired" in message || "certificate is expired" in message ->
                 "Сертификат VPN-сервера просрочен. Обновите профиль у провайдера."
             "x509: certificate is valid for" in message || "certificate verification failed" in message ->

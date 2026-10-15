@@ -11,12 +11,14 @@ class AppRoutingStore(context: Context) {
         mode = runCatching { AppRoutingMode.valueOf(prefs.getString(KEY_MODE, null) ?: "") }
             .getOrDefault(AppRoutingMode.EXCLUDE_SELECTED),
         packages = prefs.getStringSet(KEY_PACKAGES, emptySet()).orEmpty().toSet(),
-        sites = readSites()
+        sites = readSites(),
+        ipv6Enabled = prefs.getBoolean("ipv6_enabled", false)
     )
 
     fun save(settings: AppRoutingSettings) {
         check(prefs.edit()
             .putString(KEY_MODE, settings.mode.name)
+            .putBoolean("ipv6_enabled", settings.ipv6Enabled)
             .putStringSet(KEY_PACKAGES, settings.packages.toSet())
             .putString(KEY_SITES, JSONArray().apply {
                 settings.sites.distinctBy { it.domain }.forEach { rule ->

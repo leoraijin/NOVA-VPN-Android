@@ -227,12 +227,12 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
         tunDescriptor = null
     }
 
-    /** Forward sing-box core logs to logcat only in local debug builds for diagnostics. */
+    /** Read core warnings for safe UI notices; detailed logs/connection events are debug-only. */
     private fun startDebugLogStream() {
-        if (!BuildConfig.DEBUG || debugLogClient != null) return
+        if (debugLogClient != null) return
         val options = CommandClientOptions().apply {
             addCommand(Libbox.CommandLog)
-            addCommand(Libbox.CommandConnections)
+            if (BuildConfig.DEBUG) addCommand(Libbox.CommandConnections)
         }
         val client = CommandClient(object : CommandClientHandler {
             override fun clearLogs() = Unit
@@ -268,6 +268,7 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
                         VpnRuntime.setTransportWarning(warning)
                         // Keep the per-request diagnostic; do not mark the whole VPN or watch as failed.
                     }
+                    if (!BuildConfig.DEBUG) continue
                     val message = redactDiagnosticSecrets(rawMessage)
                     when (entry.level) {
                         1, 2 -> Log.e(TAG, "sing-box: $message")

@@ -23,6 +23,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -80,6 +81,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.dynamicDarkColorScheme
+import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -103,6 +106,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -171,6 +175,8 @@ private enum class Page(val title: String, val icon: ImageVector) {
 
 private enum class DesignPreset(val storedValue: String, val label: String, val cardRadius: Int) {
     IOS_GLASS("IOS_GLASS", "iOS 27 · Liquid Glass", 28),
+    IOS_GLASS_DARK("IOS_GLASS_DARK", "Liquid Glass Dark", 28),
+    MATERIAL_YOU("MATERIAL_YOU", "Material You · система", 28),
     AMBER_GLASS("AMBER_GLASS", "Amber Glass", 30),
     ONE_UI("ONE_UI", "One UI 8.0", 30),
     WINDOWS_LIGHT("WINDOWS_LIGHT", "Windows 11 Light", 16),
@@ -189,7 +195,20 @@ private enum class DesignPreset(val storedValue: String, val label: String, val 
 
 private val LocalDesignPreset = compositionLocalOf { DesignPreset.IOS_GLASS }
 
-private fun designColorScheme(preset: DesignPreset) = when (preset) {
+private fun designColorScheme(preset: DesignPreset, context: android.content.Context, systemDark: Boolean): androidx.compose.material3.ColorScheme = when (preset) {
+    DesignPreset.MATERIAL_YOU -> if (Build.VERSION.SDK_INT >= 31) {
+        if (systemDark) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
+    } else if (systemDark) darkColorScheme() else lightColorScheme()
+    DesignPreset.IOS_GLASS_DARK -> darkColorScheme(
+        primary = Color(0xFF8DBBFF), onPrimary = Color(0xFF002C59),
+        primaryContainer = Color(0xFF233E60), onPrimaryContainer = Color(0xFFD9E9FF),
+        secondary = Color(0xFF86D3C9), onSecondary = Color(0xFF003B36),
+        secondaryContainer = Color(0xFF254640), onSecondaryContainer = Color(0xFFCCF5EC),
+        background = Color(0xFF10141E), onBackground = Color(0xFFE9EDF7),
+        surface = Color(0xFF1B2230), onSurface = Color(0xFFE9EDF7),
+        surfaceVariant = Color(0xFF252F40), onSurfaceVariant = Color(0xFFBCC9DC),
+        error = Color(0xFFFFB4AB), outline = Color(0xFF76859D)
+    )
     DesignPreset.IOS_GLASS -> lightColorScheme(
         primary = Color(0xFF007AFF), onPrimary = Color.White,
         primaryContainer = Color(0xFFD6E9FD), onPrimaryContainer = Color(0xFF123B61),
@@ -546,7 +565,9 @@ private fun NovaAndroidApp(
         WearStatusSync.publish(context, syncState)
     }
 
-    val colors = remember(designPreset) { designColorScheme(designPreset) }
+    val systemDark = isSystemInDarkTheme()
+    val configuration = LocalConfiguration.current
+    val colors = remember(designPreset, systemDark, configuration) { designColorScheme(designPreset, context, systemDark) }
     MaterialTheme(colorScheme = colors) {
         Scaffold(
             containerColor = colors.background,
@@ -1010,6 +1031,9 @@ private fun HomePage(
             Text("Контрольный HTTPS-запрос не ответил. Это не означает, что VPN остановился: если сайты открываются, можно продолжать работу.",
                 fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
+        vpnState.transportNotice?.let { notice ->
+            Text(notice, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
         Box(Modifier.fillMaxWidth().padding(top = 2.dp), contentAlignment = Alignment.Center) {
             val controlShape = CircleShape
             Box(
@@ -1301,6 +1325,15 @@ private fun RoutingPage(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Text("Отмечено: ${settings.packages.size}", fontSize = 12.sp, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("IPv6 через VPN", fontWeight = FontWeight.Medium)
+                    Text("Включайте, если сервер поддерживает IPv6. По умолчанию обычные профили используют IPv4 для совместимости; DNS из полного JSON сохраняется.",
+                        fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Switch(checked = settings.ipv6Enabled,
+                    onCheckedChange = { onSettingsChanged(settings.copy(ipv6Enabled = it)) })
+            }
         }
     }
     if (loading) item { SoftCard { Text("Загружаю список приложений…", color = MaterialTheme.colorScheme.onSurfaceVariant) } }
@@ -1431,16 +1464,19 @@ private fun SettingsPage(
     item { SoftCard {
         Text("Оформление", fontWeight = FontWeight.SemiBold)
         Text("Выберите цветовую тему мобильного клиента.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Row(
-            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            DesignPreset.entries.forEach { preset ->
-                FilterChip(
-                    selected = designPreset == preset,
-                    onClick = { onDesignChanged(preset) },
-                    label = { Text(preset.label) }
-                )
+        Text("Material You использует цвета обоев на Android 12+ и переключается вместе с системной светлой/тёмной темой.",
+            fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        DesignPreset.entries.chunked(2).forEach { row ->
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                row.forEach { preset ->
+                    FilterChip(
+                        modifier = Modifier.weight(1f).heightIn(min = 48.dp),
+                        selected = designPreset == preset,
+                        onClick = { onDesignChanged(preset) },
+                        label = { Text(preset.label) }
+                    )
+                }
+                if (row.size == 1) Spacer(Modifier.weight(1f))
             }
         }
     } }

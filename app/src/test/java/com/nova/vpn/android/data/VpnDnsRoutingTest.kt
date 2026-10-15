@@ -46,7 +46,7 @@ class VpnDnsRoutingTest {
         assertEquals("example.org", rule.getJSONArray("domain").getString(0))
         assertEquals(".example.org", rule.getJSONArray("domain_suffix").getString(0))
         assertTrue(dns.getBoolean("reverse_mapping"))
-        assertEquals("nova-bootstrap-dns", config.getJSONObject("route").getString("default_domain_resolver"))
+        assertEquals("nova-bootstrap-dns", config.getJSONObject("route").getJSONObject("default_domain_resolver").getString("server"))
     }
 
     @Test fun generatedConfigCanBeImportedAgainWithoutDuplicateBootstrap() {
@@ -63,8 +63,9 @@ class VpnDnsRoutingTest {
         val config = JSONObject(SingBoxConfigFactory.build(profile()))
         val proxy = config.getJSONArray("outbounds").getJSONObject(0)
 
-        assertEquals("nova-bootstrap-dns", proxy.getString("domain_resolver"))
-        assertEquals("nova-bootstrap-dns", config.getJSONObject("route").getString("default_domain_resolver"))
+        assertEquals("nova-bootstrap-dns", proxy.getJSONObject("domain_resolver").getString("server"))
+        assertEquals("prefer_ipv4", proxy.getJSONObject("domain_resolver").getString("strategy"))
+        assertEquals("nova-bootstrap-dns", config.getJSONObject("route").getJSONObject("default_domain_resolver").getString("server"))
     }
 
     @Test fun fullConfigMainOutboundGetsBootstrapResolverButKeepsExplicitResolver() {
@@ -74,7 +75,7 @@ class VpnDnsRoutingTest {
         val generated = JSONObject(SingBoxConfigFactory.build(imported))
         assertEquals(
             "nova-bootstrap-dns",
-            generated.getJSONArray("outbounds").getJSONObject(0).getString("domain_resolver")
+            generated.getJSONArray("outbounds").getJSONObject(0).getJSONObject("domain_resolver").getString("server")
         )
 
         val importedWithResolver = ProfileLinkParser.parseText(
@@ -90,5 +91,24 @@ class VpnDnsRoutingTest {
             sites = listOf(SiteRoutingRule("example.org", SiteRoutingTarget.DIRECT))
         )))
         assertEquals("direct-1", config.getJSONObject("route").getJSONArray("rules").getJSONObject(2).getString("outbound"))
+    }
+
+    @Test fun compatibilityDnsKeepsBootstrapAndBypassDualStackAndAllowsIpv6OptIn() {
+        val config = JSONObject(SingBoxConfigFactory.build(profile(), AppRoutingSettings(
+            sites = listOf(SiteRoutingRule("example.org", SiteRoutingTarget.DIRECT)))))
+        val dns = config.getJSONObject("dns")
+        assertEquals("ipv4_only", dns.getString("strategy"))
+        assertEquals("prefer_ipv4", dns.getJSONArray("rules").getJSONObject(0).getString("strategy"))
+        assertEquals("prefer_ipv4", config.getJSONObject("route").getJSONObject("default_domain_resolver").getString("strategy"))
+        val enabled = JSONObject(SingBoxConfigFactory.build(profile(), AppRoutingSettings(ipv6Enabled = true)))
+        assertEquals("prefer_ipv4", enabled.getJSONObject("dns").getString("strategy"))
+    }
+
+    @Test fun customDnsStrategyFromFullJsonIsPreserved() {
+        val generated = JSONObject(SingBoxConfigFactory.build(profile()))
+        generated.getJSONObject("dns").put("strategy", "prefer_ipv6")
+        val imported = ProfileLinkParser.parseText(generated.toString()).single()
+        val rebuilt = JSONObject(SingBoxConfigFactory.build(imported))
+        assertEquals("prefer_ipv6", rebuilt.getJSONObject("dns").getString("strategy"))
     }
 }

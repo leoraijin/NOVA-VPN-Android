@@ -1,6 +1,7 @@
 package com.nova.vpn.android.data
 
 import org.json.JSONObject
+import org.json.JSONArray
 import java.net.URI
 import java.net.URISyntaxException
 import java.net.URLDecoder
@@ -176,7 +177,7 @@ object ProfileLinkParser {
     private fun trojan(uri: URI): JSONObject {
         val query = query(uri)
         val out = baseOutbound("trojan", uri).put("password", decodeComponent(uri.rawUserInfo.orEmpty()))
-        addTls(out, query, defaultEnabled = true)
+        addTls(out, query, defaultEnabled = true, serverNameFallback = uri.host.orEmpty())
         addTransport(out, query)
         return out
     }
@@ -229,14 +230,19 @@ object ProfileLinkParser {
         source.optString("ps").takeIf(String::isNotBlank)?.let { out.put("_nova_name", it) }
         if (source.optString("tls").equals("tls", true)) {
             out.put("tls", JSONObject().put("enabled", true)
-                .put("server_name", source.optString("sni").ifBlank { source.optString("host") })
+                .put("server_name", source.optString("sni").ifBlank { source.optString("host").ifBlank { server } })
                 .put("insecure", source.optBoolean("allowInsecure", false)))
+            source.optString("alpn").split(',').map(String::trim).filter(String::isNotBlank)
+                .takeIf { it.isNotEmpty() }?.let { out.getJSONObject("tls").put("alpn", JSONArray(it)) }
         }
         val network = source.optString("net", "tcp").lowercase()
         if (network == "ws") {
             out.put("transport", JSONObject().put("type", "ws")
                 .put("path", source.optString("path", "/"))
                 .put("headers", JSONObject().put("Host", source.optString("host"))))
+        } else if (network == "grpc") {
+            out.put("transport", JSONObject().put("type", "grpc")
+                .put("service_name", source.optString("serviceName").ifBlank { source.optString("path") }))
         } else if (network != "tcp") {
             throw IllegalArgumentException("VMess транспорт $network требует отдельной проверки")
         }
@@ -287,7 +293,10 @@ object ProfileLinkParser {
             query["sni"] != null || query["servername"] != null
         if (!enabled) return
         val tls = JSONObject().put("enabled", true)
-            .put("server_name", query["sni"] ?: query["servername"] ?: query["peer"] ?: serverNameFallback)
+            .put("server_name", sequenceOf(query["sni"], query["servername"], query["peer"], serverNameFallback)
+                .firstOrNull { !it.isNullOrBlank() }.orEmpty())
+        query["alpn"]?.split(',')?.map(String::trim)?.filter(String::isNotBlank)
+            ?.takeIf { it.isNotEmpty() }?.let { tls.put("alpn", JSONArray(it)) }
         val insecure = query["allowinsecure"] == "1" || query["insecure"] == "1"
         if (insecure) tls.put("insecure", true)
         if (security == "reality") {

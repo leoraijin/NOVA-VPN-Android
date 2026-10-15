@@ -8,7 +8,8 @@ enum class AppRoutingMode { INCLUDE_SELECTED, EXCLUDE_SELECTED }
 data class AppRoutingSettings(
     val mode: AppRoutingMode = AppRoutingMode.EXCLUDE_SELECTED,
     val packages: Set<String> = emptySet(),
-    val sites: List<SiteRoutingRule> = emptyList()
+    val sites: List<SiteRoutingRule> = emptyList(),
+    val ipv6Enabled: Boolean = false
 )
 
 enum class SiteRoutingTarget { VPN, DIRECT }

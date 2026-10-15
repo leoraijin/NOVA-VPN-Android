@@ -2,9 +2,20 @@ package com.nova.vpn.android
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Assert.assertFalse
 import org.junit.Test
 
 class VpnTransportHealthTest {
+    @Test fun grpcTlsAndDnsErrorsProduceOnlySafeGuidance() {
+        val grpc = VpnTransportHealth.warningFor("v2ray-grpc: unexpected status: 404 secret.example")!!
+        assertTrue("serviceName" in grpc)
+        val tls = VpnTransportHealth.warningFor("TLS: no application protocol at secret.example")!!
+        assertTrue("ALPN" in tls)
+        val dns = VpnTransportHealth.warningFor("dns: exchange failed for secret.example")!!
+        assertTrue("DNS" in dns)
+        listOf(grpc, tls, dns).forEach { assertFalse(it.contains("secret.example")) }
+    }
     @Test
     fun certificateMismatchIsReportedWithoutLeakingHostnames() {
         val warning = VpnTransportHealth.warningFor(

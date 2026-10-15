@@ -9,10 +9,11 @@ import org.json.JSONObject
 object SingBoxConfigFactory {
     fun build(profile: ImportedProfile, routing: AppRoutingSettings = AppRoutingSettings(), ownPackage: String? = null): String {
         val config = profile.fullConfigJson?.let {
-            ensureVpnInbound(JSONObject(it), routing, ownPackage)
+            val json = JSONObject(it)
+            ensureVpnInbound(json, routing, ownPackage, managedDns = !json.has("dns"))
         } ?: run {
             val outbound = JSONObject(profile.outboundJson).put("tag", PROXY_TAG)
-            ensureVpnInbound(defaultConfig(outbound), routing, ownPackage)
+            ensureVpnInbound(defaultConfig(outbound), routing, ownPackage, managedDns = true)
         }
         if (BuildConfig.DEBUG) logSafeOutboundSummary(config)
         return config.toString()
@@ -59,7 +60,7 @@ object SingBoxConfigFactory {
         return config
     }
 
-    private fun ensureVpnInbound(config: JSONObject, routing: AppRoutingSettings, ownPackage: String?): JSONObject {
+    private fun ensureVpnInbound(config: JSONObject, routing: AppRoutingSettings, ownPackage: String?, managedDns: Boolean): JSONObject {
         val outbounds = config.optJSONArray("outbounds")
             ?: throw IllegalArgumentException("В sing-box JSON отсутствует список outbounds")
         require(outbounds.length() > 0) { "В sing-box JSON нет исходящего подключения" }
@@ -70,6 +71,9 @@ object SingBoxConfigFactory {
         for (index in 0 until outbounds.length()) {
             val outbound = outbounds.optJSONObject(index) ?: continue
             val tls = outbound.optJSONObject("tls") ?: continue
+            if (tls.optBoolean("enabled") && tls.optString("server_name").isBlank()) {
+                tls.put("server_name", outbound.optString("server").removeSurrounding("[", "]"))
+            }
             if (tls.optJSONObject("reality")?.optBoolean("enabled") != true) continue
             var changed = false
             if (!tls.has("utls")) {
@@ -123,6 +127,9 @@ object SingBoxConfigFactory {
         val route = config.optJSONObject("route") ?: JSONObject()
         if (BuildConfig.DEBUG) {
             config.optJSONObject("log")?.put("level", "debug")
+        } else {
+            config.optJSONObject("log")?.takeIf { it.optString("level") in setOf("debug", "trace") }
+                ?.put("level", "warn")
         }
         route.put("auto_detect_interface", true)
         if (route.optString("final").isBlank()) {
@@ -149,7 +156,7 @@ object SingBoxConfigFactory {
         finalOutbound?.let { outbound ->
             val server = outbound.optString("server").trim().removeSurrounding("[", "]")
             if (server.isNotBlank() && !isIpLiteral(server) && outbound.optString("domain_resolver").isBlank()) {
-                outbound.put("domain_resolver", BOOTSTRAP_DNS_TAG)
+                outbound.put("domain_resolver", bootstrapResolver())
             }
         }
 
@@ -159,11 +166,11 @@ object SingBoxConfigFactory {
         if (!config.has("dns")) {
             config.put("dns", defaultDns(finalTag))
         }
-        configureDns(config.getJSONObject("dns"), routing)
-        route.put("default_domain_resolver", BOOTSTRAP_DNS_TAG)
+        configureDns(config.getJSONObject("dns"), routing, managedDns)
+        route.put("default_domain_resolver", bootstrapResolver())
         outbounds.getJSONObject((0 until outbounds.length()).first {
             outbounds.getJSONObject(it).optString("tag") == directTag
-        }).put("domain_resolver", BOOTSTRAP_DNS_TAG)
+        }).put("domain_resolver", bootstrapResolver())
         return config
     }
 
@@ -261,7 +268,11 @@ object SingBoxConfigFactory {
         .put("final", "remote-dns")
         .put("strategy", "prefer_ipv4")
 
-    private fun configureDns(dns: JSONObject, routing: AppRoutingSettings) {
+    // Bootstrap and bypass resolution must still support IPv6-only physical networks/servers.
+    private fun bootstrapResolver() = JSONObject().put("server", BOOTSTRAP_DNS_TAG).put("strategy", "prefer_ipv4")
+
+    private fun configureDns(dns: JSONObject, routing: AppRoutingSettings, managedDns: Boolean) {
+        if (managedDns) dns.put("strategy", if (routing.ipv6Enabled) "prefer_ipv4" else "ipv4_only")
         val importedServers = dns.optJSONArray("servers") ?: JSONArray()
         val servers = JSONArray()
         for (index in 0 until importedServers.length()) {
@@ -282,7 +293,9 @@ object SingBoxConfigFactory {
             val server = if (site.target == SiteRoutingTarget.DIRECT) BOOTSTRAP_DNS_TAG else remoteTag
             if (!server.isNullOrBlank()) prioritized.put(JSONObject()
                 .put("domain", JSONArray().put(domain)).put("domain_suffix", JSONArray().put(".$domain"))
-                .put("action", "route").put("server", server))
+                .put("action", "route").put("server", server).apply {
+                    if (site.target == SiteRoutingTarget.DIRECT) put("strategy", "prefer_ipv4")
+                })
         }
         for (index in 0 until existing.length()) existing.optJSONObject(index)?.let(prioritized::put)
         dns.put("rules", prioritized)

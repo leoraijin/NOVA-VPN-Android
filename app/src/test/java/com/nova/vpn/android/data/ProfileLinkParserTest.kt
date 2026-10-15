@@ -5,6 +5,31 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ProfileLinkParserTest {
+    @Test fun grpcShareLinksPreserveServiceNameAlpnAndTlsIdentity() {
+        val profile = ProfileLinkParser.parseText(
+            "vless://11111111-1111-1111-1111-111111111111@vpn.example:443?security=tls&type=grpc&serviceName=edge%2Fservice&alpn=h2%2Chttp%2F1.1&sni="
+        ).single()
+        val outbound = org.json.JSONObject(profile.outboundJson)
+        assertEquals("edge/service", outbound.getJSONObject("transport").getString("service_name"))
+        assertEquals("vpn.example", outbound.getJSONObject("tls").getString("server_name"))
+        assertEquals("h2", outbound.getJSONObject("tls").getJSONArray("alpn").getString(0))
+        assertEquals("http/1.1", outbound.getJSONObject("tls").getJSONArray("alpn").getString(1))
+        val runtime = org.json.JSONObject(SingBoxConfigFactory.build(profile))
+            .getJSONArray("outbounds").getJSONObject(0)
+        assertEquals(outbound.getJSONObject("transport").toString(), runtime.getJSONObject("transport").toString())
+        assertEquals("h2", runtime.getJSONObject("tls").getJSONArray("alpn").getString(0))
+    }
+
+    @Test fun vmessGrpcImportPreservesTransportAndTls() {
+        val json = """{"add":"vpn.example","port":443,"id":"11111111-1111-1111-1111-111111111111","net":"grpc","path":"edge-service","tls":"tls","alpn":"h2"}"""
+        val encoded = java.util.Base64.getEncoder().encodeToString(json.toByteArray())
+        val outbound = org.json.JSONObject(ProfileLinkParser.parseText("vmess://$encoded").single().outboundJson)
+        assertEquals("grpc", outbound.getJSONObject("transport").getString("type"))
+        assertEquals("edge-service", outbound.getJSONObject("transport").getString("service_name"))
+        assertEquals("vpn.example", outbound.getJSONObject("tls").getString("server_name"))
+        assertEquals("h2", outbound.getJSONObject("tls").getJSONArray("alpn").getString(0))
+    }
+
     @Test
     fun keepsDistinctFullSingBoxConfigsWhenImportingMoreThanOne() {
         val socks = ProfileLinkParser.parseText(
