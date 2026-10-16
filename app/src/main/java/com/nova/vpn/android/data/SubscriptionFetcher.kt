@@ -14,7 +14,12 @@ object SubscriptionFetcher {
     private const val CONNECT_TIMEOUT_MS = 12_000
     private const val READ_TIMEOUT_MS = 15_000
 
-    fun fetchIfUrl(input: String): String {
+    fun fetchIfUrl(input: String, deviceId: String? = null): String =
+        fetchWith(input, deviceId, ::download)
+
+    internal data class Response(val body: String, val hwidMissing: Boolean = false, val deviceLimit: Boolean = false)
+
+    internal fun fetchWith(input: String, deviceId: String?, request: (URI, String, String?) -> Response): String {
         val text = input.trim()
         val uri = runCatching { URI(text) }.getOrNull()
         val scheme = uri?.scheme?.lowercase()
@@ -24,11 +29,25 @@ object SubscriptionFetcher {
             "Некорректная HTTPS-ссылка на подписку."
         }
         require(text.length <= 4096) { "Ссылка на подписку слишком длинная." }
-        val response = download(uri, "NOVA-VPN-Android")
+        require(deviceId == null || deviceId.matches(Regex("[a-zA-Z0-9=-]{10,64}"))) {
+            "Некорректный идентификатор устройства подписки."
+        }
+        fun checked(agent: String): String {
+            val response = request(uri, agent, deviceId)
+            require(!response.hwidMissing) {
+                if (deviceId == null) "Провайдер требует HWID. Включите ниже передачу идентификатора устройства и повторите импорт."
+                else "Провайдер не принял идентификатор устройства. Обратитесь в поддержку подписки."
+            }
+            require(!response.deviceLimit) {
+                "Достигнут лимит устройств подписки. Удалите старое устройство в кабинете провайдера или обратитесь в поддержку."
+            }
+            return response.body
+        }
+        val response = checked("NOVA-VPN-Android")
         // Some subscription panels select a client-specific format from User-Agent.
         // Retry only when the first response is the known unusable 0.0.0.0:1 placeholder.
         return if (isUnsupportedPlaceholder(response)) {
-            download(uri, "v2raytun/android")
+            checked("v2raytun/android")
         } else response
     }
 
@@ -45,7 +64,7 @@ object SubscriptionFetcher {
         uri.host == "0.0.0.0" && uri.port == 1
     }.getOrDefault(false)
 
-    private fun download(initialUri: URI, userAgent: String): String {
+    private fun download(initialUri: URI, userAgent: String, deviceId: String?): Response {
         var current = initialUri
         repeat(MAX_REDIRECTS + 1) { redirectIndex ->
             require(current.scheme.equals("https", ignoreCase = true)) {
@@ -60,6 +79,12 @@ object SubscriptionFetcher {
                 connection.requestMethod = "GET"
                 connection.setRequestProperty("Accept", "text/plain, application/json, */*;q=0.5")
                 connection.setRequestProperty("User-Agent", userAgent)
+                // A redirect to another origin must not receive this provider's identifier.
+                if (deviceId != null && current.host.equals(initialUri.host, ignoreCase = true) &&
+                    current.port == initialUri.port) {
+                    connection.setRequestProperty("x-hwid", deviceId)
+                    connection.setRequestProperty("x-device-os", "Android")
+                }
 
                 val status = connection.responseCode
                 if (status in REDIRECT_CODES) {
@@ -72,6 +97,11 @@ object SubscriptionFetcher {
                     }
                     return@repeat
                 }
+                val hwidMissing = connection.getHeaderField("x-hwid-not-supported").equals("true", ignoreCase = true)
+                val deviceLimit = !hwidMissing && (
+                    connection.getHeaderField("x-hwid-max-devices-reached").equals("true", ignoreCase = true) ||
+                    connection.getHeaderField("x-hwid-limit").equals("true", ignoreCase = true))
+                if (hwidMissing || deviceLimit) return Response("", hwidMissing, deviceLimit)
                 if (status !in 200..299) throw IOException("Не удалось скачать подписку (HTTP $status).")
                 val declaredLength = connection.contentLengthLong
                 if (declaredLength > MAX_BYTES) throw IOException("Файл подписки превышает 4 МБ.")
@@ -89,7 +119,7 @@ object SubscriptionFetcher {
                     }
                     output.toByteArray()
                 }
-                return String(bytes, Charsets.UTF_8).removePrefix("\uFEFF")
+                return Response(String(bytes, Charsets.UTF_8).removePrefix("\uFEFF"))
             } finally {
                 connection.disconnect()
             }
