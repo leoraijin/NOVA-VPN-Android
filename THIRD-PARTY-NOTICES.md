@@ -3,10 +3,12 @@
 ## Reality Core (experimental Android engine)
 
 Copyright ERGFT. Source: <https://github.com/ERGFT/vpn-core>.
-Pinned revision: `51a811f1eb3dc3f158b6f7d1a38e3da1d3cf62bc` (0.1.0).
+Pinned revision: `998e0a42fd04a022aa008997cd71ba1e2dfab38e` (0.1.0),
+author-approved PR <https://github.com/ERGFT/vpn-core/pull/34> (not yet merged when pinned).
 Licensed GPL-3.0-or-later; see this project's GPL license and the upstream `LICENSE`.
-NOVA's JNI bridge and Android validation/fixes are in `native/`, distributed as source.
-`native/build-reality.sh` builds the exact pinned upstream source plus these patches.
+NOVA's JNI bridge is in `native/`, distributed as source.
+`native/build-reality.sh` fetches the PR ref and builds the exact reviewed SHA,
+without applying NOVA patches to the core. Approval is not a security audit or merge.
 Experimental binary releases must include the corresponding upstream source archive,
 this application's corresponding source and all dependency license notices. The core
 is experimental, not independently security-audited; no performance claims are made.

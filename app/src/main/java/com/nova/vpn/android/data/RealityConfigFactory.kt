@@ -4,7 +4,7 @@ import org.json.JSONArray
 import org.json.JSONException
 import org.json.JSONObject
 
-/** Android adaptation for the native sing-box parser based on core commit 51a811.
+/** Android adaptation for the native sing-box parser based on approved core PR #34.
  *
  * This is not native validation: the caller must validate [Prepared.config] with the core
  * before opening the VPN. Unknown fields are deliberately retained for that validation.
@@ -234,6 +234,11 @@ object RealityConfigFactory {
                     "Настройки защиты DNS не поддерживаются Reality Core. Выберите sing-box."
                 }
             }
+        }
+        // The reviewed core takes an explicit bootstrap tag, never a magic NOVA name.
+        // Preserve an explicit custom choice for native validation rather than overriding it.
+        if (!dns.has("bootstrap") && servers.any { it.opt("tag") == BOOTSTRAP }) {
+            dns.put("bootstrap", BOOTSTRAP)
         }
     }
 

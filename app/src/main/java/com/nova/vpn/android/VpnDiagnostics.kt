@@ -13,7 +13,7 @@ internal object VpnDiagnostics {
 
     @Synchronized fun setEngine(reality: Boolean) {
         engine = if (reality) "reality_core" else "sing_box"
-        engineVersion = if (reality) "0.1.0_51a811f1_nova" else "libbox_1.14.1"
+        engineVersion = if (reality) "0.1.0_998e0a42_pr34" else "libbox_1.14.1"
     }
     private val validCode = Regex("[a-z0-9_:=.-]{1,96}")
 

@@ -295,7 +295,7 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
         closeEngine()
         activeEngine = VpnEngine.REALITY_CORE
         VpnDiagnostics.record("engine_reality_core")
-        VpnDiagnostics.record("reality_revision_51a811f1")
+        VpnDiagnostics.record("reality_revision_998e0a42")
         registerRealityNetworkMonitor()
         val builder = Builder().setSession("NOVA VPN · Reality Core").setMtu(1500)
             .addAddress("172.19.0.1", 30).addRoute("0.0.0.0", 0).addDnsServer("172.19.0.2")

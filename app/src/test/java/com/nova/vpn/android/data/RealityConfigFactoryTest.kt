@@ -58,7 +58,25 @@ class RealityConfigFactoryTest {
         assertEquals(53, bootstrap.getInt("server_port"))
         assertEquals("direct", bootstrap.getString("detour"))
         assertEquals("nova-bootstrap-dns", bootstrap.getString("tag"))
+        assertEquals("nova-bootstrap-dns", dns(result).getString("bootstrap"))
         assertFalse(result.toString().contains("insecure"))
+    }
+
+    @Test fun explicitBootstrapChoiceIsPreservedForNativeValidation() {
+        val source = generated()
+        dns(source).put("bootstrap", "custom-bootstrap")
+        servers(source).put(JSONObject().put("type", "udp").put("tag", "custom-bootstrap")
+            .put("server", "9.9.9.9").put("detour", "direct"))
+        val output = JSONObject(prepare(source).config)
+        assertEquals("custom-bootstrap", dns(output).getString("bootstrap"))
+        assertFalse(dns(source).has("fakeip"))
+    }
+
+    @Test fun bootstrapIsNotInventedWhenNoGeneratedServerExists() {
+        val source = generated()
+        servers(source).remove(1)
+        val output = JSONObject(prepare(source).config)
+        assertFalse(dns(output).has("bootstrap"))
     }
 
     @Test fun bootstrapUsesActualDirectTagWithoutInventingOutbound() {

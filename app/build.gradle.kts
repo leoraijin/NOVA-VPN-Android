@@ -90,7 +90,7 @@ android {
         create("realitypreview") {
             initWith(getByName("optimized"))
             applicationIdSuffix = ".realitypreview"
-            versionNameSuffix = "-reality-preview"
+            versionNameSuffix = "-reality-preview.2"
             manifestPlaceholders["novaAppLabel"] = "NOVA VPN · Reality Test"
             buildConfigField("boolean", "REALITY_PREVIEW", "true")
             matchingFallbacks += listOf("optimized", "release")

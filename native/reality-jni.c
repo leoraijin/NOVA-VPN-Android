@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later
- * NOVA Android bridge. The service serializes start/stop. rc_stop joins callbacks
- * before the Java global reference is freed. Never print config or native errors.
+ * NOVA Android bridge. The service serializes start/stop. Generation checks shield
+ * the replacement owner from callbacks outliving shutdown. Never print config/errors.
  */
 #include <jni.h>
 #include <stdint.h>
@@ -8,8 +8,6 @@
 #include <pthread.h>
 #include "reality.h"
 
-extern int rc_validate(const char *, const char *);
-extern int rc_is_alive(RcCore *);
 static JavaVM *vm;
 static jobject callback;
 static jmethodID protect_method, warning_method;
