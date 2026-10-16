@@ -20,6 +20,7 @@ object ProfileLinkParser {
         // QR readers and editors often prefix copied text with a UTF-8 BOM.
         val decoded = decodeSubscription(text.trim().removePrefix("\uFEFF")).trim().removePrefix("\uFEFF")
         val normalized = decoded.trim()
+        if (normalized.startsWith("[")) return parseConfigArray(normalized)
         if (normalized.startsWith("{")) {
             parseXraySubscription(normalized)?.let { return ImportedProfile.distinctByConfiguration(it) }
             return listOf(parseFullConfig(normalized))
@@ -43,6 +44,29 @@ object ProfileLinkParser {
         return ImportedProfile.distinctByConfiguration(profiles)
     }
 
+    /** Panels may return an array of complete Xray/sing-box configs, not URI lines. */
+    private fun parseConfigArray(text: String): List<ImportedProfile> {
+        val entries = try { JSONArray(text) } catch (_: Exception) {
+            throw IllegalArgumentException("Некорректный JSON-массив подписки")
+        }
+        require(entries.length() in 1..MAX_PROFILES) { "В JSON-подписке нет профилей или их слишком много" }
+        val profiles = mutableListOf<ImportedProfile>()
+        for (index in 0 until entries.length()) {
+            val entry = entries.opt(index)
+            val parsed = when (entry) {
+                is JSONObject -> {
+                    val config = entry.toString()
+                    parseXraySubscription(config) ?: listOf(parseFullConfig(config))
+                }
+                is String -> listOf(parseLink(entry.trim().removePrefix("\uFEFF")))
+                else -> throw IllegalArgumentException("Элемент ${index + 1} JSON-подписки должен быть конфигурацией или VPN-ссылкой")
+            }
+            require(parsed.size <= MAX_PROFILES - profiles.size) { "В импорте слишком много профилей" }
+            profiles.addAll(parsed)
+        }
+        return ImportedProfile.distinctByConfiguration(profiles)
+    }
+
     /** Converts common Xray subscription JSON into native single-server sing-box profiles. */
     private fun parseXraySubscription(text: String): List<ImportedProfile>? {
         val json = runCatching { JSONObject(text) }.getOrNull() ?: return null
@@ -52,6 +76,10 @@ object ProfileLinkParser {
         if (xrayOutbounds.isEmpty()) return null
 
         val profiles = mutableListOf<ImportedProfile>()
+        fun addProfile(profile: ImportedProfile) {
+            require(profiles.size < MAX_PROFILES) { "В импорте слишком много профилей" }
+            profiles += profile
+        }
         xrayOutbounds.forEach { xray ->
             val protocol = xray.optString("protocol").lowercase()
             val settings = xray.optJSONObject("settings") ?: return@forEach
@@ -79,7 +107,7 @@ object ProfileLinkParser {
                             if (protocol == "vmess") outbound.put("alter_id", user.optInt("alterId"))
                             user.optString("flow").takeIf(String::isNotBlank)?.let { outbound.put("flow", it) }
                             applyXrayStream(outbound, stream)
-                            profiles += imported(outbound, name.ifBlank { "$protocol · ${server.getString("address")}" })
+                            addProfile(imported(outbound, name.ifBlank { "$protocol · ${server.getString("address")}" }))
                         }
                     }
                 }
@@ -105,7 +133,7 @@ object ProfileLinkParser {
                             outbound.put("password", credential)
                         }
                         applyXrayStream(outbound, stream)
-                        profiles += imported(outbound, name.ifBlank { "$protocol · $address" })
+                        addProfile(imported(outbound, name.ifBlank { "$protocol · $address" }))
                     }
                 }
             }
@@ -229,6 +257,7 @@ object ProfileLinkParser {
      * (and stray percent signs), preserving URI separators and already-valid escapes.
      */
     private fun parseShareUri(link: String): URI {
+        val fragmentStart = link.indexOf('#')
         val authorityStart = link.indexOf("://").takeIf { it >= 0 }?.plus(3)
         val authorityEnd = authorityStart?.let { start ->
             listOf(link.indexOf('/', start), link.indexOf('?', start), link.indexOf('#', start))
@@ -247,6 +276,7 @@ object ProfileLinkParser {
             while (index < link.length) {
                 val codePoint = link.codePointAt(index)
                 when {
+                    codePoint == '#'.code && fragmentStart >= 0 && index > fragmentStart -> append("%23")
                     codePoint == '%'.code -> {
                         val hasEscape = index + 2 < link.length &&
                             link[index + 1].digitToIntOrNull(16) != null &&
@@ -468,9 +498,11 @@ object ProfileLinkParser {
 
     private fun decodeSubscription(text: String): String {
         val normalized = text.trim()
-        if (normalized.startsWith("{") || normalized.contains("://")) return normalized
+        if (normalized.startsWith("{") || normalized.startsWith("[") || normalized.contains("://")) return normalized
         val decoded = runCatching { decodeBase64(normalized) }.getOrNull()
-        return decoded?.takeIf { it.contains("://") || it.trimStart().startsWith("{") } ?: normalized
+        return decoded?.takeIf {
+            it.contains("://") || it.trimStart().startsWith("{") || it.trimStart().startsWith("[")
+        } ?: normalized
     }
 
     private fun decodeMaybeBase64(value: String): String {

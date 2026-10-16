@@ -30,8 +30,8 @@ android {
         applicationId = "com.nova.vpn.android"
         minSdk = 24
         targetSdk = 35
-        versionCode = 46
-        versionName = "0.2.44"
+        versionCode = 47
+        versionName = "0.2.45"
         manifestPlaceholders["novaAppLabel"] = "NOVA VPN"
         buildConfigField("boolean", "REALITY_PREVIEW", "false")
         testInstrumentationRunner = when {
