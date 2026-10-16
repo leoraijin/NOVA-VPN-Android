@@ -7,3 +7,5 @@ local.properties
 *.keystore
 signing.properties
 *.vault
+native/work/
+app/src/main/jniLibs/
