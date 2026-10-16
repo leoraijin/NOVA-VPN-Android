@@ -1,0 +1,24 @@
+name: MagAmp Wall Scanner Android build
+on:
+  push:
+    branches: [build/magamp-apk-20261016]
+    paths: [magamp-lab/**, .github/workflows/magamp-wall.yml]
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - run: mkdir -p magamp-lab/unpacked && base64 -d magamp-lab/source.tar.xz.b64 | tar -xJ -C magamp-lab/unpacked
+      - run: gradle --no-daemon :app:assembleDebug
+        working-directory: magamp-lab/unpacked/MagAmp
+      - uses: actions/upload-artifact@v4
+        with:
+          name: magamp-wall-debug
+          path: magamp-lab/unpacked/MagAmp/app/build/outputs/apk/debug/app-debug.apk
