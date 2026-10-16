@@ -30,6 +30,12 @@ class RealityCoreSmokeRunner : Instrumentation() {
             val generated = RealityConfigFactory.prepare(SingBoxConfigFactory.build(profile,
                 ownPackage = targetContext.packageName), targetContext.packageName)
             check(RealityCoreBridge.validate(generated.config, targetContext.filesDir.path)) { "Generated config rejected" }
+            val badBootstrap = JSONObject(generated.config).apply {
+                getJSONObject("dns").put("bootstrap", "missing-test-upstream")
+            }
+            check(!RealityCoreBridge.validate(badBootstrap.toString(), targetContext.filesDir.path)) { "Missing bootstrap tag accepted" }
+            badBootstrap.getJSONObject("dns").put("bootstrap", "remote-dns")
+            check(!RealityCoreBridge.validate(badBootstrap.toString(), targetContext.filesDir.path)) { "Proxy bootstrap accepted" }
             check(!RealityCoreBridge.validate("{}", targetContext.filesDir.path)) { "Invalid config accepted" }
             val badTls = JSONObject(generated.config).apply {
                 getJSONArray("outbounds").getJSONObject(0).put("tls", JSONObject().put("enabled", true).put("insecure", true))
@@ -185,9 +191,22 @@ class RealityCoreSmokeRunner : Instrumentation() {
                     "Site VPN exception did not preserve fake-IP domain routing"
                 }
                 stop()
+                TestDnsFixture().use { bootstrap ->
+                    val hostnameProfile = profile.copy(server = "transport.test", outboundJson =
+                        JSONObject(profile.outboundJson).put("server", "transport.test").toString())
+                    val hostnameConfig = JSONObject(SingBoxConfigFactory.build(hostnameProfile, ownPackage = context.packageName))
+                    hostnameConfig.getJSONObject("dns").put("bootstrap", "smoke-bootstrap")
+                        .getJSONArray("servers").put(JSONObject().put("type", "udp").put("tag", "smoke-bootstrap")
+                            .put("server", "127.0.0.1").put("server_port", bootstrap.port).put("detour", "direct"))
+                    start(hostnameConfig.toString())
+                    check(routedClientResult() == "ok" && packets.get() == 6 && bootstrap.transportQueries.get() > 0) {
+                        "Transport hostname did not resolve through explicit protected bootstrap"
+                    }
+                    stop()
+                }
                 AppPreferencesStore(context).setVpnEngine(VpnEngine.SING_BOX)
                 start(config)
-                check(routedClientResult() == "ok" && packets.get() == 6) { "Default sing-box regression: TLS/TUN echo failed" }
+                check(routedClientResult() == "ok" && packets.get() == 7) { "Default sing-box regression: TLS/TUN echo failed" }
                 stop()
             } finally {
                 context.startService(android.content.Intent(context, NovaVpnService::class.java).setAction(NovaVpnService.ACTION_STOP))
