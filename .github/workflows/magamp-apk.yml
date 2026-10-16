@@ -18,15 +18,34 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.9"
-      - name: Unpack source
+      - name: Unpack and patch source
         run: |
           mkdir -p magamp-build/source
           base64 -d magamp-build/magamp-src.tar.xz.b64 | tar -xJ -C magamp-build/source
-      - name: Assemble debug APK
+          cp -r magamp-build/patches/. magamp-build/source/
+      - name: Assemble unsigned release APK
         working-directory: magamp-build/source
-        run: gradle --no-daemon :app:assembleDebug
-      - name: Upload APK
+        run: gradle --no-daemon :app:assembleRelease
+      - name: Sign APK for all modern Android versions
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          SIGNER="$(find "$SDK/build-tools" -name apksigner -type f | sort -V | tail -1)"
+          TOOLS="$(dirname "$SIGNER")"
+          echo "Using Android build-tools: $TOOLS"
+          SOURCE=magamp-build/source/app/build/outputs/apk/release/app-release-unsigned.apk
+          mkdir -p magamp-build/out
+          "$TOOLS/zipalign" -f -p 4 "$SOURCE" magamp-build/out/MagAmp-aligned.apk
+          keytool -genkeypair -v -keystore magamp-build/out/signing.jks -alias magamp -keyalg RSA -keysize 3072 -validity 3650 -storepass android -keypass android -dname "CN=MagAmp Local Test,O=MagAmp,C=US"
+          "$SIGNER" sign --ks magamp-build/out/signing.jks --ks-key-alias magamp --ks-pass pass:android --key-pass pass:android --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true --out magamp-build/out/MagAmp-1.1.apk magamp-build/out/MagAmp-aligned.apk
+          "$SIGNER" verify --verbose --print-certs magamp-build/out/MagAmp-1.1.apk
+          "$TOOLS/zipalign" -c -v 4 magamp-build/out/MagAmp-1.1.apk
+          "$TOOLS/aapt" dump badging magamp-build/out/MagAmp-1.1.apk | head -20
+          unzip -t magamp-build/out/MagAmp-1.1.apk | tail -2
+          sha256sum magamp-build/out/MagAmp-1.1.apk
+      - name: Upload installable APK
         uses: actions/upload-artifact@v4
         with:
-          name: MagAmp-APK
-          path: magamp-build/source/app/build/outputs/apk/debug/app-debug.apk
+          name: MagAmp-1.1-signed-APK
+          path: magamp-build/out/MagAmp-1.1.apk
