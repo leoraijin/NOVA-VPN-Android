@@ -9,7 +9,8 @@ import org.junit.Test
 class VpnTransportHealthTest {
     @Test fun grpcTlsAndDnsErrorsProduceOnlySafeGuidance() {
         val grpc = VpnTransportHealth.warningFor("v2ray-grpc: unexpected status: 404 secret.example")!!
-        assertTrue("serviceName" in grpc)
+        assertTrue("gRPC-запросов" in grpc)
+        assertTrue("само по себе не означает отключение VPN" in grpc)
         val tls = VpnTransportHealth.warningFor("TLS: no application protocol at secret.example")!!
         assertTrue("ALPN" in tls)
         val dns = VpnTransportHealth.warningFor("dns: exchange failed for secret.example")!!
@@ -23,7 +24,7 @@ class VpnTransportHealthTest {
         )
 
         assertEquals(
-            "VPN-сервер не прошёл проверку подлинности. Проверьте актуальность профиля у провайдера.",
+            "Один из TLS-запросов не прошёл проверку сертификата. Это сообщение не подтверждает неисправность всего VPN-подключения.",
             warning
         )
         assertNull(warning?.takeIf { "vpn.example" in it || "unrelated.example" in it })
@@ -32,11 +33,11 @@ class VpnTransportHealthTest {
     @Test
     fun expiredCertificateAndTimeoutAreReported() {
         assertEquals(
-            "Сертификат VPN-сервера просрочен. Обновите профиль у провайдера.",
+            "Один из TLS-запросов отклонён из-за просроченного сертификата. По этому сообщению нельзя определить, относится ли сертификат к VPN-серверу или к адресу назначения.",
             VpnTransportHealth.warningFor("x509: certificate has expired")
         )
         assertEquals(
-            "VPN-сервер не отвечает. Проверьте подключение или выберите другой профиль.",
+            "Истекло время ожидания одного из запросов. VPN может продолжать работать; это не подтверждение отключения туннеля.",
             VpnTransportHealth.warningFor("context deadline exceeded")
         )
     }
@@ -44,7 +45,7 @@ class VpnTransportHealthTest {
     @Test
     fun refusedTcpConnectionIsNotMisreportedAsCredentialRejection() {
         assertEquals(
-            "Не удалось подключиться к адресу или порту VPN-сервера. Узел может быть временно недоступен, либо адрес/порт в профиле устарел.",
+            "Одно из соединений получило отказ (connection refused). Это может относиться к отдельному адресу назначения и не означает, что VPN отключён.",
             VpnTransportHealth.warningFor("dial tcp 203.0.113.1:443: connect: connection refused")
         )
     }

@@ -5,6 +5,70 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ProfileLinkParserTest {
+    @Test fun acceptsJsonArrayOfXrayConfigurationsFromSubscriptionPanels() {
+        val config = """{"remarks":"Fixture #1","outbounds":[{"protocol":"vless","settings":{"vnext":[{"address":"vpn.example","port":443,"users":[{"id":"11111111-1111-1111-1111-111111111111","encryption":"none","flow":"xtls-rprx-vision"}]}]},"streamSettings":{"network":"tcp","security":"reality","realitySettings":{"serverName":"front.example","fingerprint":"firefox","publicKey":"fixture-public-key","shortId":"abcd"}}},{"protocol":"freedom","settings":{}},{"protocol":"blackhole","settings":{}}]}"""
+        for (source in listOf("[$config]", java.util.Base64.getEncoder().encodeToString("[$config]".toByteArray()))) {
+            val profile = ProfileLinkParser.parseText(source).single()
+            assertEquals("Fixture #1", profile.name)
+            assertEquals("vless", profile.protocol)
+            val outbound = org.json.JSONObject(profile.outboundJson)
+            assertEquals("front.example", outbound.getJSONObject("tls").getString("server_name"))
+            assertEquals("xtls-rprx-vision", outbound.getString("flow"))
+            assertEquals("firefox", outbound.getJSONObject("tls").getJSONObject("utls").getString("fingerprint"))
+            assertEquals("fixture-public-key", outbound.getJSONObject("tls").getJSONObject("reality").getString("public_key"))
+        }
+    }
+
+    @Test fun configArraysKeepDistinctServersAndDeduplicateEqualConfigurations() {
+        val config = """{"outbounds":[{"type":"vless","tag":"proxy","server":"vpn.example","server_port":443,"uuid":"11111111-1111-1111-1111-111111111111"}]}"""
+        val other = config.replace("vpn.example", "other.example")
+        val profiles = ProfileLinkParser.parseText("[$config,$other,$config]")
+        assertEquals(2, profiles.size)
+        assertEquals("sing-box", profiles.first().protocol)
+    }
+
+    @Test fun configArraysMayContainShareLinksButNeverRecursiveJsonStrings() {
+        val link = "vless://11111111-1111-1111-1111-111111111111@vpn.example:443#Fixture"
+        assertEquals("Fixture", ProfileLinkParser.parseText(org.json.JSONArray().put(link).toString()).single().name)
+        for (source in listOf("[]", "[null]", "[42]", "[[]]", "[{}]", "[", org.json.JSONArray().put("[]").toString())) {
+            assertTrue(runCatching { ProfileLinkParser.parseText(source) }.isFailure)
+        }
+    }
+
+    @Test fun jsonSubscriptionArraysEnforceImportBounds() {
+        val oversized = org.json.JSONArray()
+        repeat(2001) { oversized.put(org.json.JSONObject()) }
+        assertTrue(runCatching { ProfileLinkParser.parseText(oversized.toString()) }.isFailure)
+        val users = org.json.JSONArray()
+        repeat(2001) { users.put(org.json.JSONObject().put("id", "11111111-1111-1111-1111-111111111111")) }
+        val server = org.json.JSONObject().put("address", "vpn.example").put("port", 443).put("users", users)
+        val outbound = org.json.JSONObject().put("protocol", "vless")
+            .put("settings", org.json.JSONObject().put("vnext", org.json.JSONArray().put(server)))
+        val config = org.json.JSONObject().put("outbounds", org.json.JSONArray().put(outbound))
+        val result = runCatching { ProfileLinkParser.parseText(org.json.JSONArray().put(config).toString()) }
+        assertTrue(result.isFailure)
+        assertTrue(result.exceptionOrNull()?.message.orEmpty().contains("слишком много"))
+    }
+
+    @Test fun subscriptionLabelsMayContainLiteralHashes() {
+        val label = "🇳🇱 Netherlands #1 · резерв #2"
+        val link = "vless://11111111-1111-1111-1111-111111111111@vpn.example:443?security=tls&sni=edge.example#$label"
+        for (text in listOf(link, java.util.Base64.getEncoder().encodeToString(link.toByteArray(Charsets.UTF_8)))) {
+            val profile = ProfileLinkParser.parseText(text).single()
+            assertEquals(label, profile.name)
+            assertEquals("vpn.example", profile.server)
+            val outbound = org.json.JSONObject(profile.outboundJson)
+            assertEquals("edge.example", outbound.getJSONObject("tls").getString("server_name"))
+        }
+    }
+
+    @Test fun encodedAndLiteralLabelHashesAreNotDoubleEncoded() {
+        val profile = ProfileLinkParser.parseText(
+            "trojan://secret@vpn.example:443#Server%20%231%20#2"
+        ).single()
+        assertEquals("Server #1 #2", profile.name)
+    }
+
     @Test fun grpcShareLinksPreserveServiceNameAlpnAndTlsIdentity() {
         val profile = ProfileLinkParser.parseText(
             "vless://11111111-1111-1111-1111-111111111111@vpn.example:443?security=tls&type=grpc&serviceName=edge%2Fservice&alpn=h2%2Chttp%2F1.1&sni="
