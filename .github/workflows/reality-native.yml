@@ -22,7 +22,7 @@ jobs:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
       - run: cargo install cargo-ndk --locked --version 3.5.4
-      - run: sdkmanager 'ndk;27.2.12479018'
+      - run: '"$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;27.2.12479018"'
       - name: Build pinned core and JNI bridge
         env:
           ANDROID_NDK_HOME: /usr/local/lib/android/sdk/ndk/27.2.12479018
