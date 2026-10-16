@@ -15,6 +15,9 @@ fi
 if [[ -f "$root/native/reality-android-fixes.patch" ]] && ! git -C "$source_dir" apply --reverse --check "$root/native/reality-android-fixes.patch" 2>/dev/null; then
   git -C "$source_dir" apply "$root/native/reality-android-fixes.patch"
 fi
+if [[ -f "$root/native/reality-dns-rules.patch" ]] && ! git -C "$source_dir" apply --reverse --check "$root/native/reality-dns-rules.patch" 2>/dev/null; then
+  git -C "$source_dir" apply "$root/native/reality-dns-rules.patch"
+fi
 : "${ANDROID_NDK_HOME:?Set ANDROID_NDK_HOME}"
 abis=("$@")
 if [[ ${#abis[@]} == 0 ]]; then abis=(arm64-v8a armeabi-v7a x86_64); fi
