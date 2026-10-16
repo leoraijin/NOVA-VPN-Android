@@ -218,6 +218,7 @@ internal fun OneUISettings(onTutorial: () -> Unit, onNotifications: () -> Unit, 
             }
             Text("Версия ${BuildConfig.VERSION_NAME}", Modifier.fillMaxWidth().padding(20.dp), textAlign = TextAlign.Center, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
+        item { EngineSettingsCard() }
     }
 }
 

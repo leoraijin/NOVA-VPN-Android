@@ -222,6 +222,7 @@ internal fun MaterialSettings(onTutorial: () -> Unit, onNotifications: () -> Uni
                 Text("Версия ${BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.bodySmall)
             }
         }
+        item { EngineSettingsCard() }
     }
 }
 

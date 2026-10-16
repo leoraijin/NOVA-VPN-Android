@@ -416,6 +416,10 @@ private fun NovaAndroidApp(
     }
 
     fun checkForUpdates(showCurrentVersion: Boolean) {
+        if (BuildConfig.REALITY_PREVIEW) {
+            if (showCurrentVersion) updateStatus = "Экспериментальная сборка обновляется вручную из prerelease на GitHub. Автообновление обычной NOVA не изменено."
+            return
+        }
         if (checkingUpdates) return
         if (!showCurrentVersion && !preferencesStore.automaticUpdateCheckDue(System.currentTimeMillis(), BuildConfig.VERSION_NAME)) return
         scope.launch {

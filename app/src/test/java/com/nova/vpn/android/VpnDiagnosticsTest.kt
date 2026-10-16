@@ -37,4 +37,14 @@ class VpnDiagnosticsTest {
         assertFalse(report.contains("PRIVATE_TOKEN"))
         assertFalse(report.contains("secret.example"))
     }
+
+    @Test fun rustlsCertificateErrorsAreClassifiedWithoutNativeText() {
+        VpnDiagnostics.setEngine(true)
+        VpnDiagnostics.coreMessage("invalid peer certificate: UnknownIssuer at PRIVATE_HOST")
+        val report = VpnDiagnostics.report(null, AppRoutingSettings(), 35, VpnUiState())
+        assertTrue(report.contains("engine=reality_core"))
+        assertTrue(report.contains("core_tls_certificate_failed"))
+        assertFalse(report.contains("PRIVATE_HOST"))
+        VpnDiagnostics.setEngine(false)
+    }
 }

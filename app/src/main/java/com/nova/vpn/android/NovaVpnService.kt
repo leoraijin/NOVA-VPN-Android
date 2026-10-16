@@ -42,6 +42,9 @@ import io.nekohasekai.libbox.StatusMessage
 import io.nekohasekai.libbox.TunOptions
 import io.nekohasekai.libbox.WIFIState
 import com.nova.vpn.android.wear.WearStatusSync
+import com.nova.vpn.android.data.AppPreferencesStore
+import com.nova.vpn.android.data.VpnEngine
+import com.nova.vpn.android.data.RealityConfigFactory
 import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.NetworkInterface as JNetworkInterface
@@ -63,6 +66,13 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
     private var commandServer: CommandServer? = null
     private var debugLogClient: CommandClient? = null
     private var tunDescriptor: ParcelFileDescriptor? = null
+    @Volatile private var realityHandle = 0L
+    @Volatile private var activeEngine: VpnEngine? = null
+    private var realityNetworkCallback: ConnectivityManager.NetworkCallback? = null
+    private val realityHealthQueue = java.util.concurrent.Executors.newSingleThreadScheduledExecutor { r ->
+        Thread(r, "nova-reality-health").apply { isDaemon = true }
+    }
+    private var realityHealthTask: java.util.concurrent.ScheduledFuture<*>? = null
     private val probeQueue = Executors.newSingleThreadExecutor { runnable -> Thread(runnable, "nova-vpn-check").apply { isDaemon = true } }
     @Volatile private var trafficProbe: AndroidTrafficProbe? = null
     private val notificationRefreshReceiver = object : BroadcastReceiver() {
@@ -91,6 +101,12 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
             stopTunnel(startId)
             return START_NOT_STICKY
         }
+        // Native stop closes its TUN. Refuse live changes rather than briefly
+        // restoring unprotected routing while a replacement is being established.
+        if (activeEngine == VpnEngine.REALITY_CORE && realityHandle != 0L) {
+            VpnRuntime.setTransportWarning("Reality Core: перед сменой сервера или правил отключите VPN, затем подключитесь снова. Текущий туннель оставлен без изменений.")
+            return START_NOT_STICKY
+        }
 
         val config = intent?.getStringExtra(EXTRA_CONFIG)
         if (config.isNullOrBlank()) {
@@ -100,14 +116,10 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
             return START_NOT_STICKY
         }
 
-        activeProfileName = intent?.getStringExtra(EXTRA_PROFILE_NAME)
+        val requestedProfileName = intent?.getStringExtra(EXTRA_PROFILE_NAME)
             ?.trim()?.replace(Regex("\\s+"), " ")?.take(48)?.takeIf(String::isNotBlank)
             ?: "Выбранная конфигурация"
 
-        VpnDiagnostics.reset()
-
-        VpnRuntime.setConnecting()
-        WearStatusSync.publish(this, "connecting")
         try {
             startForegroundCompat()
         } catch (error: Throwable) {
@@ -118,10 +130,32 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
             return START_NOT_STICKY
         }
         serviceQueue.execute {
+            if (startId != latestStartId) return@execute
+            if (activeEngine == VpnEngine.REALITY_CORE && realityHandle != 0L) {
+                VpnRuntime.setTransportWarning("Reality Core: отключите VPN перед сменой конфигурации. Текущий туннель оставлен без изменений.")
+                return@execute
+            }
+            // Publish startup only after the serial queue accepted this request.
+            // A second START may arrive before native start returns its handle;
+            // rejecting that queued request must not erase the live tunnel state.
+            VpnDiagnostics.reset()
+            VpnRuntime.setConnecting()
+            WearStatusSync.publish(this, "connecting")
+            activeProfileName = requestedProfileName
             var stage = "vpn-permission"
             try {
                 Log.i(TAG, "VPN engine startup stage=$stage")
                 if (VpnService.prepare(this) != null) error("Не выдано разрешение Android на VPN")
+                val engine = AppPreferencesStore(this).vpnEngine()
+                VpnDiagnostics.setEngine(engine == VpnEngine.REALITY_CORE)
+                check(activeEngine == null || activeEngine == engine) { "Перед сменой ядра отключите VPN." }
+                if (engine == VpnEngine.REALITY_CORE) {
+                    stage = "reality-start"
+                    startReality(config, startId)
+                    return@execute
+                }
+                activeEngine = VpnEngine.SING_BOX
+                VpnDiagnostics.record("engine_sing_box")
                 stage = "libbox-setup"
                 VpnDiagnostics.record("engine_setup")
                 Log.i(TAG, "VPN engine startup stage=$stage")
@@ -168,10 +202,7 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
                 VpnDiagnostics.record("startup_failed")
                 trafficProbe?.cancel(); trafficProbe = null
                 Log.e(TAG, "VPN start failed at stage=$stage", error)
-                runCatching { commandServer?.close() }
-                commandServer = null
-                runCatching { tunDescriptor?.close() }
-                tunDescriptor = null
+                closeEngine()
                 VpnRuntime.setFailure(error.message ?: "Не удалось запустить VPN")
                 WearStatusSync.publish(this, "error")
                 stopForeground(STOP_FOREGROUND_REMOVE)
@@ -190,6 +221,7 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
         runCatching { unregisterReceiver(notificationRefreshReceiver) }
         trafficProbe?.cancel(); trafficProbe = null
         probeQueue.shutdownNow()
+        realityHealthQueue.shutdownNow()
         monitors.values.forEach { runCatching { connectivity.unregisterNetworkCallback(it) } }
         monitors.clear()
         interfacePublications.clear()
@@ -197,14 +229,18 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
         runCatching {
             serviceQueue.execute {
                 closeEngine()
-                VpnRuntime.setDisconnected()
-                WearStatusSync.publish(this, "disconnected")
+                if (VpnRuntime.state.value.error == null) {
+                    VpnRuntime.setDisconnected()
+                    WearStatusSync.publish(this, "disconnected")
+                }
             }
             serviceQueue.shutdown()
         }.onFailure {
             closeEngine()
-            VpnRuntime.setDisconnected()
-            WearStatusSync.publish(this, "disconnected")
+            if (VpnRuntime.state.value.error == null) {
+                VpnRuntime.setDisconnected()
+                WearStatusSync.publish(this, "disconnected")
+            }
             serviceQueue.shutdownNow()
         }
         super.onDestroy()
@@ -225,6 +261,18 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
     }
 
     private fun closeEngine() {
+        trafficProbe?.cancel()
+        trafficProbe = null
+        realityHealthTask?.cancel(false)
+        realityHealthTask = null
+        if (realityHandle != 0L) {
+            val handle = realityHandle
+            realityHandle = 0L
+            runCatching { RealityCoreBridge.stop(handle) }
+        }
+        realityNetworkCallback?.let { runCatching { connectivity.unregisterNetworkCallback(it) } }
+        realityNetworkCallback = null
+        activeEngine = null
         runCatching { debugLogClient?.disconnect() }
         debugLogClient = null
         runCatching { commandServer?.closeService() }
@@ -232,6 +280,104 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
         commandServer = null
         runCatching { tunDescriptor?.close() }
         tunDescriptor = null
+    }
+
+    private fun startReality(config: String, startId: Int) {
+        RealityCoreBridge.requireAvailable()
+        // Conversion and native validation happen BEFORE closing an existing tunnel.
+        val probe = AndroidTrafficProbe.prepare(config)
+        val prepared = RealityConfigFactory.prepare(probe?.config ?: config, packageName)
+        val runtimeConfig = prepared.config
+        check(RealityCoreBridge.validate(runtimeConfig, filesDir.absolutePath)) {
+            "Этот профиль или его правила не поддерживаются Reality Core. Выберите sing-box."
+        }
+        trafficProbe?.cancel()
+        closeEngine()
+        activeEngine = VpnEngine.REALITY_CORE
+        VpnDiagnostics.record("engine_reality_core")
+        VpnDiagnostics.record("reality_revision_51a811f1")
+        registerRealityNetworkMonitor()
+        val builder = Builder().setSession("NOVA VPN · Reality Core").setMtu(1500)
+            .addAddress("172.19.0.1", 30).addRoute("0.0.0.0", 0).addDnsServer("172.19.0.2")
+        // Capture IPv6 even when AAAA is disabled: it must not bypass the VPN.
+        builder.addAddress("fdfe:dcba:9876::1", 126).addRoute("::", 0)
+        if (Build.VERSION.SDK_INT >= 29) builder.setMetered(false)
+        prepared.includedPackages.forEach { builder.addAllowedApplication(it) }
+        prepared.excludedPackages.forEach { builder.addDisallowedApplication(it) }
+        val descriptor = builder.establish() ?: error("Android не создал TUN-интерфейс")
+        // A detached FD is consumed by native start on both success and failure.
+        val fd = descriptor.detachFd()
+        descriptor.close()
+        realityHandle = RealityCoreBridge.start(runtimeConfig, filesDir.absolutePath, fd,
+            object : RealityCoreBridge.Callbacks {
+                override fun protectSocket(fd: Int): Boolean = runCatching {
+                    autoDetectInterfaceControl(fd)
+                    true
+                }.onFailure { VpnDiagnostics.record("reality_protect_failed") }.getOrDefault(false)
+                override fun coreWarning(message: String) { VpnDiagnostics.coreMessage(message) }
+            })
+        check(realityHandle != 0L) { "Не удалось запустить Reality Core. Выберите sing-box или отправьте диагностический отчёт." }
+        trafficProbe = probe
+        VpnDiagnostics.record("engine_started")
+        VpnRuntime.setConnected()
+        VpnDiagnostics.record("tunnel_active")
+        WearStatusSync.publish(this, "connected")
+        updateNotification("VPN подключён · Reality Core")
+        if (probe != null) {
+            VpnRuntime.setTrafficChecking()
+            probeQueue.execute {
+                val success = probe.check()
+                if (trafficProbe === probe) {
+                    VpnRuntime.setTrafficResult(success)
+                    updateNotification(if (success) "HTTPS через VPN подтверждён · Reality Core" else "Reality Core · проверка не подтверждена")
+                }
+            }
+        }
+        // Only reads the native terminal-error channel; no periodic network probes.
+        realityHealthTask = realityHealthQueue.scheduleWithFixedDelay({
+            runCatching { serviceQueue.execute {
+                if (realityHandle != 0L && !RealityCoreBridge.isAlive(realityHandle)) {
+                    trafficProbe?.cancel(); trafficProbe = null
+                    closeEngine()
+                    VpnDiagnostics.record("reality_terminal_failure")
+                    VpnRuntime.setFailure("Reality Core остановилось. Отправьте диагностический отчёт или выберите sing-box.")
+                    WearStatusSync.publish(this, "error")
+                    stopForeground(STOP_FOREGROUND_REMOVE)
+                    stopSelfResult(latestStartId)
+                }
+            } }
+        }, 5, 5, java.util.concurrent.TimeUnit.SECONDS)
+    }
+
+    private fun registerRealityNetworkMonitor() {
+        availableUnderlays.clear()
+        connectivity.allNetworks.forEach { network ->
+            connectivity.getNetworkCapabilities(network)?.takeIf {
+                it.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN) &&
+                    it.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+            }?.let { availableUnderlays[network] = it }
+        }
+        fun publish() {
+            val network = selectUnderlay()
+            runCatching { setUnderlyingNetworks(network?.let { arrayOf(it) }) }
+        }
+        val callback = object : ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: Network) {
+                connectivity.getNetworkCapabilities(network)?.let { availableUnderlays[network] = it }
+                publish()
+            }
+            override fun onCapabilitiesChanged(network: Network, capabilities: NetworkCapabilities) {
+                availableUnderlays[network] = capabilities
+                publish()
+            }
+            override fun onLost(network: Network) { availableUnderlays.remove(network); publish() }
+            override fun onLinkPropertiesChanged(network: Network, properties: LinkProperties) { publish() }
+        }
+        realityNetworkCallback = callback
+        connectivity.registerNetworkCallback(NetworkRequest.Builder()
+            .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+            .addCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN).build(), callback)
+        publish()
     }
 
     /** Read core warnings for safe UI notices; detailed logs/connection events are debug-only. */

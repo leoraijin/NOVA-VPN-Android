@@ -8,14 +8,21 @@ android {
     namespace = "com.nova.vpn.android"
     compileSdk = 35
     buildToolsVersion = "35.0.0"
-    testBuildType = if (providers.gradleProperty("novaMapSmoke").isPresent) "maptest" else "debug"
+    testBuildType = when {
+        providers.gradleProperty("novaRealitySmoke").isPresent -> "realitypreview"
+        providers.gradleProperty("novaMapSmoke").isPresent -> "maptest"
+        else -> "debug"
+    }
 
     splits {
         abi {
             isEnable = true
             reset()
-            include("arm64-v8a", "armeabi-v7a", "x86_64", "x86")
-            isUniversalApk = true
+            val smokeAbi = providers.gradleProperty("novaRealityAbi").orNull
+            require(smokeAbi == null || (providers.gradleProperty("novaRealitySmoke").isPresent &&
+                smokeAbi in setOf("arm64-v8a", "armeabi-v7a", "x86_64"))) { "novaRealityAbi is restricted to native smoke tests" }
+            if (smokeAbi != null) include(smokeAbi) else include("arm64-v8a", "armeabi-v7a", "x86_64", "x86")
+            isUniversalApk = smokeAbi == null
         }
     }
 
@@ -25,8 +32,13 @@ android {
         targetSdk = 35
         versionCode = 46
         versionName = "0.2.44"
-        testInstrumentationRunner = if (providers.gradleProperty("novaMapSmoke").isPresent)
-            "com.nova.vpn.android.ServerMapSmokeRunner" else "androidx.test.runner.AndroidJUnitRunner"
+        manifestPlaceholders["novaAppLabel"] = "NOVA VPN"
+        buildConfigField("boolean", "REALITY_PREVIEW", "false")
+        testInstrumentationRunner = when {
+            providers.gradleProperty("novaRealitySmoke").isPresent -> "com.nova.vpn.android.RealityCoreSmokeRunner"
+            providers.gradleProperty("novaMapSmoke").isPresent -> "com.nova.vpn.android.ServerMapSmokeRunner"
+            else -> "androidx.test.runner.AndroidJUnitRunner"
+        }
     }
 
     compileOptions {
@@ -73,6 +85,14 @@ android {
             initWith(getByName("optimized"))
             applicationIdSuffix = ".designpreview"
             versionNameSuffix = "-design"
+            matchingFallbacks += listOf("optimized", "release")
+        }
+        create("realitypreview") {
+            initWith(getByName("optimized"))
+            applicationIdSuffix = ".realitypreview"
+            versionNameSuffix = "-reality-preview"
+            manifestPlaceholders["novaAppLabel"] = "NOVA VPN · Reality Test"
+            buildConfigField("boolean", "REALITY_PREVIEW", "true")
             matchingFallbacks += listOf("optimized", "release")
         }
         create("maptest") {

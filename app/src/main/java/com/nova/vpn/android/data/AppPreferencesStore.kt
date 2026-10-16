@@ -7,6 +7,14 @@ class AppPreferencesStore(context: Context) {
 
     fun autoConnectEnabled(): Boolean = preferences.getBoolean(KEY_AUTO_CONNECT, false)
 
+    fun vpnEngine(): VpnEngine = VpnEngine.fromId(preferences.getString(KEY_VPN_ENGINE, null))
+
+    fun setVpnEngine(engine: VpnEngine) {
+        check(preferences.edit().putString(KEY_VPN_ENGINE, engine.id).commit()) {
+            "Не удалось сохранить VPN-движок"
+        }
+    }
+
     fun tutorialDismissed(): Boolean = preferences.getBoolean("tutorial_dismissed", false)
 
     fun dismissTutorial() {
@@ -75,6 +83,7 @@ class AppPreferencesStore(context: Context) {
 
     private companion object {
         const val KEY_AUTO_CONNECT = "auto_connect"
+        const val KEY_VPN_ENGINE = "vpn_engine"
         const val KEY_DESIGN = "design_preset"
         const val KEY_UPDATE_CHECKS = "update_checks_enabled"
         const val DEFAULT_DESIGN = "IOS_GLASS"

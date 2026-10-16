@@ -8,6 +8,13 @@ import org.json.JSONObject
 internal object VpnDiagnostics {
     private val events = ArrayDeque<String>()
     private var started = System.nanoTime()
+    private var engine = "sing_box"
+    private var engineVersion = "libbox_1.14.1"
+
+    @Synchronized fun setEngine(reality: Boolean) {
+        engine = if (reality) "reality_core" else "sing_box"
+        engineVersion = if (reality) "0.1.0_51a811f1_nova" else "libbox_1.14.1"
+    }
     private val validCode = Regex("[a-z0-9_:=.-]{1,96}")
 
     @Synchronized fun reset() {
@@ -31,7 +38,7 @@ internal object VpnDiagnostics {
         return when {
             "no such host" in text || "server misbehaving" in text -> "dns_lookup_failed"
             "dns" in text && ("failed" in text || "timeout" in text) -> "dns_exchange_failed"
-            "x509" in text || "certificate verification" in text -> "tls_certificate_failed"
+            "x509" in text || "certificate verification" in text || "invalid peer certificate" in text -> "tls_certificate_failed"
             "alpn" in text || "no application protocol" in text -> "tls_alpn_failed"
             "handshake" in text && ("failed" in text || "error" in text) -> "tls_handshake_failed"
             "unimplemented" in text || "404" in text -> "grpc_service_not_found"
@@ -63,6 +70,7 @@ internal object VpnDiagnostics {
         return buildString {
             appendLine("NOVA VPN diagnostic ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})")
             appendLine("android_api=$sdk debug=${BuildConfig.DEBUG}")
+            appendLine("engine=$engine engine_version=$engineVersion")
             appendLine("connected=${state.connected} connecting=${state.connecting} verified=${state.trafficVerified} check_failed=${state.trafficCheckFailed}")
             appendLine("protocol=${safeChoice(outbound?.optString("type"), setOf("vless", "vmess", "trojan", "shadowsocks", "hysteria2", "tuic", "socks", "selector", "urltest"))}")
             appendLine("transport=${safeChoice(outbound?.optJSONObject("transport")?.optString("type") ?: "tcp", setOf("tcp", "ws", "grpc", "http", "httpupgrade", "quic"))}")

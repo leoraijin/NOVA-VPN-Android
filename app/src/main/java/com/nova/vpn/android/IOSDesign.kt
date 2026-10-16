@@ -247,6 +247,7 @@ internal fun SettingsPage(onStartTutorial: () -> Unit, onNotificationSettings: (
                 Text("NOVA VPN ${BuildConfig.VERSION_NAME}", Modifier.fillMaxWidth().padding(top = 12.dp), textAlign = TextAlign.Center, fontSize = 12.sp, color = c.onSurfaceVariant)
             }
         }
+        item { EngineSettingsCard() }
     }
 }
 

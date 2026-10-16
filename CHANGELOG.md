@@ -242,3 +242,14 @@
 
 После публикации APK откройте страницу Releases в репозитории NOVA-VPN-Android. Клиент также предложит загрузить новую версию при запуске, если в публичном репозитории появится релиз с более высоким номером.
 
+# Experimental: 0.2.44 Reality preview
+
+- Optional ERGFT Reality Core, pinned to 51a811f1, alongside default sing-box.
+- Separate preview package, explicit engine choice, safe configuration refusal,
+  Android app selection, managed site fake-IP DNS, terminal-error diagnostics.
+- Android JNI FD ownership, generation-safe callbacks, external-TUN DNS fixes,
+  and per-rule DNS strategies. No TLS-verification bypass.
+- Stable package and GitHub latest remain unchanged; preview updates are manual.
+- Device handover, sleep, real provider transports and battery measurements still
+  require physical-device testing before production promotion.
+

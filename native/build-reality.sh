@@ -8,15 +8,23 @@ mkdir -p "$root/native/work"
 if [[ ! -d "$source_dir/.git" ]]; then
   git clone https://github.com/ERGFT/vpn-core.git "$source_dir"
 fi
-git -C "$source_dir" checkout --detach "$revision"
-if ! git -C "$source_dir" apply --reverse --check "$root/native/reality-validation.patch" 2>/dev/null; then
-  git -C "$source_dir" apply "$root/native/reality-validation.patch"
-fi
-if [[ -f "$root/native/reality-android-fixes.patch" ]] && ! git -C "$source_dir" apply --reverse --check "$root/native/reality-android-fixes.patch" 2>/dev/null; then
-  git -C "$source_dir" apply "$root/native/reality-android-fixes.patch"
-fi
-if [[ -f "$root/native/reality-dns-rules.patch" ]] && ! git -C "$source_dir" apply --reverse --check "$root/native/reality-dns-rules.patch" 2>/dev/null; then
-  git -C "$source_dir" apply "$root/native/reality-dns-rules.patch"
+recipe="$(cd "$root/native" && sha256sum *.patch | sha256sum | cut -d' ' -f1)"
+installed="$(git -C "$source_dir" config --get nova.patchset || true)"
+if [[ "$installed" == "$recipe" && "$(git -C "$source_dir" rev-parse HEAD)" == "$revision" ]]; then
+  expected="$(git -C "$source_dir" config --get nova.patchdiff)"
+  [[ "$(git -C "$source_dir" diff --binary | sha256sum | cut -d' ' -f1)" == "$expected" ]] || {
+    echo 'Core source changed after patching; refusing to overwrite it.' >&2; exit 1;
+  }
+else
+  [[ -z "$(git -C "$source_dir" status --porcelain)" ]] || {
+    echo 'Different or edited core sources exist in native/work/core. Preserve them and use a fresh build directory.' >&2; exit 1;
+  }
+  git -C "$source_dir" checkout --detach "$revision"
+  for patch in reality-validation.patch reality-android-fixes.patch reality-dns-rules.patch; do
+    git -C "$source_dir" apply "$root/native/$patch"
+  done
+  git -C "$source_dir" config nova.patchset "$recipe"
+  git -C "$source_dir" config nova.patchdiff "$(git -C "$source_dir" diff --binary | sha256sum | cut -d' ' -f1)"
 fi
 : "${ANDROID_NDK_HOME:?Set ANDROID_NDK_HOME}"
 abis=("$@")

@@ -195,6 +195,7 @@ internal fun WindowsSettings(onTutorial: () -> Unit, onNotifications: () -> Unit
         item { WindowsCard { WindowsRow("NOVA для Windows", "Открыть GitHub", Icons.Outlined.DesktopWindows, { onProduct("https://github.com/leoraijin/NOVA-VPN") }) } }
         item { WindowsCard { WindowsRow("NOVA для часов", "Открыть GitHub", Icons.Outlined.Watch, { onProduct("https://github.com/leoraijin/NOVA-VPN-WearOS") }) } }
         item { Text("NOVA VPN · ${BuildConfig.VERSION_NAME}", Modifier.padding(vertical = 16.dp), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+        item { EngineSettingsCard() }
     }
 }
 

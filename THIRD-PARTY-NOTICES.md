@@ -1,5 +1,16 @@
 # Third-party components
 
+## Reality Core (experimental Android engine)
+
+Copyright ERGFT. Source: <https://github.com/ERGFT/vpn-core>.
+Pinned revision: `51a811f1eb3dc3f158b6f7d1a38e3da1d3cf62bc` (0.1.0).
+Licensed GPL-3.0-or-later; see this project's GPL license and the upstream `LICENSE`.
+NOVA's JNI bridge and Android validation/fixes are in `native/`, distributed as source.
+`native/build-reality.sh` builds the exact pinned upstream source plus these patches.
+Experimental binary releases must include the corresponding upstream source archive,
+this application's corresponding source and all dependency license notices. The core
+is experimental, not independently security-audited; no performance claims are made.
+
 ## Natural Earth geographic data
 
 The offline server map uses country boundaries from Natural Earth 1:110m Admin 0 Countries and city labels from Natural Earth 1:50m Populated Places. A compact derivative is bundled as `assets/world-map.json`; geographic data is public domain. Sources: <https://www.naturalearthdata.com/> and <https://www.naturalearthdata.com/about/terms-of-use/>. Profile locations are inferred locally from profile names and are not verified physical server locations.
