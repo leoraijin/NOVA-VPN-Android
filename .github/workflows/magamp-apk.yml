@@ -6,6 +6,8 @@ on:
       - "magamp-build/**"
       - ".github/workflows/magamp-apk.yml"
   workflow_dispatch:
+permissions:
+  contents: write
 jobs:
   apk:
     runs-on: ubuntu-latest
@@ -49,3 +51,14 @@ jobs:
         with:
           name: MagAmp-1.1-signed-APK
           path: magamp-build/out/MagAmp-1.1.apk
+      - name: Publish direct APK link on isolated branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p magamp-build/download
+          cp magamp-build/out/MagAmp-1.1.apk magamp-build/download/MagAmp-1.1.apk
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add magamp-build/download/MagAmp-1.1.apk
+          git commit -m "Publish MagAmp direct-download APK [skip ci]" || true
+          git push origin HEAD:build/magamp-apk-20261016
