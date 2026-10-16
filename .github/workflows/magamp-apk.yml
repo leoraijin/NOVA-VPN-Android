@@ -15,7 +15,6 @@ jobs:
         with:
           distribution: temurin
           java-version: "17"
-      - uses: android-actions/setup-android@v3
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.9"
@@ -23,8 +22,6 @@ jobs:
         run: |
           mkdir -p magamp-build/source
           base64 -d magamp-build/magamp-src.tar.xz.b64 | tar -xJ -C magamp-build/source
-      - name: Install Android SDK
-        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
       - name: Assemble debug APK
         working-directory: magamp-build/source
         run: gradle --no-daemon :app:assembleDebug
