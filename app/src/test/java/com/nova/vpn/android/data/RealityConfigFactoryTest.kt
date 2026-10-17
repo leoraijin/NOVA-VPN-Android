@@ -143,12 +143,58 @@ class RealityConfigFactoryTest {
         assertEquals("proxy", rules(output).getJSONObject(3).getString("outbound"))
     }
 
-    @Test fun nonemptyPackageAndSitePoliciesAreRejectedInBothModes() {
+    @Test fun mixedPoliciesWithoutTrustedUidResolverAreRejectedInBothModes() {
         AppRoutingMode.entries.forEach { mode ->
             SiteRoutingTarget.entries.forEach { target ->
                 rejected(generated(AppRoutingSettings(mode, apps,
                     listOf(SiteRoutingRule("example.org", target)))))
             }
+        }
+    }
+
+    @Test fun mixedSiteAndAppPoliciesKeepPriorityAndCaptureAllApplications() {
+        AppRoutingMode.entries.forEach { mode ->
+            SiteRoutingTarget.entries.forEach { target ->
+                val source = generated(AppRoutingSettings(mode, apps,
+                    listOf(SiteRoutingRule("example.org", target))))
+                val snapshot = source.toString()
+                val lookups = mutableListOf<String>()
+                val result = RealityConfigFactory.prepare(snapshot, own) { name ->
+                    lookups += name
+                    if (name.endsWith("alpha")) 10001 else 10002
+                }
+                assertTrue(result.includedPackages.isEmpty())
+                assertEquals(listOf(own), result.excludedPackages)
+                assertEquals(apps.sorted(), lookups)
+                val output = JSONObject(result.config)
+                assertEquals("sniff", rules(output).getJSONObject(1).getString("action"))
+                for (index in 2..3) {
+                    assertEquals(rules(source).getJSONObject(index).toString(), rules(output).getJSONObject(index).toString())
+                }
+                val first = rules(output).getJSONObject(4)
+                assertFalse(first.has("package_name"))
+                assertEquals("[10001,10002]", first.getJSONArray("user_id").toString())
+                assertEquals(if (mode == AppRoutingMode.INCLUDE_SELECTED) "proxy" else "direct", first.getString("outbound"))
+                if (mode == AppRoutingMode.INCLUDE_SELECTED) {
+                    val inverted = rules(output).getJSONObject(5)
+                    assertTrue(inverted.getBoolean("invert"))
+                    assertEquals("direct", inverted.getString("outbound"))
+                }
+                assertEquals(2, dns(output).getJSONArray("rules").length())
+                assertEquals("nova-site-fakeip", dns(output).getJSONArray("rules").getJSONObject(0).getString("server"))
+                assertEquals(snapshot, source.toString())
+            }
+        }
+    }
+
+    @Test fun mixedUidResolutionCannotSilentlyDropMissingOrOwnApplications() {
+        val source = generated(AppRoutingSettings(packages = apps, sites = listOf(SiteRoutingRule("example.org"))))
+        assertThrows(IllegalArgumentException::class.java) {
+            RealityConfigFactory.prepare(source.toString(), own) { -1 }
+        }
+        val self = generated(AppRoutingSettings(packages = setOf(own), sites = listOf(SiteRoutingRule("example.org"))))
+        assertThrows(IllegalArgumentException::class.java) {
+            RealityConfigFactory.prepare(self.toString(), own) { 10001 }
         }
     }
 

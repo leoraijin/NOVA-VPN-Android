@@ -209,6 +209,26 @@ class RealityCoreSmokeRunner : Instrumentation() {
                 start(config)
                 check(routedClientResult() == "ok" && packets.get() == 7) { "Default sing-box regression: TLS/TUN echo failed" }
                 stop()
+                AppPreferencesStore(context).setVpnEngine(VpnEngine.REALITY_CORE)
+                val mixedStart = packets.get()
+                start(SingBoxConfigFactory.build(profile, AppRoutingSettings(AppRoutingMode.INCLUDE_SELECTED,
+                    setOf(testPackage), listOf(SiteRoutingRule("native.test", SiteRoutingTarget.VPN))), context.packageName))
+                check(routedClientResult() == "ok" && packets.get() == mixedStart + 1) {
+                    "Native mixed routing did not resolve selected application's real Android UID"
+                }
+                check(routedClientResult(ipv6 = true) == "ok" && packets.get() == mixedStart + 2) {
+                    "Native mixed routing did not resolve IPv6 connection owner"
+                }
+                stop()
+                start(SingBoxConfigFactory.build(profile, AppRoutingSettings(AppRoutingMode.EXCLUDE_SELECTED,
+                    setOf(testPackage), listOf(SiteRoutingRule("native.test", SiteRoutingTarget.VPN))), context.packageName))
+                check(routedClientResult() != "ok" && packets.get() == mixedStart + 2) {
+                    "Native UID direct rule failed to exclude selected app"
+                }
+                check(routedClientResult(site = true) == "ok" && packets.get() == mixedStart + 3) {
+                    "Site exception must override the selected application's direct UID rule"
+                }
+                stop()
             } finally {
                 context.startService(android.content.Intent(context, NovaVpnService::class.java).setAction(NovaVpnService.ACTION_STOP))
                 waitUntil("final cleanup") { !VpnRuntime.state.value.connected && !VpnRuntime.state.value.connecting }
@@ -245,7 +265,8 @@ class RealityCoreSmokeRunner : Instrumentation() {
         try {
             context.startActivity(android.content.Intent().setComponent(android.content.ComponentName(
                 "${context.packageName}.test", RealityProbeClientActivity::class.java.name))
-                .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK).putExtra("nonce", nonce).putExtra("ipv6", ipv6).putExtra("site", site))
+                .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_MULTIPLE_TASK)
+                .putExtra("nonce", nonce).putExtra("ipv6", ipv6).putExtra("site", site))
             waitUntil("client result ipv6=$ipv6 site=$site") { answer.get() != null }
             return answer.get()!!
         } finally { context.unregisterReceiver(receiver) }

@@ -15,5 +15,6 @@ internal object RealityCoreBridge {
     interface Callbacks {
         fun protectSocket(fd: Int): Boolean
         fun coreWarning(message: String)
+        fun connectionOwner(protocol: Int, source: String, destination: String): Long = -1L
     }
 }

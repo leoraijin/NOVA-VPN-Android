@@ -286,7 +286,17 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
         RealityCoreBridge.requireAvailable()
         // Conversion and native validation happen BEFORE closing an existing tunnel.
         val probe = AndroidTrafficProbe.prepare(config)
-        val prepared = RealityConfigFactory.prepare(probe?.config ?: config, packageName)
+        val packageUid: ((String) -> Int)? = if (Build.VERSION.SDK_INT >= 29) { name ->
+            val uid = runCatching { packageManager.getApplicationInfo(name, 0).uid }.getOrNull()
+            require(uid != null && uid >= 0) { "Приложение недоступно. Обновите список приложений маршрутизации." }
+            // Android cannot distinguish packages sharing a Linux UID. Do not promise otherwise.
+            require(packageManager.getPackageInfo(name, 0).sharedUserId == null &&
+                packageManager.getPackagesForUid(uid)?.toSet() == setOf(name)) {
+                "Совместная маршрутизация недоступна для приложений с общим UID. Выберите sing-box."
+            }
+            uid
+        } else null
+        val prepared = RealityConfigFactory.prepare(probe?.config ?: config, packageName, packageUid)
         val runtimeConfig = prepared.config
         check(RealityCoreBridge.validate(runtimeConfig, filesDir.absolutePath)) {
             "Этот профиль или его правила не поддерживаются Reality Core. Выберите sing-box."
@@ -295,7 +305,7 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
         closeEngine()
         activeEngine = VpnEngine.REALITY_CORE
         VpnDiagnostics.record("engine_reality_core")
-        VpnDiagnostics.record("reality_revision_998e0a42")
+        VpnDiagnostics.record("reality_revision_994ce4ef")
         registerRealityNetworkMonitor()
         val builder = Builder().setSession("NOVA VPN · Reality Core").setMtu(1500)
             .addAddress("172.19.0.1", 30).addRoute("0.0.0.0", 0).addDnsServer("172.19.0.2")
@@ -315,6 +325,12 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
                     true
                 }.onFailure { VpnDiagnostics.record("reality_protect_failed") }.getOrDefault(false)
                 override fun coreWarning(message: String) { VpnDiagnostics.coreMessage(message) }
+                override fun connectionOwner(protocol: Int, source: String, destination: String): Long {
+                    if (Build.VERSION.SDK_INT < 29) return -1L
+                    return ConnectionOwnerLookup.resolve(protocol, source, destination) { type, local, remote ->
+                        connectivity.getConnectionOwnerUid(type, local, remote)
+                    }
+                }
             })
         check(realityHandle != 0L) { "Не удалось запустить Reality Core. Выберите sing-box или отправьте диагностический отчёт." }
         trafficProbe = probe

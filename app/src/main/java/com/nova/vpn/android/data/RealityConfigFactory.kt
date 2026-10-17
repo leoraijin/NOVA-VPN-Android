@@ -4,15 +4,16 @@ import org.json.JSONArray
 import org.json.JSONException
 import org.json.JSONObject
 
-/** Android adaptation for the native sing-box parser based on approved core PR #34.
+/** Android adaptation for the native sing-box parser, pinned core PRs #34 and #35.
  *
  * This is not native validation: the caller must validate [Prepared.config] with the core
  * before opening the VPN. Unknown fields are deliberately retained for that validation.
  *
  * Supported plan: one generated TUN, VLESS/Trojan plus direct/block/DNS outbounds,
- * and either generated application routing or native-supported site routing. The
+ * and generated application/site routing. The
  * Android Builder must apply only the nonempty application list in [Prepared].
- * Package and site/custom rules cannot be combined without changing their priority.
+ * Mixed routing uses native UID rules on Android 10+, preserving site priority.
+ * Application-only policies retain Android Builder filtering on older versions too.
  * Include mode with no selected apps moves the terminal direct catch-all to route.final;
  * an allow-list containing only this VPN app is rejected (an empty Builder list means all apps).
  *
@@ -38,15 +39,15 @@ object RealityConfigFactory {
         val ipv6Enabled: Boolean
     )
 
-    fun prepare(config: String, ownPackage: String): Prepared = try {
+    fun prepare(config: String, ownPackage: String, packageUid: ((String) -> Int)? = null): Prepared = try {
         require(PACKAGE.matches(ownPackage)) { "Некорректные параметры VPN-приложения." }
-        prepareJson(JSONObject(config), ownPackage)
+        prepareJson(JSONObject(config), ownPackage, packageUid)
     } catch (_: JSONException) {
         // org.json errors can include input fragments, credentials and server names.
         throw IllegalArgumentException("Некорректная конфигурация Reality Core.")
     }
 
-    private fun prepareJson(root: JSONObject, ownPackage: String): Prepared {
+    private fun prepareJson(root: JSONObject, ownPackage: String, packageUid: ((String) -> Int)?): Prepared {
         val outbounds = objects(root.getJSONArray("outbounds"))
         require(outbounds.isNotEmpty() && outbounds.all { it.opt("type") in PROTOCOLS }) {
             "Протокол подключения не поддерживается Reality Core. Выберите sing-box."
@@ -67,7 +68,7 @@ object RealityConfigFactory {
 
         val dns = root.getJSONObject("dns")
         prepareDns(dns, outbounds)
-        val (included, excluded) = preparePackages(route, dns, outbounds, ownPackage)
+        val (included, excluded) = preparePackages(route, dns, outbounds, ownPackage, packageUid)
         prepareSiteDns(route, dns, outbounds)
         normalizeTerminalDirectRoute(route, dns, outbounds)
         // SingBoxConfigFactory always emits a DNS strategy for managed DNS. Full JSON
@@ -124,7 +125,9 @@ object RealityConfigFactory {
         if (plan.firstOrNull()?.let { isProbe(it, route.opt("final")) } == true) plan.removeAt(0)
         require(plan.size >= 2 && isDnsHijack(plan[0]) &&
             keys(plan[1]) == setOf("action") && plan[1].opt("action") == "sniff") { error }
+        // Native UID rules stay after sites. They must not change site DNS pairing.
         val sitePlan = plan.drop(2).toMutableList()
+        while (sitePlan.lastOrNull()?.has("user_id") == true) sitePlan.removeAt(sitePlan.lastIndex)
         val directTags = outbounds.filter { it.opt("type") == "direct" && !it.has("detour") }
             .map { it.opt("tag") }.filterIsInstance<String>().toSet()
         if (sitePlan.lastOrNull()?.let {
@@ -243,7 +246,8 @@ object RealityConfigFactory {
     }
 
     private fun preparePackages(
-        route: JSONObject, dns: JSONObject, outbounds: List<JSONObject>, ownPackage: String
+        route: JSONObject, dns: JSONObject, outbounds: List<JSONObject>, ownPackage: String,
+        packageUid: ((String) -> Int)?
     ): Pair<List<String>, List<String>> {
         val rules = route.optJSONArray("rules")?.let(::objects).orEmpty()
         val packages = rules.filter { it.has("package_name") }
@@ -251,13 +255,14 @@ object RealityConfigFactory {
             require(!containsInvert(route) && !containsInvert(dns)) { "Инвертированные правила не поддерживаются Reality Core." }
             return emptyList<String>() to listOf(ownPackage)
         }
-        // Android app selection happens before any native routing. Only the generated
-        // DNS hijack and the optional local health probe may accompany package mode.
+        // Builder filtering is safe only for app-only policies. Mixed policies
+        // keep flows inside native routing so earlier site exceptions still apply.
         val others = rules.filterNot { it.has("package_name") }
-        require(others.all { isDnsHijack(it) || isProbe(it, route.opt("final")) } &&
+        val builderOnly = others.all { isDnsHijack(it) || isProbe(it, route.opt("final")) } &&
             (dns.optJSONArray("rules")?.length() ?: 0) == 0 && !containsInvert(dns) &&
-            rules.takeLast(packages.size) == packages) {
-            "Reality Core не поддерживает совместные правила приложений и сайтов или другие дополнительные правила. Выберите sing-box."
+            rules.takeLast(packages.size) == packages
+        require(builderOnly || packageUid != null) {
+            "Совместные правила приложений и сайтов требуют Android 10 или новее. Выберите sing-box."
         }
         val names = strings(packages.first().getJSONArray("package_name"))
         require(names.isNotEmpty() && names == names.distinct().sorted() && names.all(PACKAGE::matches)) {
@@ -284,6 +289,25 @@ object RealityConfigFactory {
                 excluded = emptyList()
             }
             else -> throw IllegalArgumentException("Правила приложений не поддерживаются Reality Core. Выберите sing-box.")
+        }
+        if (!builderOnly) {
+            require(rules.takeLast(packages.size) == packages &&
+                !containsInvert(dns) && others.none(::containsInvert)) {
+                "Порядок дополнительных правил не поддерживается Reality Core. Выберите sing-box."
+            }
+            // Resolve once at start, never per packet. Unknown flow owners are blocked by core.
+            val uids = names.map { name ->
+                require(name != ownPackage) { "Уберите NOVA из списка приложений для совместной маршрутизации." }
+                requireNotNull(packageUid).invoke(name).also {
+                    require(it >= 0) { "Не удалось определить приложение для маршрутизации. Обновите список приложений." }
+                }
+            }.distinct().sorted()
+            packages.forEach { rule ->
+                rule.remove("package_name")
+                rule.put("user_id", JSONArray(uids))
+            }
+            // All user traffic enters TUN, including apps with a direct default: sites override it.
+            return emptyList<String>() to listOf(ownPackage)
         }
         route.put("rules", JSONArray().apply { others.forEach { put(it) } })
         return included to excluded

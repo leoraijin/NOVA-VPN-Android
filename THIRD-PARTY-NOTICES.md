@@ -9,11 +9,14 @@ the license text is app/libs/LICENSE-ZXing.txt.
 ## Reality Core (experimental Android engine)
 
 Copyright ERGFT. Source: <https://github.com/ERGFT/vpn-core>.
-Pinned revision: `998e0a42fd04a022aa008997cd71ba1e2dfab38e` (0.1.0),
-author-approved PR <https://github.com/ERGFT/vpn-core/pull/34> (not yet merged when pinned).
+Pinned revision: `994ce4ef5792c23a0298db755db9561eea6726e2` (0.1.0),
+integration branch in <https://github.com/leoraijin/vpn-core> combining
+author-approved PR <https://github.com/ERGFT/vpn-core/pull/34> and
+PR <https://github.com/ERGFT/vpn-core/pull/35>. Neither PR was merged when pinned;
+approval of #34 does not imply approval of #35.
 Licensed GPL-3.0-or-later; see this project's GPL license and the upstream `LICENSE`.
 NOVA's JNI bridge is in `native/`, distributed as source.
-`native/build-reality.sh` fetches the PR ref and builds the exact reviewed SHA,
+`native/build-reality.sh` fetches the integration ref and builds the exact pinned SHA,
 without applying NOVA patches to the core. Approval is not a security audit or merge.
 Experimental binary releases must include the corresponding upstream source archive,
 this application's corresponding source and all dependency license notices. The core
