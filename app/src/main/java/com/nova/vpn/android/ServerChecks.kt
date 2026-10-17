@@ -125,7 +125,7 @@ private class ServerCheckClient(private val context: Context) {
             data = Bundle().apply { putString("config", config) }
             replyTo = replies
         })
-        return try { withTimeout(12_000) { deferred.await() } }
+        return try { withTimeout(30_000) { deferred.await() } }
         finally { pending = null }
     }
 

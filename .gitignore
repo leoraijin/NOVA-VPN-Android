@@ -7,3 +7,4 @@ local.properties
 *.keystore
 signing.properties
 *.vault
+vendor/maven/

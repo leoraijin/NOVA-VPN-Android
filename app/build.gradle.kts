@@ -23,8 +23,8 @@ android {
         applicationId = "com.nova.vpn.android"
         minSdk = 24
         targetSdk = 35
-        versionCode = 49
-        versionName = "0.2.47"
+        versionCode = 50
+        versionName = "0.2.48"
         testInstrumentationRunner = if (providers.gradleProperty("novaMapSmoke").isPresent)
             "com.nova.vpn.android.ServerMapSmokeRunner" else "androidx.test.runner.AndroidJUnitRunner"
     }

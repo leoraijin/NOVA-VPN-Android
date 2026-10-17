@@ -1,5 +1,4 @@
 package com.nova.vpn.android
-
 import android.app.Service
 import android.content.Context
 import android.content.Intent
@@ -11,7 +10,6 @@ import io.nekohasekai.libbox.*
 import java.net.NetworkInterface as JNetworkInterface
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
-
 /** Bound only while the user requested a batch; native state lives in a separate process. */
 class ServerCheckService : Service() {
     private val queue = Executors.newSingleThreadExecutor()
@@ -34,8 +32,13 @@ class ServerCheckService : Service() {
                         probe = check
                         if (closing.get()) check.cancel()
                         engine.startOrReloadService(check.config, OverrideOptions())
-                        val started = SystemClock.elapsedRealtime()
-                        if (check.check(7_000)) millis = (SystemClock.elapsedRealtime() - started).toInt().coerceAtLeast(1)
+                        val samples = mutableListOf<Int>()
+                        repeat(3) {
+                            if (closing.get()) error("Cancelled")
+                            if (!check.check(7_000)) error("HTTPS check failed")
+                            samples += check.responseMillis ?: error("No measured response")
+                        }
+                        millis = ResponseLatency.median(samples)
                     } catch (_: Exception) {
                         // Only a numeric result crosses IPC; native errors can contain credentials.
                     } finally {
@@ -49,7 +52,6 @@ class ServerCheckService : Service() {
         }
         true
     })
-
     private fun createServer(platform: CheckPlatform): CommandServer {
         val dir = java.io.File(cacheDir, "manual-server-checks").apply { mkdirs() }
         Libbox.setup(SetupOptions().apply {
@@ -68,7 +70,6 @@ class ServerCheckService : Service() {
             override fun connectSSHAgent() = -1
         }, platform).apply { start() }
     }
-
     override fun onBind(intent: Intent) = messenger.binder
     override fun onUnbind(intent: Intent?): Boolean {
         closing.set(true); probe?.cancel()
@@ -86,10 +87,8 @@ class ServerCheckService : Service() {
         }
         if (processName == "$packageName:server_checks") Process.killProcess(Process.myPid())
     }
-
     companion object { internal const val CHECK = 1; internal const val CANCEL = 2; internal const val RESULT = 3 }
 }
-
 /** All sockets and DNS use the physical network; this platform cannot open a VPN interface. */
 private class CheckPlatform(context: Context) : PlatformInterface {
     private val connectivity = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager

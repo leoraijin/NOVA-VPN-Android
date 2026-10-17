@@ -41,7 +41,7 @@ import kotlin.math.*
 
 internal fun serverCheckLabel(result: ServerCheckResult?, checking: Boolean = false): String = when {
     checking -> "Проверяется…"
-    result?.outcome == CheckOutcome.SUCCESS -> "${result.millis} мс"
+    result?.outcome == CheckOutcome.SUCCESS -> "HTTPS · ${result.millis} мс"
     result?.outcome == CheckOutcome.FAILED -> "Нет ответа"
     result?.outcome == CheckOutcome.UNSUPPORTED -> "Проверка не поддерживается"
     else -> "Не проверен"
@@ -128,7 +128,7 @@ private data class MapMarker(val members: List<LocatedProfile>, val selected: Lo
                 }
             }
         }
-        Text("Место определяется по названию профиля. Проверка — только по кнопке.",
+        Text("Место — по названию профиля. HTTPS-отклик — после установки соединения, медиана 3 ответов. Проверка по кнопке.",
             Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp), fontSize = 10.sp, color = colors.onSurfaceVariant)
     }
 }
