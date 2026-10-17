@@ -10,7 +10,7 @@
 
 static JavaVM *vm;
 static jobject callback;
-static jmethodID protect_method, warning_method;
+static jmethodID protect_method, warning_method, owner_method;
 static pthread_mutex_t callback_lock = PTHREAD_MUTEX_INITIALIZER;
 static uintptr_t generation;
 
@@ -51,6 +51,23 @@ static int protect_socket(int64_t fd, void *user) {
     if ((*env)->ExceptionCheck(env)) { (*env)->ExceptionClear(env); result = JNI_FALSE; }
     if (attached) (*vm)->DetachCurrentThread(vm);
     return result == JNI_TRUE;
+}
+
+static int64_t connection_owner(int protocol, const char *source, const char *destination, void *user) {
+    int attached;
+    JNIEnv *env = environment(&attached);
+    if (!env) return -1;
+    jobject owner = acquire_owner(env, user);
+    jstring src = owner ? (*env)->NewStringUTF(env, source) : NULL;
+    jstring dst = src ? (*env)->NewStringUTF(env, destination) : NULL;
+    jlong result = -1;
+    if (dst) result = (*env)->CallLongMethod(env, owner, owner_method, (jint)protocol, src, dst);
+    if (src) (*env)->DeleteLocalRef(env, src);
+    if (dst) (*env)->DeleteLocalRef(env, dst);
+    if (owner) (*env)->DeleteLocalRef(env, owner);
+    if ((*env)->ExceptionCheck(env)) { (*env)->ExceptionClear(env); result = -1; }
+    if (attached) (*vm)->DetachCurrentThread(vm);
+    return result;
 }
 
 static void warning(const char *json, void *user) {
@@ -94,8 +111,9 @@ JNIEXPORT jlong JNICALL Java_com_nova_vpn_android_RealityCoreBridge_start(
     jclass type = (*env)->GetObjectClass(env, owner);
     protect_method = (*env)->GetMethodID(env, type, "protectSocket", "(I)Z");
     warning_method = (*env)->GetMethodID(env, type, "coreWarning", "(Ljava/lang/String;)V");
+    owner_method = (*env)->GetMethodID(env, type, "connectionOwner", "(ILjava/lang/String;Ljava/lang/String;)J");
     (*env)->DeleteLocalRef(env, type);
-    if (!protect_method || !warning_method) { close(fd); return 0; }
+    if (!protect_method || !warning_method || !owner_method) { close(fd); return 0; }
     pthread_mutex_lock(&callback_lock);
     callback = (*env)->NewGlobalRef(env, owner);
     generation++;
@@ -111,6 +129,7 @@ JNIEXPORT jlong JNICALL Java_com_nova_vpn_android_RealityCoreBridge_start(
         release_owner(env); return 0;
     }
     rc_set_protect(protect_socket, (void *)current);
+    rc_set_connection_owner(connection_owner, (void *)current);
     char *error = NULL;
     /* rc_start takes ownership of fd even on failure. */
     RcCore *core = rc_start(c, d, fd, &error);
@@ -120,6 +139,7 @@ JNIEXPORT jlong JNICALL Java_com_nova_vpn_android_RealityCoreBridge_start(
     if (core) rc_set_log_callback(core, "warning", warning, (void *)current);
     else {
         rc_set_protect(NULL, NULL);
+        rc_set_connection_owner(NULL, NULL);
         release_owner(env);
     }
     return (jlong)(intptr_t)core;
@@ -130,6 +150,7 @@ JNIEXPORT void JNICALL Java_com_nova_vpn_android_RealityCoreBridge_stop(
     (void)self;
     rc_stop((RcCore *)(intptr_t)handle);
     rc_set_protect(NULL, NULL);
+    rc_set_connection_owner(NULL, NULL);
     release_owner(env);
 }
 

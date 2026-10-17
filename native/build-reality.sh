@@ -2,18 +2,18 @@
 set -euo pipefail
 # Build on Linux with Android NDK, Rust and cargo-ndk. No signing keys needed.
 root="$(cd "$(dirname "$0")/.." && pwd)"
-revision=998e0a42fd04a022aa008997cd71ba1e2dfab38e
-# Approved PR #34 is not merged yet. Fetch it explicitly, then pin its reviewed SHA.
-source_ref=refs/pull/34/head
+revision=994ce4ef5792c23a0298db755db9561eea6726e2
+# Exact integration of upstream PRs #34 and #35; neither is merged upstream yet.
+source_ref=refs/heads/integration/android-uid-routing
 source_dir="$root/native/work/core"
 mkdir -p "$root/native/work"
 if [[ ! -d "$source_dir/.git" ]]; then
-  git clone https://github.com/ERGFT/vpn-core.git "$source_dir"
+  git clone https://github.com/leoraijin/vpn-core.git "$source_dir"
 fi
 [[ -z "$(git -C "$source_dir" status --porcelain)" ]] || {
   echo 'Edited or previously patched core sources exist. Preserve them and use a fresh build directory.' >&2; exit 1;
 }
-git -C "$source_dir" fetch origin "$source_ref"
+git -C "$source_dir" fetch https://github.com/leoraijin/vpn-core.git "$source_ref"
 git -C "$source_dir" cat-file -e "$revision^{commit}"
 git -C "$source_dir" checkout --detach "$revision"
 : "${ANDROID_NDK_HOME:?Set ANDROID_NDK_HOME}"
