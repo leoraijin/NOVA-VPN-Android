@@ -199,8 +199,9 @@ class RealityCoreSmokeRunner : Instrumentation() {
                         .getJSONArray("servers").put(JSONObject().put("type", "udp").put("tag", "smoke-bootstrap")
                             .put("server", "127.0.0.1").put("server_port", bootstrap.port).put("detour", "direct"))
                     start(hostnameConfig.toString())
-                    check(routedClientResult() == "ok" && packets.get() == 6 && bootstrap.transportQueries.get() > 0) {
-                        "Transport hostname did not resolve through explicit protected bootstrap"
+                    val bootstrapResult = routedClientResult()
+                    check(bootstrapResult == "ok" && packets.get() == 6 && bootstrap.transportQueries.get() > 0) {
+                        "Transport hostname bootstrap: result=$bootstrapResult packets=${packets.get()} queries=${bootstrap.transportQueries.get()} fixture=${fixtureFailure.get()} state=${VpnRuntime.state.value}"
                     }
                     stop()
                 }

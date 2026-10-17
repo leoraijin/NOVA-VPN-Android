@@ -1,5 +1,11 @@
 # Third-party components
 
+## ZXing core 3.5.4
+
+QR encoding/decoding: https://github.com/zxing/zxing, Apache License 2.0.
+The included dependency is app/libs/zxing-core-3.5.4.jar;
+the license text is app/libs/LICENSE-ZXing.txt.
+
 ## Reality Core (experimental Android engine)
 
 Copyright ERGFT. Source: <https://github.com/ERGFT/vpn-core>.

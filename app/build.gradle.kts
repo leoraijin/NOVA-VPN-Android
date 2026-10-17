@@ -1,4 +1,4 @@
-plugins {
+﻿plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
@@ -9,6 +9,7 @@ android {
     compileSdk = 35
     buildToolsVersion = "35.0.0"
     testBuildType = when {
+        providers.gradleProperty("novaIdentitySmoke").isPresent -> "identitypreview"
         providers.gradleProperty("novaRealitySmoke").isPresent -> "realitypreview"
         providers.gradleProperty("novaMapSmoke").isPresent -> "maptest"
         else -> "debug"
@@ -35,6 +36,7 @@ android {
         manifestPlaceholders["novaAppLabel"] = "NOVA VPN"
         buildConfigField("boolean", "REALITY_PREVIEW", "false")
         testInstrumentationRunner = when {
+            providers.gradleProperty("novaIdentitySmoke").isPresent -> "com.nova.vpn.android.IdentitySmokeRunner"
             providers.gradleProperty("novaRealitySmoke").isPresent -> "com.nova.vpn.android.RealityCoreSmokeRunner"
             providers.gradleProperty("novaMapSmoke").isPresent -> "com.nova.vpn.android.ServerMapSmokeRunner"
             else -> "androidx.test.runner.AndroidJUnitRunner"
@@ -95,6 +97,13 @@ android {
             buildConfigField("boolean", "REALITY_PREVIEW", "true")
             matchingFallbacks += listOf("optimized", "release")
         }
+        create("identitypreview") {
+            initWith(getByName("realitypreview"))
+            applicationIdSuffix = ".identitypreview"
+            versionNameSuffix = "-identity-preview.1"
+            manifestPlaceholders["novaAppLabel"] = "NOVA · Identity Test"
+            matchingFallbacks += listOf("realitypreview", "optimized", "release")
+        }
         create("maptest") {
             initWith(getByName("optimized"))
             applicationIdSuffix = ".maptest"
@@ -113,6 +122,7 @@ android {
 }
 
 dependencies {
+    implementation(files("libs/zxing-core-3.5.4.jar"))
     val composeBom = platform("androidx.compose:compose-bom:2025.01.00")
     implementation(composeBom)
     androidTestImplementation(composeBom)
@@ -135,4 +145,5 @@ dependencies {
     testImplementation("org.robolectric:robolectric:4.14.1")
     debugImplementation("androidx.compose.ui:ui-tooling")
 }
+
 

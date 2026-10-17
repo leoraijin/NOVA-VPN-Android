@@ -9,3 +9,4 @@ signing.properties
 *.vault
 native/work/
 app/src/main/jniLibs/
+vendor/maven/

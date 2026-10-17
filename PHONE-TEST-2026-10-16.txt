@@ -1,0 +1,12 @@
+TECNO KM4, ARM64, 2026-10-16
+Synthetic tests only. No provider profiles used.
+Core 0.1.0, archive source pin 998e0a42fd04a022aa008997cd71ba1e2dfab38e.
+Initial run failed explicit protected DNS bootstrap assertion.
+Diagnostic-only change added response, packet/query counts and state to that assertion; no production code changed.
+Four subsequent complete instrumentation runs passed consecutively.
+Coverage: config validation, TLS refusal, FD ownership, 8 SOCKS start/stop cycles, socket callbacks, real Android VpnService/TUN, IPv4/IPv6 TCP echo, include/exclude app routing, site fake-IP routing, DNS bootstrap, live reload refusal, quiet single notification, sing-box regression.
+Initial intermittent failure remains unexplained; do not claim it is fixed.
+Finally cleanup stops test VPN and resets engine to sing-box.
+Laptop VPN processes retained original start times: NOVA VPN PID62648 20:49:26, sing-box PID17360 21:18:04.
+Real remote VLESS/Trojan/Reality server compatibility not verified by this synthetic suite.
+Windows experimental engine integration remains pending.

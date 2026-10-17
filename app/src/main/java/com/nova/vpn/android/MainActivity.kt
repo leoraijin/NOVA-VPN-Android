@@ -225,6 +225,8 @@ private fun NovaAndroidApp(
 ) {
     val context = LocalContext.current
     var page by rememberSaveable { mutableStateOf(Page.Home) }
+    var showIdentities by remember { mutableStateOf(false) }
+    if (showIdentities) IdentityDialog { showIdentities = false }
     var tutorialIndex by rememberSaveable { mutableStateOf(if (preferencesStore.tutorialDismissed()) -1 else 0) }
     val tutorialStep = TutorialStep.at(tutorialIndex)
     val scope = rememberCoroutineScope()
@@ -661,7 +663,9 @@ private fun NovaAndroidApp(
                                 applyLiveConfiguration(selectedProfileId, next)
                             }
                         )
-                        Page.Settings -> SettingsPage(
+                        Page.Settings -> Column {
+                            OutlinedButton(onClick = { showIdentities = true }, modifier = Modifier.fillMaxWidth()) { Text("Идентификация подписок") }
+                            Box(Modifier.weight(1f)) { SettingsPage(
                             onStartTutorial = { tutorialIndex = 0 },
                             onNotificationSettings = {
                                 if (Build.VERSION.SDK_INT >= 33 &&
@@ -739,7 +743,8 @@ private fun NovaAndroidApp(
                                     }
                                 }
                             }
-                        )
+                        ) }
+                        }
                     }
                 }
               }
