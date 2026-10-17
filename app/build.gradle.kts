@@ -31,8 +31,8 @@ android {
         applicationId = "com.nova.vpn.android"
         minSdk = 24
         targetSdk = 35
-        versionCode = 47
-        versionName = "0.2.45"
+        versionCode = 51
+        versionName = "0.2.49"
         manifestPlaceholders["novaAppLabel"] = "NOVA VPN"
         buildConfigField("boolean", "REALITY_PREVIEW", "false")
         testInstrumentationRunner = when {
@@ -79,7 +79,7 @@ android {
             initWith(getByName("release"))
             isDebuggable = false
             isJniDebuggable = false
-            // The handoff does not include the original signing key. Distribute designpreview separately.
+            // Production publication supplies the original external NOVA signing key.
             signingConfig = signingConfigs.getByName("debug")
             matchingFallbacks += listOf("release")
         }

@@ -22,8 +22,8 @@ object ProfileLinkParser {
         val normalized = decoded.trim()
         if (normalized.startsWith("[")) return parseConfigArray(normalized)
         if (normalized.startsWith("{")) {
-            parseXraySubscription(normalized)?.let { return ImportedProfile.distinctByConfiguration(it) }
-            return listOf(parseFullConfig(normalized))
+            parseXraySubscription(normalized)?.let { return SubscriptionPlaceholders.importedProfiles(it) }
+            return SubscriptionPlaceholders.importedProfiles(listOf(parseFullConfig(normalized)))
         }
         val lines = decoded.lineSequence().map { it.trim().removePrefix("\uFEFF").trim() }
             .filter { it.isNotEmpty() && !it.startsWith("#") }
@@ -41,7 +41,7 @@ object ProfileLinkParser {
         require(profiles.isNotEmpty()) {
             failures.firstOrNull() ?: "Не найдено поддерживаемых VPN-конфигураций"
         }
-        return ImportedProfile.distinctByConfiguration(profiles)
+        return SubscriptionPlaceholders.importedProfiles(profiles)
     }
 
     /** Panels may return an array of complete Xray/sing-box configs, not URI lines. */
@@ -64,7 +64,7 @@ object ProfileLinkParser {
             require(parsed.size <= MAX_PROFILES - profiles.size) { "В импорте слишком много профилей" }
             profiles.addAll(parsed)
         }
-        return ImportedProfile.distinctByConfiguration(profiles)
+        return SubscriptionPlaceholders.importedProfiles(profiles)
     }
 
     /** Converts common Xray subscription JSON into native single-server sing-box profiles. */

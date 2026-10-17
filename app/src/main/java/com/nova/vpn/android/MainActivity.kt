@@ -261,6 +261,7 @@ private fun NovaAndroidApp(
     var selectedProfileId by remember { mutableStateOf("") }
     var showImport by rememberSaveable { mutableStateOf(false) }
     var importText by rememberSaveable { mutableStateOf("") }
+    var sendSubscriptionDeviceId by rememberSaveable { mutableStateOf(false) }
     var importError by remember { mutableStateOf<String?>(null) }
     var profileError by remember { mutableStateOf<String?>(null) }
     var profileShareStatus by remember { mutableStateOf<String?>(null) }
@@ -786,6 +787,17 @@ private fun NovaAndroidApp(
                             placeholder = { Text("vless://…, QR-ссылка, sing-box или Xray JSON") }
                         )
                         importError?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 12.sp) }
+                        if (importText.trim().startsWith("https://", ignoreCase = true)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                androidx.compose.material3.Checkbox(
+                                    checked = sendSubscriptionDeviceId,
+                                    enabled = !importing,
+                                    onCheckedChange = { sendSubscriptionDeviceId = it }
+                                )
+                                Text("Передавать провайдеру ID устройства (HWID)", fontSize = 12.sp)
+                            }
+                            Text("Для подписок с привязкой устройства. Случайный ID, без IMEI. Может занять слот у провайдера. После переустановки ID изменится.", fontSize = 12.sp)
+                        }
                     }
                 },
                 confirmButton = {
@@ -795,7 +807,9 @@ private fun NovaAndroidApp(
                         scope.launch {
                             runCatching {
                                 val source = withContext(Dispatchers.IO) {
-                                    SubscriptionFetcher.fetchIfUrl(rawImport)
+                                    val deviceId = if (sendSubscriptionDeviceId && rawImport.trim().startsWith("https://", true))
+                                        com.nova.vpn.android.data.SubscriptionDeviceIdentity(context).forUrl(rawImport) else null
+                                    SubscriptionFetcher.fetchIfUrl(rawImport, deviceId)
                                 }
                                 withContext(Dispatchers.Default) { ProfileLinkParser.parseText(source) }
                             }.onSuccess { incoming ->

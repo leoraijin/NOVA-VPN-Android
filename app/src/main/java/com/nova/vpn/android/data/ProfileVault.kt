@@ -31,7 +31,11 @@ class ProfileVault(context: Context) {
         val cipher = Cipher.getInstance(TRANSFORMATION)
         cipher.init(Cipher.DECRYPT_MODE, getOrCreateKey(), GCMParameterSpec(128, iv))
         val json = JSONArray(String(cipher.doFinal(encrypted), Charsets.UTF_8))
-        return List(json.length()) { ImportedProfile.fromJson(json.getJSONObject(it)) }
+        // Hide known panel status entries imported by older versions. Do not rewrite the
+        // encrypted vault during load; retain every real profile and its identity.
+        return SubscriptionPlaceholders.withoutPlaceholders(
+            List(json.length()) { ImportedProfile.fromJson(json.getJSONObject(it)) }
+        )
     }
 
     @Synchronized

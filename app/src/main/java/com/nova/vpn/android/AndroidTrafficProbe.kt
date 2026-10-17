@@ -1,5 +1,4 @@
 package com.nova.vpn.android
-
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.BufferedReader
@@ -12,17 +11,18 @@ import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.net.ssl.SSLSocket
 import javax.net.ssl.SSLSocketFactory
-
 /** A bounded HTTPS check explicitly through the core, not the excluded app's direct route. */
 internal class AndroidTrafficProbe private constructor(
     val config: String, private val port: Int, private val username: String, private val password: String
 ) {
     private val cancelled = AtomicBoolean()
+    // Response headers over an established TLS channel; never includes SOCKS/TLS setup.
+    @Volatile var responseMillis: Int? = null
+        private set
     @Volatile private var socket: Socket? = null
-
     fun cancel() { cancelled.set(true); runCatching { socket?.close() } }
-
     fun check(timeoutMillis: Int = 18_000): Boolean {
+        responseMillis = null
         var stage = "local_socket"
         VpnDiagnostics.record("probe_start")
         val deadline = java.util.Timer("nova-probe-deadline", true)
@@ -62,6 +62,8 @@ internal class AndroidTrafficProbe private constructor(
                 stage = "target_tls"
                 tls.startHandshake()
                 stage = "https_response"
+                val responseTimer = ResponseLatency()
+                var headersMillis: Int? = null
                 tls.getOutputStream().apply {
                     write("GET /cdn-cgi/trace HTTP/1.1\r\nHost: 1.1.1.1\r\nConnection: close\r\n\r\n".toByteArray(StandardCharsets.US_ASCII))
                     flush()
@@ -72,9 +74,12 @@ internal class AndroidTrafficProbe private constructor(
                     check(!cancelled.get())
                     val line = reader.readLine() ?: break
                     response.append(line).append('\n')
+                    if (line.isEmpty() && headersMillis == null)
+                        headersMillis = responseTimer.millis()
                     if (line.startsWith("ip=")) break
                 }
                 validTrace(response.toString()).also {
+                    responseMillis = if (it) headersMillis else null
                     VpnDiagnostics.record(if (it) "probe_success" else "probe_invalid_response")
                 }
             }
@@ -91,15 +96,12 @@ internal class AndroidTrafficProbe private constructor(
             false
         } finally { deadline.cancel(); socket = null }
     }
-
     private fun cancelProbe() = cancel()
-
     companion object {
         internal const val TAG = "nova-local-health"
         internal fun validTrace(response: String): Boolean =
             response.lineSequence().firstOrNull()?.matches(Regex("HTTP/1\\.[01] 200(?: .*)?")) == true &&
                 response.contains("\n\n") && response.substringAfter("\n\n").lineSequence().any { it.startsWith("ip=") && it.length > 3 }
-
         fun prepare(config: String): AndroidTrafficProbe? {
             val json = JSONObject(config)
             val route = json.optJSONObject("route") ?: return null
