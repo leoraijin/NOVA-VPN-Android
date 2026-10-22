@@ -1,0 +1,32 @@
+{
+  "version": "0.2.51",
+  "versionCode": 53,
+  "codeCommit": "497ed9c0ed19ea7b5a63e4ad421f9cec6c8a2abc",
+  "payloadCommit": "2c9afa32172bca4bbfbfe5f62adbf4532262c3c4",
+  "payloadBranch": "release-payload/android-0.2.51",
+  "parts": 23,
+  "apkName": "NOVA-VPN-Android-0.2.51-arm64-optimized.apk",
+  "apkSha256": "6a2197d15c6d7442d4ac42120f1d23b2063c17b04d55c2c4a8cf48d7a4d87690",
+  "sources": [
+    {
+      "name": "reality-core-source.tar",
+      "url": "https://github.com/leoraijin/NOVA-VPN-Android/releases/download/v0.2.50/reality-core-source.tar",
+      "sha": "66ce8242674e66d2c030a92dc486271893b39043a2d6247c548b914f6977bda4"
+    },
+    {
+      "name": "reality-dependencies.tar.gz",
+      "url": "https://github.com/leoraijin/NOVA-VPN-Android/releases/download/v0.2.50/reality-dependencies.tar.gz",
+      "sha": "dfa4aa726126f110d57c9316b7a4e795c0dbf053b8df7120efaf1183241fcc78"
+    },
+    {
+      "name": "REALITY-LICENSE",
+      "url": "https://github.com/leoraijin/NOVA-VPN-Android/releases/download/v0.2.50/REALITY-LICENSE",
+      "sha": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986"
+    },
+    {
+      "name": "THIRD-PARTY-LICENSES.html",
+      "url": "https://github.com/leoraijin/NOVA-VPN-Android/releases/download/v0.2.50/THIRD-PARTY-LICENSES.html",
+      "sha": "6ebd8cf1a1647fa2029b94f4d86a8c3664068378760315eabc56e2de3cad321c"
+    }
+  ]
+}

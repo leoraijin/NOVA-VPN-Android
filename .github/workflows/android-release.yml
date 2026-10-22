@@ -1,0 +1,83 @@
+name: Publish signed Android 0.2.51
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/android-release.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: android-release-0.2.51
+  cancel-in-progress: false
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Restore exact signed APK and corresponding sources
+        run: python3 tools/Prepare-AndroidRelease.py
+      - name: Verify Android signature, package and version
+        shell: bash
+        run: |
+          set -euo pipefail
+          signer=$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -1)
+          aapt=$(find "$ANDROID_HOME/build-tools" -name aapt -type f | sort -V | tail -1)
+          test -n "$signer"
+          test -n "$aapt"
+          "$signer" verify --print-certs outputs/NOVA-VPN-Android-0.2.51-arm64-optimized.apk > release-work/certificate.txt
+          "$aapt" dump badging outputs/NOVA-VPN-Android-0.2.51-arm64-optimized.apk > release-work/badging.txt
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib
+          certificate = Path("release-work/certificate.txt").read_text()
+          assert "Signer #1 certificate SHA-256 digest: 7abeb400a6f16c0adf6c127027f2bdd205ce79f558c53f631d41083ecca24626" in certificate
+          badging = Path("release-work/badging.txt").read_text()
+          assert "package: name='com.nova.vpn.android' versionCode='53' versionName='0.2.51'" in badging
+          assert "application-debuggable" not in badging
+          with Path("outputs/VERIFICATION.txt").open("a") as report:
+              report.write("CI APK signature/package/version verification: PASS.\n")
+          files = sorted(p for p in Path("outputs").iterdir() if p.is_file() and p.name != "SHA256SUMS.txt")
+          Path("outputs/SHA256SUMS.txt").write_text("".join(hashlib.sha256(p.read_bytes()).hexdigest() + "  " + p.name + "\n" for p in files), encoding="ascii")
+          PY
+      - name: Publish ordinary release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh release view v0.2.51 --repo leoraijin/NOVA-VPN-Android --json isDraft > release-work/release.json 2>/dev/null; then
+            python3 -c 'import json; assert json.load(open("release-work/release.json"))["isDraft"], "Refusing to overwrite a published release"'
+          else
+            gh release create v0.2.51 --repo leoraijin/NOVA-VPN-Android --target "$GITHUB_SHA" --draft --prerelease=false --title 'NOVA VPN Android 0.2.51 — исключение приложений из VPN' --notes-file RELEASE-NOTES-0.2.51.md
+          fi
+          gh release upload v0.2.51 --repo leoraijin/NOVA-VPN-Android --clobber outputs/*
+          gh release edit v0.2.51 --repo leoraijin/NOVA-VPN-Android --draft=false --prerelease=false --latest --notes-file RELEASE-NOTES-0.2.51.md
+      - name: Verify publication and remove temporary transfer branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh api repos/leoraijin/NOVA-VPN-Android/releases/tags/v0.2.51 > release-work/published.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          release = json.loads(Path("release-work/published.json").read_text())
+          manifest = json.loads(Path("tools/release-0.2.51.json").read_text())
+          assert release["draft"] is False and release["prerelease"] is False
+          apk = next(x for x in release["assets"] if x["name"] == manifest["apkName"])
+          assert apk["digest"] == "sha256:" + manifest["apkSha256"]
+          print(release["html_url"])
+          PY
+          actual=$(gh api repos/leoraijin/NOVA-VPN-Android/git/ref/heads/release-payload/android-0.2.51 --jq .object.sha)
+          expected=$(python3 -c 'import json; print(json.load(open("tools/release-0.2.51.json"))["payloadCommit"])')
+          if [ "$actual" = "$expected" ]; then
+            gh api -X DELETE repos/leoraijin/NOVA-VPN-Android/git/refs/heads/release-payload/android-0.2.51
+          fi
+
