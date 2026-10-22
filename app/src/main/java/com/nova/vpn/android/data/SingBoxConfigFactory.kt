@@ -120,7 +120,7 @@ object SingBoxConfigFactory {
             // config carries a system/mixed stack that can drop TCP on Android 15.
             it.put("stack", "gvisor")
             if (!it.has("address")) it.put("address", JSONArray().put("172.19.0.1/30").put("fdfe:dcba:9876::1/126"))
-            configureApps(it, ownPackage)
+            configureApps(it, routing, ownPackage)
         }
         config.put("inbounds", inbounds)
 
@@ -177,12 +177,18 @@ object SingBoxConfigFactory {
     private fun isIpLiteral(host: String): Boolean =
         host.contains(':') || IPV4_LITERAL.matches(host)
 
-    /** Keep user app policy inside sing-box so earlier site rules can override browser routing. */
-    private fun configureApps(tun: JSONObject, ownPackage: String?) {
+    /** Bypassed apps use Android's physical network, including their DNS requests. */
+    private fun configureApps(tun: JSONObject, routing: AppRoutingSettings, ownPackage: String?) {
         tun.remove("include_package")
         tun.remove("exclude_package")
-        if (!ownPackage.isNullOrBlank()) {
-            tun.put("exclude_package", JSONArray().put(ownPackage))
+        val selected = routing.packages.filter(String::isNotBlank).distinct().sorted()
+        val included = selected.filterNot { it == ownPackage }
+        if (routing.mode == AppRoutingMode.INCLUDE_SELECTED && included.isNotEmpty()) {
+            tun.put("include_package", JSONArray(included))
+        } else {
+            val excluded = (if (routing.mode == AppRoutingMode.EXCLUDE_SELECTED) selected else emptyList()) +
+                listOfNotNull(ownPackage?.takeIf(String::isNotBlank))
+            if (excluded.isNotEmpty()) tun.put("exclude_package", JSONArray(excluded.distinct().sorted()))
         }
     }
 

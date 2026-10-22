@@ -21,6 +21,12 @@ public final class RealityProbeClientActivity extends Activity {
         final String target = name.substring(0, name.length() - ".test".length());
         Thread worker = new Thread(new Runnable() {
             @Override public void run() {
+                android.net.ConnectivityManager connectivity =
+                    (android.net.ConnectivityManager) getSystemService(CONNECTIVITY_SERVICE);
+                android.net.NetworkCapabilities capabilities =
+                    connectivity.getNetworkCapabilities(connectivity.getActiveNetwork());
+                boolean physicalDefault = capabilities != null &&
+                    !capabilities.hasTransport(android.net.NetworkCapabilities.TRANSPORT_VPN);
                 String result;
                 try (Socket socket = new Socket()) {
                     socket.setSoTimeout(5000);
@@ -34,7 +40,8 @@ public final class RealityProbeClientActivity extends Activity {
                     result = "ok";
                 } catch (Exception failure) { result = failure.getClass().getSimpleName(); }
                 sendBroadcast(new Intent(target + ".REALITY_SMOKE_RESULT").setPackage(target)
-                    .putExtra("nonce", nonce).putExtra("result", result));
+                    .putExtra("nonce", nonce).putExtra("result", result)
+                    .putExtra("physicalDefault", physicalDefault));
                 runOnUiThread(new Runnable() { @Override public void run() { finish(); } });
             }
         }, "nova-test-client");

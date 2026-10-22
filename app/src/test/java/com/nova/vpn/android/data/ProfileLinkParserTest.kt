@@ -320,7 +320,7 @@ class ProfileLinkParserTest {
     }
 
     @Test
-    fun fullConfigAppRoutingMovesPackagePolicyIntoRulesAndKeepsOtherTunOptions() {
+    fun fullConfigAppRoutingExcludesPackagesAtAndroidBoundaryAndKeepsOtherTunOptions() {
         val profile = ProfileLinkParser.parseText(
             """{"inbounds":[{"type":"tun","tag":"custom-tun","stack":"system","include_package":["old.app"]}],"outbounds":[{"type":"vless","tag":"edge-out","server":"vpn.example","server_port":443,"uuid":"11111111-1111-1111-1111-111111111111"}],"route":{"final":"edge-out"}}"""
         ).single()
@@ -336,6 +336,7 @@ class ProfileLinkParserTest {
         assertEquals("custom-tun", tun.getString("tag"))
         assertEquals("gvisor", tun.getString("stack"))
         assertEquals("com.nova.vpn.android", tun.getJSONArray("exclude_package").getString(0))
+        assertEquals("org.example.direct", tun.getJSONArray("exclude_package").getString(1))
         assertTrue(!tun.has("include_package"))
         assertEquals("edge-out", config.getJSONObject("route").getString("final"))
         val appRule = config.getJSONObject("route").getJSONArray("rules").getJSONObject(1)
@@ -355,7 +356,7 @@ class ProfileLinkParserTest {
     }
 
     @Test
-    fun includeSelectedAppsUsesProxyAndDirectRulesWithoutExcludingBrowserFromTun() {
+    fun includeSelectedAppsLimitsAndroidVpnToSelectedPackages() {
         val profile = ProfileLinkParser.parseText(
             "vless://11111111-1111-1111-1111-111111111111@vpn.example:443"
         ).single()
@@ -367,8 +368,8 @@ class ProfileLinkParserTest {
             )
         )
         val tun = config.getJSONArray("inbounds").getJSONObject(0)
-        assertEquals("com.nova.vpn.android", tun.getJSONArray("exclude_package").getString(0))
-        assertTrue(!tun.has("include_package"))
+        assertEquals("org.example.browser", tun.getJSONArray("include_package").getString(0))
+        assertTrue(!tun.has("exclude_package"))
         val rules = config.getJSONObject("route").getJSONArray("rules")
         assertEquals("hijack-dns", rules.getJSONObject(0).getString("action"))
         assertEquals("proxy", rules.getJSONObject(1).getString("outbound"))
@@ -392,6 +393,7 @@ class ProfileLinkParserTest {
         val tun = config.getJSONArray("inbounds").getJSONObject(0)
 
         assertEquals("com.nova.vpn.android", tun.getJSONArray("exclude_package").getString(0))
+        assertEquals("org.example.direct", tun.getJSONArray("exclude_package").getString(1))
         assertTrue(!tun.has("include_package"))
         val rule = config.getJSONObject("route").getJSONArray("rules").getJSONObject(1)
         assertEquals("org.example.direct", rule.getJSONArray("package_name").getString(0))

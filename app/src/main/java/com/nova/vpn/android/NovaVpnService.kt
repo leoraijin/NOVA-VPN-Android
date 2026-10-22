@@ -566,13 +566,22 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
     }
 
     private fun addApplications(builder: Builder, iterator: StringIterator, allow: Boolean) {
+        var requested = false
+        var added = false
         while (iterator.hasNext()) {
+            requested = true
             val packageName = iterator.next()
             try {
                 if (allow) builder.addAllowedApplication(packageName) else builder.addDisallowedApplication(packageName)
+                added = true
             } catch (error: PackageManager.NameNotFoundException) {
                 Log.w(TAG, "Ignoring unavailable routed package: $packageName", error)
             }
+        }
+        // An empty Builder allow-list means ALL apps. If the selected apps were
+        // uninstalled, refuse to capture every other application instead.
+        check(!allow || !requested || added) {
+            "Выбранные для VPN приложения недоступны. Обновите список приложений."
         }
     }
 

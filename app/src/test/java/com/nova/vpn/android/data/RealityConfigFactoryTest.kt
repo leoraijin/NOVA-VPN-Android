@@ -152,7 +152,7 @@ class RealityConfigFactoryTest {
         }
     }
 
-    @Test fun mixedSiteAndAppPoliciesKeepPriorityAndCaptureAllApplications() {
+    @Test fun mixedSiteAndAppPoliciesFilterAndroidApplicationsBeforeSiteRules() {
         AppRoutingMode.entries.forEach { mode ->
             SiteRoutingTarget.entries.forEach { target ->
                 val source = generated(AppRoutingSettings(mode, apps,
@@ -163,8 +163,8 @@ class RealityConfigFactoryTest {
                     lookups += name
                     if (name.endsWith("alpha")) 10001 else 10002
                 }
-                assertTrue(result.includedPackages.isEmpty())
-                assertEquals(listOf(own), result.excludedPackages)
+                assertEquals(if (mode == AppRoutingMode.INCLUDE_SELECTED) apps.sorted() else emptyList<String>(), result.includedPackages)
+                assertEquals(if (mode == AppRoutingMode.EXCLUDE_SELECTED) (apps + own).sorted() else emptyList<String>(), result.excludedPackages)
                 assertEquals(apps.sorted(), lookups)
                 val output = JSONObject(result.config)
                 assertEquals("sniff", rules(output).getJSONObject(1).getString("action"))

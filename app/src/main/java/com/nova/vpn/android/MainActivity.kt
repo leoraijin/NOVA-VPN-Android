@@ -1304,7 +1304,7 @@ internal fun RoutingPage(
         )
     }
 
-    PageFrame(if (tabbedRouting) "Маршруты" else "Маршрутизация", "Сначала правила сайтов, затем приложений",
+    PageFrame(if (tabbedRouting) "Маршруты" else "Маршрутизация", "Исключённые приложения используют обычную сеть Android",
         tutorialTargetIndex = if (tabbedRouting) 2 else if (LocalTutorialStep.current == TutorialStep.Apps) 2 + settings.sites.size else 1) {
     if (iosRouting) item { IOSRoutingTabs(iosRoutingTab) { iosRoutingTab = it } }
     if (materialRouting) item { MaterialRouteTabs(iosRoutingTab) { iosRoutingTab = it } }
@@ -1314,7 +1314,7 @@ internal fun RoutingPage(
     item {
         SoftCard(tutorialTarget = TutorialStep.Sites) {
             Text("Маршрутизация по сайтам", fontWeight = FontWeight.SemiBold)
-            Text(if (tabbedRouting) "Правило применяется к домену и поддоменам." else "Введите домен без https://. Правило охватывает домен и его поддомены и имеет приоритет над маршрутом браузера.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(if (tabbedRouting) "Правило применяется к домену и поддоменам внутри VPN." else "Введите домен без https://. Правило охватывает домен и его поддомены в приложениях, использующих VPN. Исключённые приложения используют обычную сеть Android.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(
                             shape = novaFieldShape(),
@@ -1408,8 +1408,8 @@ internal fun RoutingPage(
             }
             Text(
                 if (settings.mode == AppRoutingMode.INCLUDE_SELECTED)
-                    if (tabbedRouting) "Через VPN — только отмеченные приложения." else "Отмеченные приложения идут через VPN, остальные — напрямую. Сайтовые правила имеют приоритет."
-                else if (tabbedRouting) "Через VPN — все приложения, кроме отмеченных." else "Все приложения идут через VPN, кроме отмеченных. Сайтовые правила имеют приоритет.",
+                    if (tabbedRouting) "Через VPN — только отмеченные приложения." else "Отмеченные приложения идут через VPN, остальные — через обычную сеть Android. Правила сайтов действуют только внутри VPN."
+                else if (tabbedRouting) "Через VPN — все приложения, кроме отмеченных." else "Отмеченные приложения исключены из VPN и используют обычную сеть Android, включая DNS. Правила сайтов на них не действуют.",
                 fontSize = 12.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )

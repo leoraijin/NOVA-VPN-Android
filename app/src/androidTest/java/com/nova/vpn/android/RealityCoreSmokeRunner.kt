@@ -183,7 +183,7 @@ class RealityCoreSmokeRunner : Instrumentation() {
                 check(routedClientResult() == "ok" && packets.get() == 4) { "Included application did not traverse TUN" }
                 stop()
                 start(SingBoxConfigFactory.build(profile, AppRoutingSettings(AppRoutingMode.EXCLUDE_SELECTED, setOf(testPackage)), context.packageName))
-                check(routedClientResult() != "ok" && packets.get() == 4) { "Excluded application unexpectedly traversed TUN" }
+                check(routedClientResult(expectPhysical = true) != "ok" && packets.get() == 4) { "Excluded application unexpectedly traversed TUN" }
                 stop()
                 start(SingBoxConfigFactory.build(profile, AppRoutingSettings(AppRoutingMode.INCLUDE_SELECTED,
                     sites = listOf(SiteRoutingRule("native.test", SiteRoutingTarget.VPN))), context.packageName))
@@ -222,11 +222,18 @@ class RealityCoreSmokeRunner : Instrumentation() {
                 stop()
                 start(SingBoxConfigFactory.build(profile, AppRoutingSettings(AppRoutingMode.EXCLUDE_SELECTED,
                     setOf(testPackage), listOf(SiteRoutingRule("native.test", SiteRoutingTarget.VPN))), context.packageName))
-                check(routedClientResult() != "ok" && packets.get() == mixedStart + 2) {
+                check(routedClientResult(expectPhysical = true) != "ok" && packets.get() == mixedStart + 2) {
                     "Native UID direct rule failed to exclude selected app"
                 }
-                check(routedClientResult(site = true) == "ok" && packets.get() == mixedStart + 3) {
-                    "Site exception must override the selected application's direct UID rule"
+                check(routedClientResult(site = true, expectPhysical = true) != "ok" && packets.get() == mixedStart + 2) {
+                    "A site rule captured an application excluded at the Android VPN boundary"
+                }
+                stop()
+                AppPreferencesStore(context).setVpnEngine(VpnEngine.SING_BOX)
+                start(SingBoxConfigFactory.build(profile, AppRoutingSettings(AppRoutingMode.EXCLUDE_SELECTED,
+                    setOf(testPackage), listOf(SiteRoutingRule("native.test", SiteRoutingTarget.VPN))), context.packageName))
+                check(routedClientResult(site = true, expectPhysical = true) != "ok" && packets.get() == mixedStart + 2) {
+                    "sing-box site rule captured an excluded application"
                 }
                 stop()
             } finally {
@@ -250,13 +257,17 @@ class RealityCoreSmokeRunner : Instrumentation() {
         }
     }
 
-    private fun routedClientResult(ipv6: Boolean = false, site: Boolean = false): String {
+    private fun routedClientResult(ipv6: Boolean = false, site: Boolean = false, expectPhysical: Boolean = false): String {
         val context = targetContext
         val nonce = java.util.UUID.randomUUID().toString()
         val answer = java.util.concurrent.atomic.AtomicReference<String?>(null)
+        val physical = java.util.concurrent.atomic.AtomicBoolean(false)
         val receiver = object : android.content.BroadcastReceiver() {
             override fun onReceive(context: android.content.Context?, intent: android.content.Intent?) {
-                if (intent?.getStringExtra("nonce") == nonce) answer.set(intent.getStringExtra("result"))
+                if (intent?.getStringExtra("nonce") == nonce) {
+                    physical.set(intent.getBooleanExtra("physicalDefault", false))
+                    answer.set(intent.getStringExtra("result"))
+                }
             }
         }
         val filter = android.content.IntentFilter("${context.packageName}.REALITY_SMOKE_RESULT")
@@ -268,6 +279,7 @@ class RealityCoreSmokeRunner : Instrumentation() {
                 .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_MULTIPLE_TASK)
                 .putExtra("nonce", nonce).putExtra("ipv6", ipv6).putExtra("site", site))
             waitUntil("client result ipv6=$ipv6 site=$site") { answer.get() != null }
+            check(!expectPhysical || physical.get()) { "Excluded UID still sees VPN as its default network" }
             return answer.get()!!
         } finally { context.unregisterReceiver(receiver) }
     }

@@ -12,7 +12,7 @@ import org.json.JSONObject
  * Supported plan: one generated TUN, VLESS/Trojan plus direct/block/DNS outbounds,
  * and generated application/site routing. The
  * Android Builder must apply only the nonempty application list in [Prepared].
- * Mixed routing uses native UID rules on Android 10+, preserving site priority.
+ * Mixed routing uses native UID rules on Android 10+, inside Builder-filtered apps.
  * Application-only policies retain Android Builder filtering on older versions too.
  * Include mode with no selected apps moves the terminal direct catch-all to route.final;
  * an allow-list containing only this VPN app is rejected (an empty Builder list means all apps).
@@ -64,11 +64,21 @@ object RealityConfigFactory {
         val inbounds = objects(root.getJSONArray("inbounds"))
         val tuns = inbounds.filter { it.opt("type") == "tun" }
         require(tuns.size == 1) { "Настройки VPN-интерфейса не поддерживаются Reality Core." }
-        prepareTun(tuns.single(), ownPackage)
+        val tun = tuns.single()
+        val requestedIncluded = if (tun.has("include_package")) strings(tun.getJSONArray("include_package")) else null
+        val requestedExcluded = if (tun.has("exclude_package")) strings(tun.getJSONArray("exclude_package")) else null
+        prepareTun(tun)
 
         val dns = root.getJSONObject("dns")
         prepareDns(dns, outbounds)
         val (included, excluded) = preparePackages(route, dns, outbounds, ownPackage, packageUid)
+        // Never silently ignore Builder filters or accept a custom filter that
+        // disagrees with the validated generated application policy.
+        require((requestedIncluded == null || requestedIncluded == included) &&
+            (requestedExcluded == null || requestedExcluded == excluded) &&
+            !(requestedIncluded != null && requestedExcluded != null)) {
+            "Правила приложений VPN-интерфейса не соответствуют маршрутизации."
+        }
         prepareSiteDns(route, dns, outbounds)
         normalizeTerminalDirectRoute(route, dns, outbounds)
         // SingBoxConfigFactory always emits a DNS strategy for managed DNS. Full JSON
@@ -175,7 +185,7 @@ object RealityConfigFactory {
         // dns.final and every route remain unchanged: non-site names get ordinary DNS.
     }
 
-    private fun prepareTun(tun: JSONObject, ownPackage: String) {
+    private fun prepareTun(tun: JSONObject) {
         require(keys(tun).all { it in TUN_KEYS } && tun.opt("tag") == "nova-tun" &&
             strings(tun.getJSONArray("address")) == listOf("172.19.0.1/30", "fdfe:dcba:9876::1/126") &&
             tun.opt("mtu") == 1500) { "Настройки VPN-интерфейса не поддерживаются Reality Core." }
@@ -185,12 +195,9 @@ object RealityConfigFactory {
             require(!tun.has(key) || tun.opt(key) == value) { "Настройки VPN-интерфейса не поддерживаются Reality Core." }
             tun.remove(key)
         }
-        if (tun.has("exclude_package")) {
-            require(strings(tun.getJSONArray("exclude_package")) == listOf(ownPackage)) {
-                "Правила приложений VPN-интерфейса не поддерживаются Reality Core."
-            }
-            tun.remove("exclude_package")
-        }
+        // Android Builder applies these lists; native core must not reinterpret them.
+        tun.remove("exclude_package")
+        tun.remove("include_package")
     }
 
     private fun removeBootstrapResolver(obj: JSONObject, key: String) {
@@ -255,8 +262,8 @@ object RealityConfigFactory {
             require(!containsInvert(route) && !containsInvert(dns)) { "Инвертированные правила не поддерживаются Reality Core." }
             return emptyList<String>() to listOf(ownPackage)
         }
-        // Builder filtering is safe only for app-only policies. Mixed policies
-        // keep flows inside native routing so earlier site exceptions still apply.
+        // Native mixed policies still validate their UID rules. Android Builder
+        // filtering additionally keeps bypassed applications outside the TUN.
         val others = rules.filterNot { it.has("package_name") }
         val builderOnly = others.all { isDnsHijack(it) || isProbe(it, route.opt("final")) } &&
             (dns.optJSONArray("rules")?.length() ?: 0) == 0 && !containsInvert(dns) &&
@@ -306,8 +313,8 @@ object RealityConfigFactory {
                 rule.remove("package_name")
                 rule.put("user_id", JSONArray(uids))
             }
-            // All user traffic enters TUN, including apps with a direct default: sites override it.
-            return emptyList<String>() to listOf(ownPackage)
+            // Site rules apply only inside applications admitted to Android's VPN.
+            return included to excluded
         }
         route.put("rules", JSONArray().apply { others.forEach { put(it) } })
         return included to excluded
@@ -347,5 +354,5 @@ object RealityConfigFactory {
     private val PACKAGE = Regex("[A-Za-z_][A-Za-z0-9_]*(?:\\.[A-Za-z_][A-Za-z0-9_]*)+")
     private val PACKAGE_RULE_KEYS = setOf("package_name", "action", "outbound")
     private val TUN_KEYS = setOf("type", "tag", "address", "mtu", "interface_name", "auto_route",
-        "strict_route", "stack", "exclude_package")
+        "strict_route", "stack", "exclude_package", "include_package")
 }
