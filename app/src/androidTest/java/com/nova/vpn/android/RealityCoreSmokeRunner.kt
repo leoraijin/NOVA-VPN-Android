@@ -14,7 +14,11 @@ import kotlin.concurrent.thread
 
 /** No user keys, external endpoints, VPN consent or stable app data required. */
 class RealityCoreSmokeRunner : Instrumentation() {
-    override fun onCreate(arguments: Bundle?) { super.onCreate(arguments); start() }
+    private var bypassVisibilityOnly = false
+    override fun onCreate(arguments: Bundle?) {
+        bypassVisibilityOnly = arguments?.getString("bypassVisibilityOnly") == "true"
+        super.onCreate(arguments); start()
+    }
     override fun onStart() {
         val result = Bundle()
         try {
@@ -85,7 +89,9 @@ class RealityCoreSmokeRunner : Instrumentation() {
             }
             check(protected.get() >= 8) { "Socket callback not invoked" }
             runVpnSmoke()
-            result.putString("stream", "Reality JNI/TUN smoke passed: validation, TLS refusal, FD ownership, 8 SOCKS/stop cycles, callbacks, real VpnService, IPv4/IPv6 app TCP echo, include/exclude policies, refused live reload, quiet single notification and sing-box regression. Core ${RealityCoreBridge.version()}\n")
+            result.putString("stream", if (bypassVisibilityOnly)
+                "Bypass visibility smoke passed: independent UID, baseline, real IPv4/IPv6 TUN echo and Android exclusion with conflicting site policy in both engines. Core ${RealityCoreBridge.version()}\n"
+                else "Reality JNI/TUN smoke passed: validation, TLS refusal, FD ownership, 8 SOCKS/stop cycles, callbacks, real VpnService, IPv4/IPv6 app TCP echo, include/exclude policies, refused live reload, quiet single notification and sing-box regression. Core ${RealityCoreBridge.version()}\n")
             finish(Activity.RESULT_OK, result)
         } catch (failure: Throwable) {
             result.putString("stream", "Reality smoke failed: ${failure.javaClass.simpleName}: ${failure.message}\n")
@@ -160,6 +166,35 @@ class RealityCoreSmokeRunner : Instrumentation() {
                     context.startService(android.content.Intent(context, NovaVpnService::class.java).setAction(NovaVpnService.ACTION_STOP))
                     waitUntil("stop") { !VpnRuntime.state.value.connected && !VpnRuntime.state.value.connecting }
                 }
+                // Compare the same independent UID before any VPN exists.
+                routedClientResult(expectPhysical = true)
+                val testPackage = "${context.packageName}.test"
+                for (engine in listOf(VpnEngine.REALITY_CORE, VpnEngine.SING_BOX)) {
+                    AppPreferencesStore(context).setVpnEngine(engine)
+                    sendStatus(0, Bundle().apply { putString("stream", "Bypass visibility engine=$engine\n") })
+                    if (bypassVisibilityOnly) {
+                        val before = packets.get()
+                        start(config)
+                        check(routedClientResult() == "ok" && packets.get() == before + 1) { "IPv4 TUN echo failed" }
+                        check(routedClientResult(ipv6 = true) == "ok" && packets.get() == before + 2) { "IPv6 TUN echo failed" }
+                        stop()
+                    }
+                    val beforeBypass = packets.get()
+                    start(SingBoxConfigFactory.build(profile, AppRoutingSettings(AppRoutingMode.EXCLUDE_SELECTED,
+                        setOf(testPackage), listOf(SiteRoutingRule("native.test", SiteRoutingTarget.VPN))), context.packageName))
+                    check(routedClientResult(expectPhysical = true) != "ok" && packets.get() == beforeBypass) {
+                        "Excluded application entered the synthetic VPN"
+                    }
+                    check(routedClientResult(ipv6 = true, expectPhysical = true) != "ok" && packets.get() == beforeBypass) {
+                        "Excluded IPv6 application entered the synthetic VPN"
+                    }
+                    check(routedClientResult(site = true, expectPhysical = true) != "ok" && packets.get() == beforeBypass) {
+                        "VPN site rule captured the excluded application"
+                    }
+                    stop()
+                }
+                if (bypassVisibilityOnly) return@use
+                AppPreferencesStore(context).setVpnEngine(VpnEngine.REALITY_CORE)
                 start(config, burst = 20)
                 val notifications = context.getSystemService(android.app.NotificationManager::class.java).activeNotifications
                 check(notifications.size == 1) { "Expected one VPN notification, got ${notifications.size}" }
@@ -178,9 +213,11 @@ class RealityCoreSmokeRunner : Instrumentation() {
                 waitUntil("live reload refusal") { VpnRuntime.state.value.transportNotice != null }
                 check(routedClientResult() == "ok" && packets.get() == 3) { "Refused live reload damaged tunnel" }
                 stop()
-                val testPackage = "${context.packageName}.test"
                 start(SingBoxConfigFactory.build(profile, AppRoutingSettings(AppRoutingMode.INCLUDE_SELECTED, setOf(testPackage)), context.packageName))
-                check(routedClientResult() == "ok" && packets.get() == 4) { "Included application did not traverse TUN" }
+                check(routedClientResult() == "ok" && packets.get() == 4) {
+                    "Included application did not traverse TUN: packets=${packets.get()} fixture=${fixtureFailure.get()} " +
+                        VpnDiagnostics.report(null, AppRoutingSettings(), android.os.Build.VERSION.SDK_INT, VpnRuntime.state.value)
+                }
                 stop()
                 start(SingBoxConfigFactory.build(profile, AppRoutingSettings(AppRoutingMode.EXCLUDE_SELECTED, setOf(testPackage)), context.packageName))
                 check(routedClientResult(expectPhysical = true) != "ok" && packets.get() == 4) { "Excluded application unexpectedly traversed TUN" }
@@ -262,10 +299,12 @@ class RealityCoreSmokeRunner : Instrumentation() {
         val nonce = java.util.UUID.randomUUID().toString()
         val answer = java.util.concurrent.atomic.AtomicReference<String?>(null)
         val physical = java.util.concurrent.atomic.AtomicBoolean(false)
+        val networkSummary = java.util.concurrent.atomic.AtomicReference("")
         val receiver = object : android.content.BroadcastReceiver() {
             override fun onReceive(context: android.content.Context?, intent: android.content.Intent?) {
                 if (intent?.getStringExtra("nonce") == nonce) {
                     physical.set(intent.getBooleanExtra("physicalDefault", false))
+                    networkSummary.set(intent.getStringExtra("networkSummary").orEmpty())
                     answer.set(intent.getStringExtra("result"))
                 }
             }
@@ -277,8 +316,11 @@ class RealityCoreSmokeRunner : Instrumentation() {
             context.startActivity(android.content.Intent().setComponent(android.content.ComponentName(
                 "${context.packageName}.test", RealityProbeClientActivity::class.java.name))
                 .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_MULTIPLE_TASK)
-                .putExtra("nonce", nonce).putExtra("ipv6", ipv6).putExtra("site", site))
+                .putExtra("nonce", nonce).putExtra("ipv6", ipv6).putExtra("site", site)
+                .putExtra("expectPhysical", expectPhysical))
             waitUntil("client result ipv6=$ipv6 site=$site") { answer.get() != null }
+            sendStatus(0, Bundle().apply { putString("stream",
+                "Separate UID: ipv6=$ipv6 site=$site expectPhysical=$expectPhysical result=${answer.get()} ${networkSummary.get()}\n") })
             check(!expectPhysical || physical.get()) { "Excluded UID still sees VPN as its default network" }
             return answer.get()!!
         } finally { context.unregisterReceiver(receiver) }

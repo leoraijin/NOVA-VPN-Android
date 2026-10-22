@@ -91,9 +91,11 @@ android {
         }
         create("realitypreview") {
             initWith(getByName("optimized"))
-            applicationIdSuffix = ".realitypreview"
+            applicationIdSuffix = if (providers.gradleProperty("novaUsbTest").isPresent)
+                ".usbtest.realitypreview" else ".realitypreview"
             versionNameSuffix = "-reality-preview.2"
-            manifestPlaceholders["novaAppLabel"] = "NOVA VPN · Reality Test"
+            manifestPlaceholders["novaAppLabel"] = if (providers.gradleProperty("novaUsbTest").isPresent)
+                "NOVA VPN · USB Test" else "NOVA VPN · Reality Test"
             buildConfigField("boolean", "REALITY_PREVIEW", "true")
             matchingFallbacks += listOf("optimized", "release")
         }

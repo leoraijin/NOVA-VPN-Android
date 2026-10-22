@@ -1,0 +1,42 @@
+INSTRUMENTATION_STATUS: stream=Separate UID: ipv6=false site=false expectPhysical=true result=SocketTimeoutException physicalDefault=true, vpnTransportVisible=false, tunInterfaceVisible=false, vpnInterfaces=[]
+
+INSTRUMENTATION_STATUS_CODE: 0
+INSTRUMENTATION_STATUS: stream=Bypass visibility engine=REALITY_CORE
+
+INSTRUMENTATION_STATUS_CODE: 0
+INSTRUMENTATION_STATUS: stream=Separate UID: ipv6=false site=false expectPhysical=false result=ok physicalDefault=false, vpnTransportVisible=true, tunInterfaceVisible=true, vpnInterfaces=[tun0]
+
+INSTRUMENTATION_STATUS_CODE: 0
+INSTRUMENTATION_STATUS: stream=Separate UID: ipv6=true site=false expectPhysical=false result=ok physicalDefault=false, vpnTransportVisible=true, tunInterfaceVisible=true, vpnInterfaces=[tun0]
+
+INSTRUMENTATION_STATUS_CODE: 0
+INSTRUMENTATION_STATUS: stream=Separate UID: ipv6=false site=false expectPhysical=true result=SocketTimeoutException physicalDefault=true, vpnTransportVisible=true, tunInterfaceVisible=true, vpnInterfaces=[tun0]
+
+INSTRUMENTATION_STATUS_CODE: 0
+INSTRUMENTATION_STATUS: stream=Separate UID: ipv6=true site=false expectPhysical=true result=ConnectException physicalDefault=true, vpnTransportVisible=true, tunInterfaceVisible=true, vpnInterfaces=[tun0]
+
+INSTRUMENTATION_STATUS_CODE: 0
+INSTRUMENTATION_STATUS: stream=Separate UID: ipv6=false site=true expectPhysical=true result=UnknownHostException physicalDefault=true, vpnTransportVisible=true, tunInterfaceVisible=true, vpnInterfaces=[tun0]
+
+INSTRUMENTATION_STATUS_CODE: 0
+INSTRUMENTATION_STATUS: stream=Bypass visibility engine=SING_BOX
+
+INSTRUMENTATION_STATUS_CODE: 0
+INSTRUMENTATION_STATUS: stream=Separate UID: ipv6=false site=false expectPhysical=false result=ok physicalDefault=false, vpnTransportVisible=true, tunInterfaceVisible=true, vpnInterfaces=[tun0]
+
+INSTRUMENTATION_STATUS_CODE: 0
+INSTRUMENTATION_STATUS: stream=Separate UID: ipv6=true site=false expectPhysical=false result=ok physicalDefault=false, vpnTransportVisible=true, tunInterfaceVisible=true, vpnInterfaces=[tun0]
+
+INSTRUMENTATION_STATUS_CODE: 0
+INSTRUMENTATION_STATUS: stream=Separate UID: ipv6=false site=false expectPhysical=true result=SocketTimeoutException physicalDefault=true, vpnTransportVisible=true, tunInterfaceVisible=true, vpnInterfaces=[tun0]
+
+INSTRUMENTATION_STATUS_CODE: 0
+INSTRUMENTATION_STATUS: stream=Separate UID: ipv6=true site=false expectPhysical=true result=ConnectException physicalDefault=true, vpnTransportVisible=true, tunInterfaceVisible=true, vpnInterfaces=[tun0]
+
+INSTRUMENTATION_STATUS_CODE: 0
+INSTRUMENTATION_STATUS: stream=Separate UID: ipv6=false site=true expectPhysical=true result=UnknownHostException physicalDefault=true, vpnTransportVisible=true, tunInterfaceVisible=true, vpnInterfaces=[tun0]
+
+INSTRUMENTATION_STATUS_CODE: 0
+INSTRUMENTATION_RESULT: stream=Bypass visibility smoke passed: independent UID, baseline, real IPv4/IPv6 TUN echo and Android exclusion with conflicting site policy in both engines. Core 0.1.0
+
+INSTRUMENTATION_CODE: -1

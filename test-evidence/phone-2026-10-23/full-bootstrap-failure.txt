@@ -1,0 +1,45 @@
+INSTRUMENTATION_STATUS: stream=Separate UID: ipv6=false site=false expectPhysical=true result=SocketTimeoutException physicalDefault=true, vpnTransportVisible=false, tunInterfaceVisible=false, vpnInterfaces=[]
+
+INSTRUMENTATION_STATUS_CODE: 0
+INSTRUMENTATION_STATUS: stream=Bypass visibility engine=REALITY_CORE
+
+INSTRUMENTATION_STATUS_CODE: 0
+INSTRUMENTATION_STATUS: stream=Separate UID: ipv6=false site=false expectPhysical=true result=SocketTimeoutException physicalDefault=true, vpnTransportVisible=true, tunInterfaceVisible=true, vpnInterfaces=[tun0]
+
+INSTRUMENTATION_STATUS_CODE: 0
+INSTRUMENTATION_STATUS: stream=Separate UID: ipv6=false site=true expectPhysical=true result=UnknownHostException physicalDefault=true, vpnTransportVisible=true, tunInterfaceVisible=true, vpnInterfaces=[tun0]
+
+INSTRUMENTATION_STATUS_CODE: 0
+INSTRUMENTATION_STATUS: stream=Bypass visibility engine=SING_BOX
+
+INSTRUMENTATION_STATUS_CODE: 0
+INSTRUMENTATION_STATUS: stream=Separate UID: ipv6=false site=false expectPhysical=true result=SocketTimeoutException physicalDefault=true, vpnTransportVisible=true, tunInterfaceVisible=true, vpnInterfaces=[tun0]
+
+INSTRUMENTATION_STATUS_CODE: 0
+INSTRUMENTATION_STATUS: stream=Separate UID: ipv6=false site=true expectPhysical=true result=UnknownHostException physicalDefault=true, vpnTransportVisible=true, tunInterfaceVisible=true, vpnInterfaces=[tun0]
+
+INSTRUMENTATION_STATUS_CODE: 0
+INSTRUMENTATION_STATUS: stream=Separate UID: ipv6=false site=false expectPhysical=false result=ok physicalDefault=false, vpnTransportVisible=true, tunInterfaceVisible=true, vpnInterfaces=[tun0]
+
+INSTRUMENTATION_STATUS_CODE: 0
+INSTRUMENTATION_STATUS: stream=Separate UID: ipv6=true site=false expectPhysical=false result=ok physicalDefault=false, vpnTransportVisible=true, tunInterfaceVisible=true, vpnInterfaces=[tun0]
+
+INSTRUMENTATION_STATUS_CODE: 0
+INSTRUMENTATION_STATUS: stream=Separate UID: ipv6=false site=false expectPhysical=false result=ok physicalDefault=false, vpnTransportVisible=true, tunInterfaceVisible=true, vpnInterfaces=[tun0]
+
+INSTRUMENTATION_STATUS_CODE: 0
+INSTRUMENTATION_STATUS: stream=Separate UID: ipv6=false site=false expectPhysical=false result=ok physicalDefault=false, vpnTransportVisible=true, tunInterfaceVisible=true, vpnInterfaces=[tun0]
+
+INSTRUMENTATION_STATUS_CODE: 0
+INSTRUMENTATION_STATUS: stream=Separate UID: ipv6=false site=false expectPhysical=true result=SocketTimeoutException physicalDefault=true, vpnTransportVisible=true, tunInterfaceVisible=true, vpnInterfaces=[tun0]
+
+INSTRUMENTATION_STATUS_CODE: 0
+INSTRUMENTATION_STATUS: stream=Separate UID: ipv6=false site=true expectPhysical=false result=ok physicalDefault=false, vpnTransportVisible=true, tunInterfaceVisible=true, vpnInterfaces=[tun0]
+
+INSTRUMENTATION_STATUS_CODE: 0
+INSTRUMENTATION_STATUS: stream=Separate UID: ipv6=false site=false expectPhysical=false result=SocketTimeoutException physicalDefault=false, vpnTransportVisible=true, tunInterfaceVisible=true, vpnInterfaces=[tun0]
+
+INSTRUMENTATION_STATUS_CODE: 0
+INSTRUMENTATION_RESULT: stream=Reality smoke failed: IllegalStateException: Transport hostname bootstrap: result=SocketTimeoutException packets=5 queries=2 fixture=SSLHandshakeException: connection closed state=VpnUiState(connected=true, connecting=false, error=null, warning=null, trafficChecking=false, trafficVerified=false, trafficCheckFailed=true, transportNotice=null)
+
+INSTRUMENTATION_CODE: 0
