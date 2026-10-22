@@ -31,12 +31,15 @@ jobs:
           test -n "$signer"
           test -n "$aapt"
           "$signer" verify --print-certs outputs/NOVA-VPN-Android-0.2.51-arm64-optimized.apk > release-work/certificate.txt
+          cat release-work/certificate.txt
           "$aapt" dump badging outputs/NOVA-VPN-Android-0.2.51-arm64-optimized.apk > release-work/badging.txt
           python3 - <<'PY'
           from pathlib import Path
           import hashlib
+          import re
           certificate = Path("release-work/certificate.txt").read_text()
-          assert "Signer #1 certificate SHA-256 digest: 7abeb400a6f16c0adf6c127027f2bdd205ce79f558c53f631d41083ecca24626" in certificate
+          fingerprints = re.findall(r"certificate SHA-256 digest:\s*([0-9a-fA-F]{64})", certificate)
+          assert fingerprints and set(x.lower() for x in fingerprints) == {"7abeb400a6f16c0adf6c127027f2bdd205ce79f558c53f631d41083ecca24626"}, certificate
           badging = Path("release-work/badging.txt").read_text()
           assert "package: name='com.nova.vpn.android' versionCode='53' versionName='0.2.51'" in badging
           assert "application-debuggable" not in badging
@@ -80,4 +83,3 @@ jobs:
           if [ "$actual" = "$expected" ]; then
             gh api -X DELETE repos/leoraijin/NOVA-VPN-Android/git/refs/heads/release-payload/android-0.2.51
           fi
-
