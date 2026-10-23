@@ -10,3 +10,4 @@ signing.properties
 native/work/
 app/src/main/jniLibs/
 vendor/maven/
+app/libs/libbox-xhttp.aar

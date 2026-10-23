@@ -12,17 +12,27 @@ import java.util.Base64
 object ProfileLinkParser {
     private const val MAX_INPUT_BYTES = 4 * 1024 * 1024
     private const val MAX_PROFILES = 2000
+    private class ImportLimitException : IllegalArgumentException("В импорте слишком много профилей")
 
-    fun parseText(text: String): List<ImportedProfile> {
+    data class ImportResult(val profiles: List<ImportedProfile>, val warnings: List<String>)
+
+    fun parseText(text: String): List<ImportedProfile> = parseReport(text).profiles
+
+    fun parseReport(text: String): ImportResult {
+        val failures = mutableListOf<String>()
+        return ImportResult(parseTextInternal(text, failures), failures.toList())
+    }
+
+    private fun parseTextInternal(text: String, failures: MutableList<String>): List<ImportedProfile> {
         require(text.toByteArray(StandardCharsets.UTF_8).size <= MAX_INPUT_BYTES) {
             "Импорт превышает ограничение 4 МБ"
         }
         // QR readers and editors often prefix copied text with a UTF-8 BOM.
         val decoded = decodeSubscription(text.trim().removePrefix("\uFEFF")).trim().removePrefix("\uFEFF")
         val normalized = decoded.trim()
-        if (normalized.startsWith("[")) return parseConfigArray(normalized)
+        if (normalized.startsWith("[")) return parseConfigArray(normalized, failures)
         if (normalized.startsWith("{")) {
-            parseXraySubscription(normalized)?.let { return SubscriptionPlaceholders.importedProfiles(it) }
+            parseXraySubscription(normalized, failures)?.let { return SubscriptionPlaceholders.importedProfiles(it) }
             return SubscriptionPlaceholders.importedProfiles(listOf(parseFullConfig(normalized)))
         }
         val lines = decoded.lineSequence().map { it.trim().removePrefix("\uFEFF").trim() }
@@ -30,12 +40,11 @@ object ProfileLinkParser {
             .toList()
         require(lines.size <= MAX_PROFILES) { "В импорте слишком много профилей" }
         val profiles = mutableListOf<ImportedProfile>()
-        val failures = mutableListOf<String>()
         lines.forEachIndexed { index, line ->
             try {
                 profiles += parseLink(line)
-            } catch (error: IllegalArgumentException) {
-                failures += "Строка ${index + 1}: ${error.message ?: "неподдерживаемый формат"}"
+            } catch (error: Exception) {
+                failures += "Строка ${index + 1}: ${if (error is IllegalArgumentException) error.message ?: "неподдерживаемый формат" else "некорректная конфигурация"}"
             }
         }
         require(profiles.isNotEmpty()) {
@@ -45,7 +54,7 @@ object ProfileLinkParser {
     }
 
     /** Panels may return an array of complete Xray/sing-box configs, not URI lines. */
-    private fun parseConfigArray(text: String): List<ImportedProfile> {
+    private fun parseConfigArray(text: String, failures: MutableList<String>): List<ImportedProfile> {
         val entries = try { JSONArray(text) } catch (_: Exception) {
             throw IllegalArgumentException("Некорректный JSON-массив подписки")
         }
@@ -53,13 +62,18 @@ object ProfileLinkParser {
         val profiles = mutableListOf<ImportedProfile>()
         for (index in 0 until entries.length()) {
             val entry = entries.opt(index)
-            val parsed = when (entry) {
+            val warningsBefore = failures.size
+            val parsed = try { when (entry) {
                 is JSONObject -> {
                     val config = entry.toString()
-                    parseXraySubscription(config) ?: listOf(parseFullConfig(config))
+                    parseXraySubscription(config, failures) ?: listOf(parseFullConfig(config))
                 }
                 is String -> listOf(parseLink(entry.trim().removePrefix("\uFEFF")))
                 else -> throw IllegalArgumentException("Элемент ${index + 1} JSON-подписки должен быть конфигурацией или VPN-ссылкой")
+            } } catch (error: Exception) {
+                if (error is ImportLimitException) throw error
+                if (failures.size == warningsBefore) failures += "Элемент ${index + 1}: ${if (error is IllegalArgumentException) error.message ?: "неподдерживаемый формат" else "некорректная конфигурация"}"
+                emptyList()
             }
             require(parsed.size <= MAX_PROFILES - profiles.size) { "В импорте слишком много профилей" }
             profiles.addAll(parsed)
@@ -68,7 +82,7 @@ object ProfileLinkParser {
     }
 
     /** Converts common Xray subscription JSON into native single-server sing-box profiles. */
-    private fun parseXraySubscription(text: String): List<ImportedProfile>? {
+    private fun parseXraySubscription(text: String, failures: MutableList<String>): List<ImportedProfile>? {
         val json = runCatching { JSONObject(text) }.getOrNull() ?: return null
         val outbounds = json.optJSONArray("outbounds") ?: return null
         val xrayOutbounds = (0 until outbounds.length()).mapNotNull(outbounds::optJSONObject)
@@ -77,19 +91,20 @@ object ProfileLinkParser {
 
         val profiles = mutableListOf<ImportedProfile>()
         fun addProfile(profile: ImportedProfile) {
-            require(profiles.size < MAX_PROFILES) { "В импорте слишком много профилей" }
+            if (profiles.size >= MAX_PROFILES) throw ImportLimitException()
             profiles += profile
         }
-        xrayOutbounds.forEach { xray ->
+        xrayOutbounds.forEachIndexed { index, xray ->
+          try {
             val protocol = xray.optString("protocol").lowercase()
-            val settings = xray.optJSONObject("settings") ?: return@forEach
+            val settings = xray.optJSONObject("settings") ?: return@forEachIndexed
             val stream = xray.optJSONObject("streamSettings") ?: JSONObject()
             val name = xray.optString("remarks")
                 .ifBlank { json.optString("remarks") }
                 .ifBlank { xray.optString("tag") }
             when (protocol) {
                 "vless", "vmess" -> {
-                    val servers = settings.optJSONArray("vnext") ?: return@forEach
+                    val servers = settings.optJSONArray("vnext") ?: return@forEachIndexed
                     for (serverIndex in 0 until servers.length()) {
                         val server = servers.optJSONObject(serverIndex) ?: continue
                         val users = server.optJSONArray("users") ?: continue
@@ -112,7 +127,7 @@ object ProfileLinkParser {
                     }
                 }
                 "trojan", "shadowsocks" -> {
-                    val servers = settings.optJSONArray("servers") ?: return@forEach
+                    val servers = settings.optJSONArray("servers") ?: return@forEachIndexed
                     for (serverIndex in 0 until servers.length()) {
                         val server = servers.optJSONObject(serverIndex) ?: continue
                         val address = server.optString("address")
@@ -137,6 +152,10 @@ object ProfileLinkParser {
                     }
                 }
             }
+          } catch (error: Exception) {
+            if (profiles.size >= MAX_PROFILES) throw error
+            failures += "Xray-профиль ${index + 1}: ${if (error is IllegalArgumentException) error.message ?: "неподдерживаемый формат" else "некорректная конфигурация"}"
+          }
         }
         require(profiles.isNotEmpty()) { "Xray JSON не содержит поддерживаемых VLESS, VMess, Trojan или Shadowsocks серверов" }
         return profiles
@@ -153,6 +172,13 @@ object ProfileLinkParser {
     private fun applyXrayStream(outbound: JSONObject, stream: JSONObject) {
         when (stream.optString("network", "tcp").lowercase()) {
             "tcp", "raw", "" -> Unit
+            "xhttp", "splithttp" -> outbound.put("transport", XhttpTransport.fromSettings(
+                stream.optJSONObject("xhttpSettings") ?: stream.optJSONObject("splithttpSettings") ?: JSONObject()))
+            "httpupgrade" -> {
+                val upgrade = stream.optJSONObject("httpupgradeSettings") ?: JSONObject()
+                outbound.put("transport", JSONObject().put("type", "httpupgrade")
+                    .put("host", upgrade.optString("host")).put("path", upgrade.optString("path", "/")))
+            }
             "ws" -> {
                 val ws = stream.optJSONObject("wsSettings") ?: JSONObject()
                 val headers = ws.optJSONObject("headers") ?: JSONObject()
@@ -402,7 +428,14 @@ object ProfileLinkParser {
         } else if (network == "grpc") {
             out.put("transport", JSONObject().put("type", "grpc")
                 .put("service_name", source.optString("serviceName").ifBlank { source.optString("path") }))
-        } else if (network != "tcp") {
+        } else if (network == "xhttp" || network == "splithttp") {
+            out.put("transport", XhttpTransport.fromSettings(source.optJSONObject("xhttpSettings")
+                ?: JSONObject().put("host", source.optString("host")).put("path", source.optString("path", "/"))
+                    .put("mode", source.optString("mode", "auto"))))
+        } else if (network == "httpupgrade") {
+            out.put("transport", JSONObject().put("type", "httpupgrade")
+                .put("host", source.optString("host")).put("path", source.optString("path", "/")))
+        } else if (network != "tcp" && network != "raw") {
             throw IllegalArgumentException("VMess транспорт $network требует отдельной проверки")
         }
         return out
@@ -475,7 +508,13 @@ object ProfileLinkParser {
 
     private fun addTransport(out: JSONObject, query: Map<String, String>) {
         when (val type = query["type"]?.lowercase() ?: "tcp") {
-            "tcp", "" -> Unit
+            "tcp", "raw", "" -> Unit
+            "xhttp", "splithttp" -> out.put("transport", XhttpTransport.fromQuery(query))
+            "httpupgrade" -> out.put("transport", JSONObject().put("type", "httpupgrade")
+                .put("host", query["host"].orEmpty()).put("path", query["path"] ?: "/"))
+            "http", "h2" -> out.put("transport", JSONObject().put("type", "http")
+                .put("host", JSONArray(query["host"].orEmpty().split(',').filter(String::isNotBlank)))
+                .put("path", query["path"] ?: "/"))
             "ws" -> {
                 val headers = JSONObject()
                 query["host"]?.takeIf(String::isNotBlank)?.let { headers.put("Host", it) }

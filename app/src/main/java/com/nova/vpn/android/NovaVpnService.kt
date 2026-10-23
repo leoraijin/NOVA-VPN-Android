@@ -427,6 +427,7 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
                 }
             }
             override fun writeGroups(groups: io.nekohasekai.libbox.OutboundGroupIterator?) = Unit
+            override fun writeDNSQuery(query: io.nekohasekai.libbox.DnsQuery?) = Unit
             override fun writeOutbounds(outbounds: io.nekohasekai.libbox.OutboundGroupItemIterator?) = Unit
             override fun writeLogs(messageList: LogIterator?) {
                 if (messageList == null) return

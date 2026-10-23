@@ -34,6 +34,18 @@ data class ImportedProfile(
         .put("latencyMillis", latencyMillis)
 
     companion object {
+        /** Reimport attaches subscription provenance without changing saved IDs or selection. */
+        fun merge(existing: List<ImportedProfile>, incoming: List<ImportedProfile>): List<ImportedProfile> {
+            val merged = existing.associateByTo(linkedMapOf(), ImportedProfile::configurationKey)
+            incoming.forEach { profile ->
+                val key = profile.configurationKey()
+                val previous = merged[key]
+                merged[key] = if (previous != null) previous.copy(subscriptionUrl = profile.subscriptionUrl ?: previous.subscriptionUrl)
+                    else profile
+            }
+            return merged.values.toList()
+        }
+
         fun distinctByConfiguration(profiles: List<ImportedProfile>): List<ImportedProfile> =
             profiles.distinctBy(ImportedProfile::configurationKey)
 

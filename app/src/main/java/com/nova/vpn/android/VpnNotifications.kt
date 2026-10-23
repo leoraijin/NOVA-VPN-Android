@@ -8,11 +8,19 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.drawable.Icon
 import android.os.Build
+import android.provider.Settings
+import android.net.Uri
 
 /** One status card for foreground startup and every subsequent VPN status update. */
 internal object VpnNotifications {
     const val ID = 701
     const val CHANNEL_ID = "nova-vpn-status-silent-v2"
+
+    fun settingsIntent(context: Context): Intent = if (Build.VERSION.SDK_INT >= 26) {
+        Intent(Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS)
+            .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+            .putExtra(Settings.EXTRA_CHANNEL_ID, CHANNEL_ID)
+    } else Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${context.packageName}"))
 
     fun prepare(context: Context) {
         val manager = context.getSystemService(NotificationManager::class.java)

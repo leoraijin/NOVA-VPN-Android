@@ -5,6 +5,9 @@ import android.content.Context
 class AppPreferencesStore(context: Context) {
     private val preferences = context.getSharedPreferences("app_preferences", Context.MODE_PRIVATE)
 
+    fun serverGrouping(): String = preferences.getString("server_grouping", "NONE") ?: "NONE"
+    fun setServerGrouping(value: String) { preferences.edit().putString("server_grouping", value).apply() }
+
     fun autoConnectEnabled(): Boolean = preferences.getBoolean(KEY_AUTO_CONNECT, false)
 
     fun vpnEngine(): VpnEngine = VpnEngine.fromId(preferences.getString(KEY_VPN_ENGINE, null))

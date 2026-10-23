@@ -15,6 +15,12 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [28, 35])
 class VpnNotificationsTest {
+    @Test fun notificationSettingsOpenOnlyTheVpnStatusChannel() {
+        val intent = VpnNotifications.settingsIntent(context)
+        assertEquals(android.provider.Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS, intent.action)
+        assertEquals(context.packageName, intent.getStringExtra(android.provider.Settings.EXTRA_APP_PACKAGE))
+        assertEquals(VpnNotifications.CHANNEL_ID, intent.getStringExtra(android.provider.Settings.EXTRA_CHANNEL_ID))
+    }
     private val context: Context get() = RuntimeEnvironment.getApplication()
     private val manager get() = context.getSystemService(NotificationManager::class.java)
 

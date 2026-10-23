@@ -669,17 +669,9 @@ private fun NovaAndroidApp(
                             Box(Modifier.weight(1f)) { SettingsPage(
                             onStartTutorial = { tutorialIndex = 0 },
                             onNotificationSettings = {
-                                if (Build.VERSION.SDK_INT >= 33 &&
-                                    context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED &&
-                                    (context as? Activity)?.shouldShowRequestPermissionRationale(Manifest.permission.POST_NOTIFICATIONS) == true) {
-                                    notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-                                } else {
-                                    val notificationSettings = if (Build.VERSION.SDK_INT >= 26) {
-                                        Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
-                                    } else Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${context.packageName}"))
-                                    runCatching { context.startActivity(notificationSettings) }
+                                    VpnNotifications.prepare(context)
+                                    runCatching { context.startActivity(VpnNotifications.settingsIntent(context)) }
                                         .onFailure { settingsError = "Не удалось открыть настройки уведомлений Android." }
-                                }
                             },
                             autoConnect = autoConnect,
                             appearance = appearance,
@@ -811,16 +803,20 @@ private fun NovaAndroidApp(
                                         com.nova.vpn.android.data.SubscriptionDeviceIdentity(context).forUrl(rawImport) else null
                                     SubscriptionFetcher.fetchIfUrl(rawImport, deviceId)
                                 }
-                                withContext(Dispatchers.Default) { ProfileLinkParser.parseText(source) }
-                            }.onSuccess { incoming ->
+                                withContext(Dispatchers.Default) { ProfileLinkParser.parseReport(source) }
+                            }.onSuccess { report ->
+                                val incoming = report.profiles.map { profile ->
+                                    if (rawImport.trim().startsWith("https://", true)) profile.copy(subscriptionUrl = rawImport.trim()) else profile
+                                }
+                                val merged = ImportedProfile.merge(profiles, incoming)
                                 runCatching {
                                     withContext(Dispatchers.IO) {
-                                        vault.save(ImportedProfile.distinctByConfiguration(profiles + incoming))
+                                        vault.save(merged)
                                     }
                                 }.onSuccess {
-                                    profiles = ImportedProfile.distinctByConfiguration(profiles + incoming)
+                                    profiles = merged
                                     if (selectedProfileId.isBlank()) {
-                                        selectedProfileId = incoming.firstOrNull()?.id.orEmpty()
+                                        selectedProfileId = merged.firstOrNull { it.configurationKey() == incoming.firstOrNull()?.configurationKey() }?.id.orEmpty()
                                         if (selectedProfileId.isNotBlank()) {
                                             withContext(Dispatchers.IO) {
                                                 runCatching { selectedProfileStore.save(selectedProfileId) }
@@ -829,6 +825,10 @@ private fun NovaAndroidApp(
                                     }
                                     showImport = false
                                     importText = ""
+                                    profileError = if (report.warnings.isEmpty()) null else
+                                        "Получено серверов: ${incoming.size}. Замечаний: ${report.warnings.size}.\n" + report.warnings.take(8).joinToString("\n")
+                                    Toast.makeText(context, "Получено серверов: ${incoming.size}" +
+                                        if (report.warnings.isEmpty()) "" else "; есть пропуски — подробности на странице серверов", Toast.LENGTH_LONG).show()
                                 }.onFailure {
                                     importError = "Не удалось безопасно сохранить профили. Проверьте свободное место и блокировку экрана устройства."
                                 }
@@ -1524,9 +1524,9 @@ internal fun StandardSettingsPage(
     } }
     item { SoftCard {
         Text("Уведомления о VPN", fontWeight = FontWeight.SemiBold)
-        Text("Одна постоянная карточка NOVA с именем сервера и состоянием VPN. По умолчанию без звука, вибрации и всплывающего баннера.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("Отключите канал «Состояние NOVA VPN», чтобы убрать карточку подключения. VPN продолжит работать. Системный значок VPN и список активных приложений контролирует Android.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         OutlinedButton(onClick = onNotificationSettings, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
-            Text("Настроить уведомления")
+            Text("Скрыть / показать уведомление")
         }
     } }
     item { SoftCard {

@@ -193,7 +193,7 @@ internal fun MaterialSettings(onTutorial: () -> Unit, onNotifications: () -> Uni
                 Text("Подключение", style = MaterialTheme.typography.titleLarge)
                 MaterialActionRow(Icons.Rounded.PowerSettingsNew, "Автоподключение", "При открытии приложения", trailing = { NovaSwitch(autoConnect, onAuto) })
                 HorizontalDivider(color = c.outlineVariant)
-                MaterialActionRow(Icons.Rounded.Notifications, "Уведомления", "Статус соединения", onNotifications)
+                MaterialActionRow(Icons.Rounded.Notifications, "Уведомление VPN", "Скрыть / показать карточку NOVA", onNotifications)
                 MaterialActionRow(Icons.Rounded.Dashboard, "Плитка в шторке", "Быстрое управление VPN", onTile)
                 error?.let { Text(it, color = c.error) }
             }

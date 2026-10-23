@@ -1,0 +1,39 @@
+INSTRUMENTATION_STATUS: stream=Separate UID: ipv6=false site=false expectPhysical=false result=ok physicalDefault=false, vpnTransportVisible=true, tunInterfaceVisible=true, vpnInterfaces=[tun0]
+
+INSTRUMENTATION_STATUS_CODE: 0
+INSTRUMENTATION_STATUS: stream=Separate UID: ipv6=true site=false expectPhysical=false result=ok physicalDefault=false, vpnTransportVisible=true, tunInterfaceVisible=true, vpnInterfaces=[tun0]
+
+INSTRUMENTATION_STATUS_CODE: 0
+INSTRUMENTATION_STATUS: stream=XHTTP packet-up: separate-UID IPv4/IPv6 TUN echo PASS
+
+INSTRUMENTATION_STATUS_CODE: 0
+INSTRUMENTATION_STATUS: stream=Separate UID: ipv6=false site=false expectPhysical=false result=ok physicalDefault=false, vpnTransportVisible=true, tunInterfaceVisible=true, vpnInterfaces=[tun0]
+
+INSTRUMENTATION_STATUS_CODE: 0
+INSTRUMENTATION_STATUS: stream=Separate UID: ipv6=true site=false expectPhysical=false result=ok physicalDefault=false, vpnTransportVisible=true, tunInterfaceVisible=true, vpnInterfaces=[tun0]
+
+INSTRUMENTATION_STATUS_CODE: 0
+INSTRUMENTATION_STATUS: stream=XHTTP stream-up: separate-UID IPv4/IPv6 TUN echo PASS
+
+INSTRUMENTATION_STATUS_CODE: 0
+INSTRUMENTATION_STATUS: stream=Separate UID: ipv6=false site=false expectPhysical=false result=ok physicalDefault=false, vpnTransportVisible=true, tunInterfaceVisible=true, vpnInterfaces=[tun0]
+
+INSTRUMENTATION_STATUS_CODE: 0
+INSTRUMENTATION_STATUS: stream=Separate UID: ipv6=true site=false expectPhysical=false result=ok physicalDefault=false, vpnTransportVisible=true, tunInterfaceVisible=true, vpnInterfaces=[tun0]
+
+INSTRUMENTATION_STATUS_CODE: 0
+INSTRUMENTATION_STATUS: stream=XHTTP stream-one: separate-UID IPv4/IPv6 TUN echo PASS
+
+INSTRUMENTATION_STATUS_CODE: 0
+INSTRUMENTATION_STATUS: stream=Separate UID: ipv6=false site=false expectPhysical=false result=ok physicalDefault=false, vpnTransportVisible=true, tunInterfaceVisible=true, vpnInterfaces=[tun0]
+
+INSTRUMENTATION_STATUS_CODE: 0
+INSTRUMENTATION_STATUS: stream=Separate UID: ipv6=true site=false expectPhysical=false result=ok physicalDefault=false, vpnTransportVisible=true, tunInterfaceVisible=true, vpnInterfaces=[tun0]
+
+INSTRUMENTATION_STATUS_CODE: 0
+INSTRUMENTATION_STATUS: stream=XHTTP auto: separate-UID IPv4/IPv6 TUN echo PASS
+
+INSTRUMENTATION_STATUS_CODE: 0
+INSTRUMENTATION_RESULT: stream=XHTTP Android/Xray interoperability passed: four modes, IPv4/IPv6, separate UID, real VpnService.
+
+INSTRUMENTATION_CODE: -1

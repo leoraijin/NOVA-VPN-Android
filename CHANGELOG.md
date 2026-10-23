@@ -339,3 +339,9 @@
 - Device handover, sleep, real provider transports and battery measurements still
   require physical-device testing before production promotion.
 
+# 0.2.52
+
+Native XHTTP subscription import, visible partial-import diagnostics, shared country /
+transport / protocol / subscription grouping, and direct status-notification channel
+settings. See RELEASE-NOTES-0.2.52.md and XHTTP-VERIFICATION-0.2.52.md.
+

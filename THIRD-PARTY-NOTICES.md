@@ -28,7 +28,13 @@ The offline server map uses country boundaries from Natural Earth 1:110m Admin 0
 
 ## sing-box / libbox Android binding
 
-The Android app directly uses `com.github.singbox-android:libbox:1.14.1` as its VPN engine. The Android binding is maintained at <https://github.com/singbox-android/libbox> and is based on <https://github.com/SagerNet/sing-box>.
+From 0.2.52 the Android app uses sing-box-lx `v1.14.3-lx.23`, based on sing-box 1.14.3,
+to provide native XHTTP support absent in upstream libbox. Corresponding source:
+<https://github.com/Leadaxe/sing-box-lx/tree/20f89c2f4cb3f77acaf3daa063bd857a055a5259>.
+GPL-3.0-or-later. Published Android binding `libbox-1.14.3-lx.23.aar`:
+SHA-256 `d7be8b1297f68ad8bad47e5eb766f59501100b1e9377de403d9c53cd364ecef1`.
+The build verifies these exact bytes; no independently built Go runtimes are combined.
+Before 0.2.52 the Android binding was `com.github.singbox-android:libbox:1.14.1`.
 
 The upstream license notice states:
 

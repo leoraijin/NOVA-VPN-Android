@@ -174,7 +174,7 @@ internal fun WindowsSettings(onTutorial: () -> Unit, onNotifications: () -> Unit
         }
         item { WindowsHeading("Подключение") }
         item { WindowsCard { WindowsRow("Автоподключение", "При открытии NOVA", Icons.Outlined.PowerSettingsNew, trailing = { NovaSwitch(auto, onAuto) }) } }
-        item { WindowsCard { WindowsRow("Уведомления", "Состояние VPN в Android", Icons.Outlined.Notifications, onNotifications) } }
+        item { WindowsCard { WindowsRow("Уведомление VPN", "Скрыть / показать карточку NOVA", Icons.Outlined.Notifications, onNotifications) } }
         item { WindowsCard { WindowsRow("Быстрое управление", "Добавить плитку в шторку", Icons.Outlined.Tune, onTile) } }
         error?.let { item { Text(it, color = MaterialTheme.colorScheme.error) } }
         item { WindowsHeading("Обновления и помощь") }

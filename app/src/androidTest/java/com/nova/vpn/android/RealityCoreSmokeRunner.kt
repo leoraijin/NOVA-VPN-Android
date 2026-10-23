@@ -15,11 +15,37 @@ import kotlin.concurrent.thread
 /** No user keys, external endpoints, VPN consent or stable app data required. */
 class RealityCoreSmokeRunner : Instrumentation() {
     private var bypassVisibilityOnly = false
+    private var xhttpOnly = false
+    private var uiSeedOnly = false
     override fun onCreate(arguments: Bundle?) {
         bypassVisibilityOnly = arguments?.getString("bypassVisibilityOnly") == "true"
+        xhttpOnly = arguments?.getString("xhttpOnly") == "true"
+        uiSeedOnly = arguments?.getString("uiSeedOnly") == "true"
         super.onCreate(arguments); start()
     }
     override fun onStart() {
+        if (uiSeedOnly) {
+            val result = Bundle()
+            try {
+                check(targetContext.packageName == "com.nova.vpn.android.usbtest.realitypreview")
+                val fixtures = listOf("🇩🇪 Germany XHTTP" to "xhttp", "🇳🇱 Netherlands WS" to "ws",
+                    "🇺🇸 United States gRPC" to "grpc", "🇩🇪 Germany TCP" to "tcp").map { (name, type) ->
+                    ProfileLinkParser.parseText("vless://11111111-1111-4111-8111-111111111111@fixture.example:443?type=$type#$name").single()
+                }
+                ProfileVault(targetContext).save(fixtures)
+                SelectedProfileStore(targetContext).save(fixtures.first().id)
+                AppPreferencesStore(targetContext).apply {
+                    dismissTutorial(); setAutoConnectEnabled(false); setUpdateChecksEnabled(false); setServerGrouping("TRANSPORT")
+                }
+                result.putString("stream", "UI synthetic profiles seeded in isolated USB test package\n")
+                finish(Activity.RESULT_OK, result)
+            } catch (error: Throwable) {
+                result.putString("stream", "UI seed failed: ${error.javaClass.simpleName}\n")
+                finish(Activity.RESULT_CANCELED, result)
+            }
+            return
+        }
+        if (xhttpOnly) { runXhttpSmoke(); return }
         val result = Bundle()
         try {
             check(targetContext.packageName.endsWith(".realitypreview"))
@@ -282,6 +308,45 @@ class RealityCoreSmokeRunner : Instrumentation() {
             listener.close()
             acceptor.join(1000)
         }
+    }
+
+    private fun runXhttpSmoke() {
+        val result = Bundle()
+        var outcome = Activity.RESULT_CANCELED
+        var activity: Activity? = null
+        val context = targetContext
+        try {
+            check(context.packageName == "com.nova.vpn.android.usbtest.realitypreview")
+            check(android.net.VpnService.prepare(context) == null)
+            AppPreferencesStore(context).apply {
+                dismissTutorial(); setAutoConnectEnabled(false); setUpdateChecksEnabled(false); setVpnEngine(VpnEngine.SING_BOX)
+            }
+            activity = startActivitySync(android.content.Intent(context, MainActivity::class.java)
+                .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
+            for (mode in listOf("packet-up", "stream-up", "stream-one", "auto")) {
+                // adb reverse tcp:38123 tcp:38123 exposes the synthetic Xray server.
+                val profile = ProfileLinkParser.parseText("vless://11111111-1111-4111-8111-111111111111@127.0.0.1:38123?type=xhttp&path=%2Fnova-fixture&mode=$mode#XHTTP-fixture").single()
+                val config = SingBoxConfigFactory.build(profile, ownPackage = context.packageName)
+                context.startForegroundService(android.content.Intent(context, NovaVpnService::class.java)
+                    .setAction(NovaVpnService.ACTION_START).putExtra(NovaVpnService.EXTRA_CONFIG, config)
+                    .putExtra(NovaVpnService.EXTRA_PROFILE_NAME, "XHTTP $mode fixture"))
+                waitUntil("XHTTP $mode start") { VpnRuntime.state.value.connected || VpnRuntime.state.value.error != null }
+                check(VpnRuntime.state.value.connected) { VpnRuntime.state.value.error.orEmpty() }
+                check(routedClientResult() == "ok") { "XHTTP $mode IPv4 echo failed" }
+                check(routedClientResult(ipv6 = true) == "ok") { "XHTTP $mode IPv6 echo failed" }
+                sendStatus(0, Bundle().apply { putString("stream", "XHTTP $mode: separate-UID IPv4/IPv6 TUN echo PASS\n") })
+                context.startService(android.content.Intent(context, NovaVpnService::class.java).setAction(NovaVpnService.ACTION_STOP))
+                waitUntil("XHTTP stop") { !VpnRuntime.state.value.connected && !VpnRuntime.state.value.connecting }
+            }
+            result.putString("stream", "XHTTP Android/Xray interoperability passed: four modes, IPv4/IPv6, separate UID, real VpnService.\n")
+            outcome = Activity.RESULT_OK
+        } catch (error: Throwable) {
+            result.putString("stream", "XHTTP smoke failed: ${error.javaClass.simpleName}: ${error.message}\n")
+        } finally {
+            runCatching { context.startService(android.content.Intent(context, NovaVpnService::class.java).setAction(NovaVpnService.ACTION_STOP)) }
+            activity?.let { window -> runOnMainSync { window.finish() } }
+        }
+        finish(outcome, result)
     }
 
     private fun waitUntil(label: String = "condition", condition: () -> Boolean) {

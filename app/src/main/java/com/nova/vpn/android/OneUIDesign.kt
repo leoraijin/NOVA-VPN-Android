@@ -190,7 +190,7 @@ internal fun OneUISettings(onTutorial: () -> Unit, onNotifications: () -> Unit, 
             OneUIGroup {
                 OneUIRow("Автоподключение", "При открытии приложения", Icons.Rounded.PowerSettingsNew, Color(0xFF3478C9), trailing = { NovaSwitch(auto, onAuto) })
                 OneUIDivider()
-                OneUIRow("Уведомления", "Состояние VPN", Icons.Rounded.Notifications, Color(0xFFBD7736), onNotifications)
+                OneUIRow("Уведомление VPN", "Скрыть / показать карточку NOVA", Icons.Rounded.Notifications, Color(0xFFBD7736), onNotifications)
                 OneUIDivider()
                 OneUIRow("Плитка в шторке", "Быстрое управление", Icons.Rounded.Tune, Color(0xFF558A47), onTile)
                 error?.let { Text(it, Modifier.padding(20.dp), color = MaterialTheme.colorScheme.error) }

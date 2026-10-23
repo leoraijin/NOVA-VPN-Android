@@ -1,3 +1,6 @@
+import java.security.MessageDigest
+import java.net.URI
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -31,8 +34,8 @@ android {
         applicationId = "com.nova.vpn.android"
         minSdk = 24
         targetSdk = 35
-        versionCode = 53
-        versionName = "0.2.51"
+        versionCode = 54
+        versionName = "0.2.52"
         manifestPlaceholders["novaAppLabel"] = "NOVA VPN"
         buildConfigField("boolean", "REALITY_PREVIEW", "false")
         testInstrumentationRunner = when {
@@ -123,6 +126,28 @@ android {
 
 }
 
+// A pinned downstream is necessary: upstream libbox does not implement XHTTP.
+val xhttpCore = layout.projectDirectory.file("libs/libbox-xhttp.aar")
+val prepareXhttpCore = tasks.register("prepareXhttpCore") {
+    outputs.file(xhttpCore)
+    outputs.upToDateWhen { false } // Verify cached bytes as well as downloads.
+    doLast {
+        val target = xhttpCore.asFile
+        if (!target.exists()) {
+            check(!gradle.startParameter.isOffline) { "XHTTP core missing; run :app:prepareXhttpCore once without --offline" }
+            target.parentFile.mkdirs()
+            val temporary = File(target.path + ".download")
+            try {
+                URI("https://github.com/Leadaxe/sing-box-lx/releases/download/v1.14.3-lx.23/libbox-1.14.3-lx.23.aar").toURL().openStream().use { input -> temporary.outputStream().use { input.copyTo(it) } }
+                temporary.copyTo(target, overwrite = false)
+            } finally { temporary.delete() }
+        }
+        val digest = MessageDigest.getInstance("SHA-256")
+        target.inputStream().use { input -> val buffer = ByteArray(65536); while (true) { val count = input.read(buffer); if (count < 0) break; digest.update(buffer, 0, count) } }
+        check(digest.digest().joinToString("") { "%02x".format(it) } == "d7be8b1297f68ad8bad47e5eb766f59501100b1e9377de403d9c53cd364ecef1") { "XHTTP core checksum mismatch" }
+    }
+}
+
 dependencies {
     implementation(files("libs/zxing-core-3.5.4.jar"))
     val composeBom = platform("androidx.compose:compose-bom:2025.01.00")
@@ -141,7 +166,7 @@ dependencies {
     implementation("org.json:json:20240303")
 
     // Android-native sing-box core (VPNService binding); not the Windows executable.
-    implementation("com.github.singbox-android:libbox:1.14.1")
+    implementation(files(xhttpCore).builtBy(prepareXhttpCore))
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.robolectric:robolectric:4.14.1")

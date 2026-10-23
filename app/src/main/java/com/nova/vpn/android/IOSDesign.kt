@@ -220,7 +220,7 @@ internal fun SettingsPage(onStartTutorial: () -> Unit, onNotificationSettings: (
                 IOSGroup {
                     IOSRow(Icons.Rounded.PowerSettingsNew, "Автоподключение", "При открытии приложения", trailing = { NovaSwitch(autoConnect, onAutoConnectChanged) })
                     HorizontalDivider(Modifier.padding(start = 58.dp), color = c.outlineVariant.copy(alpha = .45f))
-                    IOSRow(Icons.Rounded.Notifications, "Уведомления", "Статус VPN без звука и вибрации", onClick = onNotificationSettings)
+                    IOSRow(Icons.Rounded.Notifications, "Уведомление VPN", "Скрыть / показать карточку NOVA", onClick = onNotificationSettings)
                     HorizontalDivider(Modifier.padding(start = 58.dp), color = c.outlineVariant.copy(alpha = .45f))
                     IOSRow(Icons.Rounded.Tune, "Быстрое управление", "Добавить плитку в шторку Android", onClick = onAddQuickSettingsTile)
                 }
@@ -252,7 +252,7 @@ internal fun SettingsPage(onStartTutorial: () -> Unit, onNotificationSettings: (
 }
 
 @Composable
-internal fun ServersPage(
+internal fun UngroupedServersPage(
     profiles: List<ImportedProfile>,
     selectedId: String,
     vpnState: VpnUiState,

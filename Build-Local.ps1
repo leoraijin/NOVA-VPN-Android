@@ -1,4 +1,4 @@
-﻿param(
+param(
     [Parameter(ValueFromRemainingArguments = $true)]
     [string[]] $GradleArguments
 )
@@ -56,7 +56,7 @@ try {
     # JDK 17 reads argument files in the Windows ANSI encoding. Match Gradle's writer.
     $ansiCodePage = [Globalization.CultureInfo]::CurrentCulture.TextInfo.ANSICodePage
     $argumentEncoding = if ($ansiCodePage -eq 65001) { 'UTF-8' } else { 'windows-' + $ansiCodePage }
-    & (Join-Path (Get-NovaBuildPath $PSScriptRoot) 'gradlew.bat') "-Dorg.gradle.jvmargs=-Xmx3g -Dfile.encoding=$argumentEncoding" @GradleArguments
+    & (Join-Path (Get-NovaBuildPath $PSScriptRoot) 'gradlew.bat') "-Dorg.gradle.jvmargs=-Xmx5g -Dfile.encoding=$argumentEncoding -Djava.util.concurrent.ForkJoinPool.common.parallelism=2" @GradleArguments
     if ($LASTEXITCODE -ne 0) {
         exit $LASTEXITCODE
     }
