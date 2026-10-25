@@ -36,11 +36,13 @@ class RealityCoreSmokeRunner : Instrumentation() {
     private var transferCrashPhase: String? = null
     private var subscriptionSchedulePhase: String? = null
     private var serverLibraryStyle: String? = null
+    private var serverLibraryTheme = ThemeMode.DARK
     private var diagnosticsTheme = ThemeMode.LIGHT
     override fun onCreate(arguments: Bundle?) {
         transferCrashPhase = arguments?.getString("transferCrashPhase")
         subscriptionSchedulePhase = arguments?.getString("subscriptionSchedulePhase")
         serverLibraryStyle = arguments?.getString("serverLibraryStyle")
+        serverLibraryTheme = ThemeMode.valueOf(arguments?.getString("serverLibraryTheme") ?: "DARK")
         bypassVisibilityOnly = arguments?.getString("bypassVisibilityOnly") == "true"
         recoveryOnly = arguments?.getString("recoveryOnly") == "true"
         liveReloadOnly = arguments?.getString("liveReloadOnly") == "true"
@@ -76,7 +78,7 @@ class RealityCoreSmokeRunner : Instrumentation() {
         serverLibraryStyle?.let { style ->
             val result = Bundle()
             try {
-                ServerLibraryUiSmoke.run(this, style)
+                ServerLibraryUiSmoke.run(this, style, serverLibraryTheme)
                 result.putString("stream", "PASS server library UI: $style\n")
                 finish(Activity.RESULT_OK, result)
             } catch (error: Throwable) {

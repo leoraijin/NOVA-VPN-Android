@@ -29,3 +29,13 @@ Scope remains all seven sections and release gates in ANDROID-DEVELOPMENT-PLAN-2
 ## Current runtime verification
 
 Local WHPX AVD process is alive but not visible to ADB; software diagnostic AVD terminated. Do not mark emulator tests passed. Cloud Android API35 WorkManager job is prepared in android-completion.yml, with an isolated test package only, synthetic delayed subscription sources, no VPN provider requests and no native-core dependency for these particular phases.
+
+## New independent evidence on this computer
+
+- Full optimized unit checks rerun twice: 330 tests, 329 passed, one skipped, no failure/error. Logs: work/android-completion-20261025/initial-unit.log and schedule-race-build.log under the shared project root.
+- New stale-snapshot/prune and actual terminal retry instrumentation compiled. CI run 40207419679 is still running; no runtime success is claimed yet.
+- Candidate5 source restored independently: 34,170 Cronet blobs checked; 114 module distributions restored offline; pinned native base and patch guards passed. This is not the remaining linked-C++ provenance closure.
+- Native fork head 9a4ce6d2 passed Windows gofmt, go vet and 298 test/subtest results, with zero skips/failures. Official Xray exchange passed in 27 frontend combinations. Evidence: https://github.com/leoraijin/sing-box-lx/actions/runs/40208616205
+- Upstream draft PR opened with explicit user authorization: https://github.com/Leadaxe/sing-box-lx/pull/57 . Outstanding gates are disclosed in its description. Additional five-repeat race-detector CI is now running at c21ffba3.
+- Four-design, two-theme library tests now exercise rotation and actual Activity recreation, including retained search/selection/personal edits and three screenshots per appearance. They compiled locally (lifecycle-build.log). Runtime execution and process-death UI restoration are not yet proven.
+- Only an existing debug keystore was found locally; the original stable signing identity has not been demonstrated. Do not publish an incompatible replacement APK.

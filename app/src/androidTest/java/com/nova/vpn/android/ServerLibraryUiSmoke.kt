@@ -1,6 +1,11 @@
 package com.nova.vpn.android
 
 import android.app.Instrumentation
+import android.app.Activity
+import android.app.Application
+import android.app.UiAutomation
+import android.content.res.Configuration
+import java.util.concurrent.atomic.AtomicReference
 import android.content.Intent
 import android.graphics.Bitmap
 import android.os.Bundle
@@ -11,7 +16,7 @@ import java.io.File
 
 /** Large synthetic library, real UI and encrypted persistence; isolated package only. */
 internal object ServerLibraryUiSmoke {
-    fun run(instrumentation: Instrumentation, style: String) {
+    fun run(instrumentation: Instrumentation, style: String, theme: ThemeMode = ThemeMode.DARK) {
         val context = instrumentation.targetContext
         check(context.packageName == "com.nova.vpn.android.usbtest.realitypreview")
         check(!VpnRuntime.state.value.connected && !VpnRuntime.state.value.connecting)
@@ -62,10 +67,44 @@ internal object ServerLibraryUiSmoke {
                 putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
             }))
         }
-        var activity: MainActivity? = null
+        val latest = AtomicReference<MainActivity?>()
+        val application = context.applicationContext as Application
+        val callbacks = object : Application.ActivityLifecycleCallbacks {
+            override fun onActivityResumed(activity: Activity) { if (activity is MainActivity) latest.set(activity) }
+            override fun onActivityCreated(activity: Activity, state: Bundle?) = Unit
+            override fun onActivityStarted(activity: Activity) = Unit
+            override fun onActivityPaused(activity: Activity) = Unit
+            override fun onActivityStopped(activity: Activity) = Unit
+            override fun onActivitySaveInstanceState(activity: Activity, state: Bundle) = Unit
+            override fun onActivityDestroyed(activity: Activity) = Unit
+        }
+        fun capture(label: String) {
+            val image = requireNotNull(ui.takeScreenshot())
+            File(context.getExternalFilesDir(null), "server-library-$style-${theme.name}-$label.png").outputStream().use {
+                image.compress(Bitmap.CompressFormat.PNG, 100, it)
+            }
+            image.recycle()
+        }
+        fun awaitLifecycle(previous: MainActivity?, orientation: Int) {
+            val deadline = SystemClock.elapsedRealtime() + 15_000
+            while (SystemClock.elapsedRealtime() < deadline) {
+                val current = latest.get()
+                if (current != null && current !== previous &&
+                    context.resources.configuration.orientation == orientation) {
+                    instrumentation.waitForIdleSync()
+                    waitFor("Найдено: 1 из 2000")
+                    waitFor("Мой игровой узел")
+                    return
+                }
+                SystemClock.sleep(100)
+            }
+            error("Activity did not restore search after lifecycle change")
+        }
+        instrumentation.runOnMainSync { application.registerActivityLifecycleCallbacks(callbacks) }
         try {
+            check(ui.setRotation(UiAutomation.ROTATION_FREEZE_0))
             AppPreferencesStore(context).apply {
-                setAppearance(Appearance(DesignStyle.valueOf(style), ThemeMode.DARK))
+                setAppearance(Appearance(DesignStyle.valueOf(style), theme))
                 setServerGrouping(ServerGrouping.NONE.name)
                 setServerListOptions(ServerSort.MANUAL.name, false)
             }
@@ -75,7 +114,7 @@ internal object ServerLibraryUiSmoke {
                 userSettings = ProfileUserSettings(favorite = index % 2 == 0, order = index.toLong())) }
             vault.updateSnapshot { ProfileSnapshot.migrate(profiles) }
             SelectedProfileStore(context).save("library-0")
-            activity = instrumentation.startActivitySync(Intent(context, MainActivity::class.java)
+            instrumentation.startActivitySync(Intent(context, MainActivity::class.java)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as MainActivity
             instrumentation.waitForIdleSync()
             click("Серверы")
@@ -106,11 +145,23 @@ internal object ServerLibraryUiSmoke {
             check(vault.load().single { it.id == "library-1" }.userSettings.order == 0L)
             check(SelectedProfileStore(context).load() == "library-0")
             check(!VpnRuntime.state.value.connected && !VpnRuntime.state.value.connecting)
-            val image = requireNotNull(ui.takeScreenshot())
-            File(context.getExternalFilesDir(null), "server-library-$style.png").outputStream().use {
-                image.compress(Bitmap.CompressFormat.PNG, 100, it)
-            }
-            image.recycle()
+            capture("portrait")
+            stage = "rotate-landscape"
+            var previous = latest.get()
+            check(ui.setRotation(UiAutomation.ROTATION_FREEZE_90))
+            awaitLifecycle(previous, Configuration.ORIENTATION_LANDSCAPE)
+            capture("landscape")
+            stage = "rotate-portrait"
+            previous = latest.get()
+            check(ui.setRotation(UiAutomation.ROTATION_FREEZE_0))
+            awaitLifecycle(previous, Configuration.ORIENTATION_PORTRAIT)
+            stage = "recreate-activity"
+            previous = latest.get()
+            instrumentation.runOnMainSync { requireNotNull(previous).recreate() }
+            awaitLifecycle(previous, Configuration.ORIENTATION_PORTRAIT)
+            capture("recreated")
+            check(vault.load().single { it.id == "library-0" }.userSettings == edited.userSettings)
+            check(SelectedProfileStore(context).load() == "library-0")
         } catch (error: Throwable) {
             ui.takeScreenshot()?.let { image ->
                 File(context.getExternalFilesDir(null), "server-library-failed-$style.png").outputStream().use {
@@ -120,7 +171,11 @@ internal object ServerLibraryUiSmoke {
             }
             throw IllegalStateException("$stage: ${error.message}", error)
         } finally {
-            activity?.let { target -> instrumentation.runOnMainSync { target.finish() } }
+            instrumentation.runOnMainSync {
+                latest.get()?.finish()
+                application.unregisterActivityLifecycleCallbacks(callbacks)
+            }
+            ui.setRotation(UiAutomation.ROTATION_UNFREEZE)
             instrumentation.waitForIdleSync()
             FullTransfer.restore(context, FullTransfer.read(backup, "Synthetic-library-backup-2026"))
         }
