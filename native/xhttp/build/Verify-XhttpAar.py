@@ -46,7 +46,7 @@ with zipfile.ZipFile(args.aar) as archive:
                 assert remainder == 0, (abi, "RELRO", remainder)
                 relro.append(remainder)
         assert loads and relro, (abi, "Missing LOAD or RELRO")
-        assert b"1.14.3-lx.23-nova-downlink.1" in data, (abi, "Missing version marker")
+        assert b"1.14.3-lx.23-nova-downlink.2" in data, (abi, "Missing version marker")
         rows.append({"abi": abi, "bits": bits, "bytes": len(data), "sha256": hashlib.sha256(data).hexdigest(),
                      "load_alignment": loads, "relro_end_remainder": relro, "checked_page_size": page})
 digest = hashlib.sha256()

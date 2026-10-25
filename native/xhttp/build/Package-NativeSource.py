@@ -34,7 +34,7 @@ output.parent.mkdir(parents=True, exist_ok=True)
 core = root / 'native-source/sing-box-lx'
 patch = root / 'source/native/xhttp/core-downlink.patch'
 base = '20f89c2f4cb3f77acaf3daa063bd857a055a5259'
-patch_sha = '37ea56ca9fa6865f6faae56df14498d5ee84130fca51c7b446ead6c9afeaafac'
+patch_sha = 'c91140f59478c11a8ce9d1796491075221f642bd4b426086bc174cfa038df73d'
 
 def sha(path):
     with Path(path).open('rb') as stream:
@@ -127,7 +127,7 @@ with tarfile.open(go_tar, 'w') as archive:
             archive.add(file, arcname='go/' + file.relative_to(go_root).as_posix(), recursive=False, filter=clean_header)
 print('PASS pinned core, four clean submodules, exact patched gomobile and Go SDK source', flush=True)
 
-manifest = {'schema': 1, 'version': '1.14.3-lx.23-nova-downlink.1', 'inputs': inputs, 'package_counts': counts,
+manifest = {'schema': 1, 'version': '1.14.3-lx.23-nova-downlink.2', 'inputs': inputs, 'package_counts': counts,
             'core_patch_sha256': patch_sha, 'core': {}, 'modules': [],
             'external_cronet': dict(external_verified, files={}),
             'gomobile_base': 'v0.1.12', 'gomobile_archive_sha256': sha(mobile_tar), 'go_sdk_source_sha256': sha(go_tar),
@@ -168,7 +168,7 @@ with zipfile.ZipFile(output, 'x', allowZip64=True) as bundle:
     put_file(bundle, 'bindings/libbox-sources.jar', bindings)
     manifest['binding_sources_sha256'] = sha(bindings)
     manifest['aar_sha256'] = sha(root / 'work/xhttp-downlink-build/libbox-arm64-arm-amd64-386.aar')
-    assert manifest['aar_sha256'] == 'c8a9981a684cc42c8a83e3b6d3a2839f08e1d91fd8f7b27c64e73bd87ce61583'
+    assert manifest['aar_sha256'] == 'e7c08635ead7ed7189620ae6f2297b5a633e4101c89e6df2966af47e59d2909e'
     for number, ((path, version), module) in enumerate(sorted(modules.items()), 1):
         module_zip = Path(module['GoMod']).with_suffix('.zip')
         module_mod = Path(module['GoMod'])

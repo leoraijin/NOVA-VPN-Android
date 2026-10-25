@@ -1,7 +1,7 @@
-param([Parameter(Mandatory = $true)][string]$CoreDirectory)
+﻿param([Parameter(Mandatory = $true)][string]$CoreDirectory)
 $ErrorActionPreference = 'Stop'
 $expectedCommit = '20f89c2f4cb3f77acaf3daa063bd857a055a5259'
-$expectedPatch = '37ea56ca9fa6865f6faae56df14498d5ee84130fca51c7b446ead6c9afeaafac'
+$expectedPatch = 'c91140f59478c11a8ce9d1796491075221f642bd4b426086bc174cfa038df73d'
 $revision = & git --no-optional-locks -C $CoreDirectory rev-parse HEAD
 if ($LASTEXITCODE -ne 0 -or $revision.Trim() -ne $expectedCommit) { throw 'Unexpected sing-box-lx base revision' }
 $diff = & git --no-optional-locks -C $CoreDirectory diff HEAD --binary --no-ext-diff --abbrev=8

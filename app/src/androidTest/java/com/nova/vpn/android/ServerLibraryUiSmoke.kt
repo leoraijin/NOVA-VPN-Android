@@ -111,6 +111,10 @@ internal object ServerLibraryUiSmoke {
         try {
             check(ui.setRotation(UiAutomation.ROTATION_FREEZE_0))
             AppPreferencesStore(context).apply {
+                // Library lifecycle test starts after onboarding; onboarding has its own flow.
+                dismissTutorial()
+                setAutoConnectEnabled(false)
+                setUpdateChecksEnabled(false)
                 setAppearance(Appearance(DesignStyle.valueOf(style), theme))
                 setServerGrouping(ServerGrouping.NONE.name)
                 setServerListOptions(ServerSort.MANUAL.name, false)

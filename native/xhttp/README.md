@@ -5,11 +5,11 @@ This directory carries the downstream source change, original licenses and Windo
 ## Pinned inputs
 
 - [sing-box-lx](https://github.com/Leadaxe/sing-box-lx) base: `20f89c2f4cb3f77acaf3daa063bd857a055a5259` (1.14.3-lx.23).
-- `core-downlink.patch` SHA-256: `37ea56ca9fa6865f6faae56df14498d5ee84130fca51c7b446ead6c9afeaafac`.
+- `core-downlink.patch` SHA-256: `c91140f59478c11a8ce9d1796491075221f642bd4b426086bc174cfa038df73d`.
 - Go 1.25.5 Windows amd64 archive SHA-256: `ae756cce1cb80c819b4fe01b0353807178f532211b47f72d7fa77949de054ebb`.
 - sagernet/gomobile and gobind: `v0.1.12`, plus the Windows compiler-path fix in `gomobile/`.
 - Android NDK: `28.0.13004108`; Android API 24; JDK 17.
-- Native build version: `1.14.3-lx.23-nova-downlink.1`.
+- Native build version: `1.14.3-lx.23-nova-downlink.2`.
 
 Preserve the original `CORE-LICENSE` and `gomobile/LICENSE`. Go dependency versions and checksums come from the pinned upstream `go.mod`/`go.sum`; required submodule revisions come from that commit. Do not replace dependencies with their latest versions or remove protocols/build tags to make a build pass.
 
@@ -82,3 +82,8 @@ Before changing the production dependency, verify each JNI ABI and ELF page alig
 Source packaging now requires `host-tests.jsonl` in addition to four Android ABI graphs and binding-tool graphs. It is collected with `go list -deps -test` for the Windows XHTTP/option regression packages. Android runtime graphs alone miss Windows-only `go-ole` and test-only `testify` dependencies; candidate5 cannot run these host checks from its restored offline module cache without obtaining those dependencies separately. Preserve that limitation when referring to candidate5.
 
 `Run-XhttpCoreChecks.ps1 -ToolchainRoot PATH` accepts the external directory containing `go-1.25.5/`; module/build caches remain inside the restored workspace. Host checks default to offline module lookup. Use explicit `-Online` only to populate missing pinned dependencies before recollecting graphs and creating a new source candidate. The next candidate must be restored and checked offline again; a populated cache does not retroactively prove candidate5 complete.
+
+
+### Preview .2 bootstrap correction
+
+PR #57 commit 53a6aa1c fixes IP uplink plus domain downlink by wrapping the same direct dialer in the core resolver. Local host red/green and Windows/Linux race CI passed. The .2 all-ABI AAR is `e7c08635ead7ed7189620ae6f2297b5a633e4101c89e6df2966af47e59d2909e`; all four ELF architectures/alignment/version checks passed. This does not close Android runtime or physical ARM/16 KB gates. Candidate5 and its .1 AAR do not contain this correction; production remains unchanged.

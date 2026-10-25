@@ -9,6 +9,11 @@ plugins {
 
 val xhttpPreviewAar = providers.gradleProperty("novaXhttpPreviewAar").orNull
 val xhttpPreviewSha = providers.gradleProperty("novaXhttpPreviewSha256").orNull
+val xhttpPreviewRevision = when (xhttpPreviewSha) {
+    "c8a9981a684cc42c8a83e3b6d3a2839f08e1d91fd8f7b27c64e73bd87ce61583" -> "1.14.3-lx.23-nova-downlink.1"
+    "e7c08635ead7ed7189620ae6f2297b5a633e4101c89e6df2966af47e59d2909e" -> "1.14.3-lx.23-nova-downlink.2"
+    else -> "local-xhttp-sha256:$xhttpPreviewSha"
+}
 check((xhttpPreviewAar == null) == (xhttpPreviewSha == null)) { "Local XHTTP AAR and SHA-256 must be supplied together" }
 check(xhttpPreviewAar == null || (providers.gradleProperty("novaUsbTest").isPresent &&
     providers.gradleProperty("novaRealitySmoke").isPresent && xhttpPreviewSha?.matches(Regex("[a-f0-9]{64}")) == true)) {
@@ -48,7 +53,7 @@ android {
         buildConfigField("boolean", "REALITY_PREVIEW", "false")
         buildConfigField("boolean", "XHTTP_DOWNLOAD_SUPPORTED", (xhttpPreviewAar != null).toString())
         buildConfigField("String", "LIBBOX_REVISION", if (xhttpPreviewAar == null)
-            "\"1.14.3-lx.23_20f89c2f4cb3f77acaf3daa063bd857a055a5259\"" else "\"1.14.3-lx.23-nova-downlink.1\"")
+            "\"1.14.3-lx.23_20f89c2f4cb3f77acaf3daa063bd857a055a5259\"" else "\"$xhttpPreviewRevision\"")
         testInstrumentationRunner = when {
             providers.gradleProperty("novaIdentitySmoke").isPresent -> "com.nova.vpn.android.IdentitySmokeRunner"
             providers.gradleProperty("novaRealitySmoke").isPresent -> "com.nova.vpn.android.RealityCoreSmokeRunner"
