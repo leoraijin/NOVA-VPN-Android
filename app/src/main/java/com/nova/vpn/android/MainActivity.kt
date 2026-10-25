@@ -129,6 +129,7 @@ import com.nova.vpn.android.data.ProfileVault
 import com.nova.vpn.android.data.AppRoutingMode
 import com.nova.vpn.android.data.AppRoutingSettings
 import com.nova.vpn.android.data.AppRoutingStore
+import com.nova.vpn.android.data.RoutingPresets
 import com.nova.vpn.android.data.AppListEntry
 import com.nova.vpn.android.data.filterAppList
 import com.nova.vpn.android.data.AppPreferencesStore
@@ -154,6 +155,7 @@ import kotlinx.coroutines.withContext
 
 class MainActivity : ComponentActivity() {
     private var tileConnectRequested by mutableStateOf(false)
+    private var tileRequestToken by mutableStateOf<String?>(null)
     private val profileVault by lazy(LazyThreadSafetyMode.NONE) { ProfileVault(applicationContext) }
     private val appRoutingStore by lazy(LazyThreadSafetyMode.NONE) { AppRoutingStore(applicationContext) }
     private val appPreferencesStore by lazy(LazyThreadSafetyMode.NONE) { AppPreferencesStore(applicationContext) }
@@ -162,12 +164,16 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         VpnRuntime.attach(applicationContext)
-        tileConnectRequested = intent?.action == NovaVpnTileService.ACTION_CONNECT_FROM_TILE
+        tileConnectRequested = com.nova.vpn.android.data.RestoreRecoveryState.problem.value == null && intent?.action == NovaVpnTileService.ACTION_CONNECT_FROM_TILE
+        if (tileConnectRequested) tileRequestToken = intent?.getStringExtra(VpnUserRequests.EXTRA_REQUEST) ?: VpnUserRequests.gate.begin()
         val sharedText = intent.getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString()
         setContent {
-            NovaAndroidApp(
+            val recoveryProblem by com.nova.vpn.android.data.RestoreRecoveryState.problem.collectAsStateWithLifecycle()
+            if (recoveryProblem != null) RestoreRecoveryScreen(this, recoveryProblem!!)
+            else NovaAndroidApp(
                 profileVault, appRoutingStore, appPreferencesStore, selectedProfileStore, sharedText,
                 tileConnectRequested = tileConnectRequested,
+                tileRequestToken = tileRequestToken,
                 onTileConnectHandled = { tileConnectRequested = false }
             )
         }
@@ -176,7 +182,14 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        if (intent.action == NovaVpnTileService.ACTION_CONNECT_FROM_TILE) tileConnectRequested = true
+        if (com.nova.vpn.android.data.RestoreRecoveryState.problem.value != null) {
+            tileConnectRequested = false
+            return
+        }
+        if (intent.action == NovaVpnTileService.ACTION_CONNECT_FROM_TILE) {
+            tileRequestToken = intent.getStringExtra(VpnUserRequests.EXTRA_REQUEST) ?: VpnUserRequests.gate.begin()
+            tileConnectRequested = true
+        }
     }
 
     override fun onTrimMemory(level: Int) {
@@ -221,6 +234,7 @@ private fun NovaAndroidApp(
     selectedProfileStore: SelectedProfileStore,
     sharedText: String?,
     tileConnectRequested: Boolean,
+    tileRequestToken: String?,
     onTileConnectHandled: () -> Unit
 ) {
     val context = LocalContext.current
@@ -256,6 +270,7 @@ private fun NovaAndroidApp(
         }
     }
     var profiles by remember { mutableStateOf(emptyList<ImportedProfile>()) }
+    var showSubscriptions by remember { mutableStateOf(false) }
     var profilesLoaded by remember { mutableStateOf(false) }
     var tileConnectFlow by remember { mutableStateOf(false) }
     var selectedProfileId by remember { mutableStateOf("") }
@@ -270,6 +285,48 @@ private fun NovaAndroidApp(
     var profileToDelete by remember { mutableStateOf<ImportedProfile?>(null) }
     var importing by remember { mutableStateOf(false) }
     var routing by remember { mutableStateOf(routingStore.load()) }
+    var routingDocument by remember { mutableStateOf(routingStore.loadPresets()) }
+    var editingRoutingId by remember { mutableStateOf<String?>(null) }
+    var showRoutingPresets by remember { mutableStateOf(false) }
+    var diagnosticSnapshot by remember { mutableStateOf<DiagnosticSnapshot?>(null) }
+    var diagnosticProfile by remember { mutableStateOf<ImportedProfile?>(null) }
+    var pendingDiagnosticExport by remember { mutableStateOf<String?>(null) }
+    fun writeDiagnosticExport(uri: android.net.Uri?) {
+        val content = pendingDiagnosticExport
+        pendingDiagnosticExport = null
+        if (uri == null || content == null) return
+        scope.launch {
+            runCatching { withContext(Dispatchers.IO) {
+                val output = context.contentResolver.openOutputStream(uri) ?: error("No output stream")
+                output.bufferedWriter(Charsets.UTF_8).use { it.write(content) }
+            } }.onSuccess { Toast.makeText(context, "Отчёт сохранён", Toast.LENGTH_SHORT).show() }
+                .onFailure { Toast.makeText(context, "Не удалось сохранить отчёт", Toast.LENGTH_LONG).show() }
+        }
+    }
+    val diagnosticTextSaver = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/plain"), ::writeDiagnosticExport)
+    val diagnosticJsonSaver = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json"), ::writeDiagnosticExport)
+    var routingPreparing by remember { mutableStateOf(false) }
+    var routingFailure by remember { mutableStateOf<String?>(null) }
+    var routingRequest by remember { mutableStateOf<String?>(null) }
+    val routingRevision by routingStore.changes.collectAsStateWithLifecycle()
+    val applyResults by VpnApplyRequests.tracker.results.collectAsStateWithLifecycle()
+    LaunchedEffect(routingRevision, editingRoutingId) {
+        runCatching { withContext(Dispatchers.IO) { routingStore.loadPresets() } }.onSuccess {
+            routingDocument = it
+            val editing = it.presets.firstOrNull { preset -> preset.id == editingRoutingId }
+            if (editingRoutingId != null && editing == null) editingRoutingId = null
+            val target = editing ?: it.active
+            routing = it.pending?.takeIf { change -> change.presetId == target.id }?.settings ?: target.settings
+        }.onFailure { routingFailure = "Не удалось прочитать профили маршрутизации." }
+    }
+    LaunchedEffect(applyResults, routingRequest) {
+        val result = applyResults[routingRequest] ?: return@LaunchedEffect
+        when (result.status) {
+            ApplyStatus.ROLLED_BACK -> routingFailure = "Правила не применились. Восстановлен прежний профиль маршрутизации."
+            ApplyStatus.FAILED -> routingFailure = "Не удалось применить правила. Сохранён прежний профиль."
+            else -> Unit
+        }
+    }
     var autoConnect by remember { mutableStateOf(preferencesStore.autoConnectEnabled()) }
     var autoConnectAttempted by remember { mutableStateOf(false) }
     var settingsError by remember { mutableStateOf<String?>(null) }
@@ -285,19 +342,32 @@ private fun NovaAndroidApp(
     var appsLoading by remember { mutableStateOf(true) }
     var appsError by remember { mutableStateOf(false) }
     var appsLoaded by remember { mutableStateOf(false) }
-    var pendingVpnConfig by remember { mutableStateOf<String?>(null) }
-    var pendingVpnProfileName by remember { mutableStateOf<String?>(null) }
+    var pendingVpnConfiguration by remember { mutableStateOf<PreparedVpnConfiguration?>(null) }
+    var pendingVpnRequest by remember { mutableStateOf<String?>(null) }
     var connectError by remember { mutableStateOf<String?>(null) }
     val vpnState by VpnRuntime.state.collectAsStateWithLifecycle()
     val serverChecks = remember { ServerChecks(context.applicationContext, scope) }
     val serverCheckState by serverChecks.state.collectAsStateWithLifecycle()
+    val diagnosticChecks = remember { ServerChecks(context.applicationContext, scope) }
+    val diagnosticCheckState by diagnosticChecks.state.collectAsStateWithLifecycle()
+    val pendingAutomaticApplies by AutomaticProbePause.pending.collectAsStateWithLifecycle()
+    LaunchedEffect(diagnosticCheckState.results) {
+        diagnosticProfile?.id?.let { id -> diagnosticCheckState.results[id]?.let { result ->
+            diagnosticSnapshot = diagnosticSnapshot?.withProbe(result)
+        } }
+    }
+    val automaticServerState by AutoServerRuntime.state.collectAsStateWithLifecycle()
+    LaunchedEffect(automaticServerState.appliedRequest) {
+        val id = automaticServerState.profileId
+        if (id != null && profiles.any { it.id == id }) selectedProfileId = id
+    }
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner, serverChecks) {
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_STOP) serverChecks.cancel()
+            if (event == Lifecycle.Event.ON_STOP) { serverChecks.cancel(); diagnosticChecks.cancel() }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose { lifecycleOwner.lifecycle.removeObserver(observer); serverChecks.cancel() }
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer); serverChecks.cancel(); diagnosticChecks.cancel() }
     }
     LaunchedEffect(page, vpnState.connecting) {
         if (page != Page.Servers || vpnState.connecting) serverChecks.cancel()
@@ -370,44 +440,47 @@ private fun NovaAndroidApp(
         }
     }
     val vpnConsentLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-        val config = pendingVpnConfig
-        val profileName = pendingVpnProfileName
-        pendingVpnConfig = null
-        pendingVpnProfileName = null
-        if (result.resultCode == Activity.RESULT_OK && !config.isNullOrBlank()) {
-            startVpnService(context, config, profileName.orEmpty())
+        val prepared = pendingVpnConfiguration
+        val request = pendingVpnRequest
+        pendingVpnConfiguration = null
+        pendingVpnRequest = null
+        if (request == null || !VpnUserRequests.gate.isCurrent(request)) return@rememberLauncherForActivityResult
+        if (result.resultCode == Activity.RESULT_OK && prepared != null) {
+            VpnUserRequests.start(context, prepared, request)
             connectError = null
         } else if (result.resultCode != Activity.RESULT_OK) {
             connectError = "Для VPN нужно разрешение Android."
         }
     }
 
-    fun requestVpnStart(config: String, profileName: String) {
+    fun requestVpnStart(prepared: PreparedVpnConfiguration, request: String) {
+        if (!VpnUserRequests.gate.isCurrent(request)) return
         runCatching {
             connectError = null
             val consent = VpnService.prepare(context)
             if (consent != null) {
-                pendingVpnConfig = config
-                pendingVpnProfileName = profileName
+                pendingVpnConfiguration = prepared
+                pendingVpnRequest = request
                 vpnConsentLauncher.launch(consent)
-            } else startVpnService(context, config, profileName)
+            } else VpnUserRequests.start(context, prepared, request)
         }.onFailure { error ->
             connectError = error.message ?: "Не удалось запустить VPN."
         }
     }
 
-    fun applyLiveConfiguration(profileId: String, appRouting: AppRoutingSettings) {
-        if (!vpnState.connected && !vpnState.connecting) return
+    fun applyLiveConfiguration(profileId: String) {
+        if (!vpnState.connected && !vpnState.connecting) { VpnUserRequests.gate.begin(); return }
         val profile = profiles.firstOrNull { it.id == profileId } ?: return
+        val request = VpnUserRequests.gate.begin()
         reconnectJob?.cancel()
         reconnectJob = scope.launch {
             delay(300)
             runCatching {
                 withContext(Dispatchers.Default) {
-                    SingBoxConfigFactory.build(profile, appRouting, context.packageName)
+                    PreparedVpnConfiguration.prepare(context, profile)
                 }
-            }.onSuccess { config ->
-                runCatching { startVpnService(context, config, profile.name) }
+            }.onSuccess { prepared ->
+                runCatching { VpnUserRequests.start(context, prepared, request) }
                     .onSuccess { connectError = null }
                     .onFailure { error ->
                         connectError = error.message ?: "Не удалось применить параметры к VPN."
@@ -415,6 +488,63 @@ private fun NovaAndroidApp(
             }.onFailure { error ->
                 connectError = error.message ?: "Не удалось подготовить параметры VPN."
             }
+        }
+    }
+
+    fun applyRoutingPreset(presetId: String, settings: AppRoutingSettings? = null) {
+        if (routingPreparing || routingDocument.pending != null) return
+        val request = VpnUserRequests.gate.begin()
+        routingPreparing = true; routingFailure = null; routingRequest = request
+        scope.launch {
+            try {
+                val current = withContext(Dispatchers.IO) { routingStore.loadPresets() }
+                val candidate = settings ?: current.presets.single { it.id == presetId }.settings
+                if (!vpnState.connected && !vpnState.connecting) {
+                    withContext(Dispatchers.IO) { VpnUserRequests.gate.accept(request) { routingStore.updatePresets { document ->
+                        document.copy(activeId = presetId, pending = null, presets = document.presets.map {
+                            if (it.id == presetId) it.copy(settings = candidate) else it
+                        })
+                    } } }
+                } else {
+                    val profile = profiles.firstOrNull { it.id == selectedProfileId } ?: error("Нет выбранного сервера")
+                    val missing = withContext(Dispatchers.IO) { candidate.packages.filter { name ->
+                        runCatching { context.packageManager.getApplicationInfo(name, 0) }.isFailure
+                    } }
+                    if (missing.isNotEmpty()) {
+                        routingFailure = "В профиле есть удалённые приложения. Уберите отмеченные записи из правил."
+                        return@launch
+                    }
+                    val config = withContext(Dispatchers.Default) { SingBoxConfigFactory.build(profile, candidate, context.packageName) }
+                    if (!VpnUserRequests.gate.isCurrent(request)) return@launch
+                    withContext(Dispatchers.IO) { routingStore.stage(presetId, request, candidate) }
+                    if (!VpnUserRequests.start(context, config, profile.name, request, profile.id, presetId)) {
+                        withContext(Dispatchers.IO) { routingStore.cancelPending(request) }
+                    }
+                }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                withContext(kotlinx.coroutines.NonCancellable + Dispatchers.IO) { routingStore.cancelPending(request) }
+                throw cancelled
+            } catch (_: Exception) {
+                withContext(Dispatchers.IO) { routingStore.cancelPending(request) }
+                routingFailure = "Не удалось применить профиль. Прежние правила сохранены."
+            } finally { routingPreparing = false }
+        }
+    }
+
+    fun saveRoutingRules(settings: AppRoutingSettings) {
+        val target = editingRoutingId ?: routingDocument.activeId
+        if (target == routingDocument.activeId) { applyRoutingPreset(target, settings); return }
+        if (routingPreparing || routingDocument.pending != null) return
+        routingPreparing = true; routingFailure = null
+        scope.launch {
+            try {
+                withContext(Dispatchers.IO) { routingStore.updatePresets { document ->
+                    check(document.pending == null && document.activeId != target && document.presets.any { it.id == target })
+                    document.copy(presets = document.presets.map { if (it.id == target) it.copy(settings = settings) else it })
+                } }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+            catch (_: Exception) { routingFailure = "Не удалось сохранить правила. Повторите изменение." }
+            finally { routingPreparing = false }
         }
     }
 
@@ -458,29 +588,36 @@ private fun NovaAndroidApp(
         }
     }
 
-    LaunchedEffect(vault) {
+    val vaultRevision by ProfileVault.changes.collectAsStateWithLifecycle()
+    LaunchedEffect(vault, vaultRevision) {
         runCatching { withContext(Dispatchers.IO) { vault.load() } }
             .onSuccess { stored ->
                 profiles = stored
-                selectedProfileId = selectedProfileStore.load()
-                    ?.takeIf { id -> stored.any { it.id == id } }
-                    ?: stored.firstOrNull()?.id.orEmpty()
+                if (!profilesLoaded || stored.none { it.id == selectedProfileId }) {
+                    selectedProfileId = runCatching { selectedProfileStore.load() }.getOrNull()
+                        ?.takeIf { id -> stored.any { it.id == id } }
+                        ?: stored.firstOrNull()?.id.orEmpty()
+                }
             }
             .onFailure { importError = "Не удалось открыть защищённое хранилище профилей." }
+        runCatching { withContext(Dispatchers.IO) { vault.loadSnapshot().subscriptions } }
+            .onSuccess { SubscriptionScheduling.request(context, it) }
         profilesLoaded = true
     }
-    LaunchedEffect(tileConnectRequested, profilesLoaded, profiles, selectedProfileId) {
+    LaunchedEffect(tileConnectRequested, tileRequestToken, profilesLoaded, profiles, selectedProfileId) {
         if (!tileConnectRequested || !profilesLoaded) return@LaunchedEffect
         tileConnectFlow = true
         onTileConnectHandled()
+        val request = tileRequestToken ?: return@LaunchedEffect
+        if (!VpnUserRequests.gate.isCurrent(request)) return@LaunchedEffect
         val selected = profiles.firstOrNull { it.id == selectedProfileId } ?: profiles.firstOrNull()
         if (selected == null) {
             connectError = "Сначала добавьте VPN-конфигурацию в NOVA VPN."
             return@LaunchedEffect
         }
         runCatching {
-            withContext(Dispatchers.Default) { SingBoxConfigFactory.build(selected, routing, context.packageName) }
-        }.onSuccess { config -> requestVpnStart(config, selected.name) }
+            withContext(Dispatchers.Default) { PreparedVpnConfiguration.prepare(context, selected) }
+        }.onSuccess { config -> requestVpnStart(config, request) }
             .onFailure { error -> connectError = error.message ?: "Не удалось подготовить конфигурацию VPN." }
     }
     LaunchedEffect(profiles, selectedProfileId, autoConnect, sharedText) {
@@ -488,11 +625,12 @@ private fun NovaAndroidApp(
         autoConnectAttempted = true
         if (vpnState.connected || vpnState.connecting) return@LaunchedEffect
         val selected = profiles.firstOrNull { it.id == selectedProfileId } ?: return@LaunchedEffect
+        val request = VpnUserRequests.gate.begin()
         runCatching {
             withContext(Dispatchers.Default) {
-                SingBoxConfigFactory.build(selected, routing, context.packageName)
+                PreparedVpnConfiguration.prepare(context, selected)
             }
-        }.onSuccess { config -> requestVpnStart(config, selected.name) }
+        }.onSuccess { config -> requestVpnStart(config, request) }
             .onFailure { error -> connectError = error.message ?: "Не удалось подготовить автоподключение." }
     }
     LaunchedEffect(page, routingStore) {
@@ -544,6 +682,45 @@ private fun NovaAndroidApp(
             }
         ) { insets ->
           CompositionLocalProvider(LocalDesignPreset provides designPreset, LocalTutorialStep provides tutorialStep) {
+            if (showSubscriptions) SubscriptionDialog(onDismiss = { showSubscriptions = false }, onChanged = { profiles = it })
+            diagnosticSnapshot?.let { snapshot ->
+              DisposableEffect(Unit) {
+                  val pause = AutomaticProbePause.acquire()
+                  onDispose { diagnosticChecks.cancel(); pause.close() }
+              }
+              DiagnosticsDialog(snapshot, onDismiss = { diagnosticSnapshot = null },
+                checking = diagnosticCheckState.running,
+                checkAvailable = diagnosticProfile != null && pendingAutomaticApplies.isEmpty(),
+                checkMessage = if (pendingAutomaticApplies.isNotEmpty())
+                    "Завершается автоматическое переключение. Дождитесь результата или отключите VPN."
+                    else diagnosticCheckState.message,
+                checkStage = diagnosticCheckState.progressEvents.lastOrNull()?.stage,
+                onCheck = { if (AutomaticProbePause.pending.value.isEmpty()) {
+                    diagnosticProfile?.let { diagnosticChecks.start(listOf(it), diagnostic = true) }
+                } },
+                onCancelCheck = { diagnosticChecks.cancel() },
+                onAction = { action ->
+                    diagnosticSnapshot = null
+                    when (action) {
+                        DiagnosticAction.CHECK_SERVERS -> page = Page.Servers
+                        DiagnosticAction.SUBSCRIPTIONS -> showSubscriptions = true
+                        DiagnosticAction.SETTINGS -> page = Page.Settings
+                        DiagnosticAction.VPN_PERMISSION -> page = Page.Home
+                        DiagnosticAction.ROUTING -> page = Page.Routing
+                        DiagnosticAction.NETWORK_SETTINGS -> runCatching { context.startActivity(Intent(android.provider.Settings.ACTION_WIRELESS_SETTINGS)) }
+                    }
+                }, onCopy = { content ->
+                    val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                    clipboard.setPrimaryClip(android.content.ClipData.newPlainText("NOVA VPN diagnostics", content))
+                    Toast.makeText(context, "Отчёт скопирован", Toast.LENGTH_SHORT).show()
+                }, onSave = { content, json ->
+                    pendingDiagnosticExport = content
+                    if (json) diagnosticJsonSaver.launch("nova-diagnostics.json") else diagnosticTextSaver.launch("nova-diagnostics.txt")
+                }) }
+            if (showRoutingPresets) RoutingPresetDialog(routingDocument, routingPreparing,
+                onActivate = { applyRoutingPreset(it) }, onEdit = {
+                    editingRoutingId = it; showRoutingPresets = false; page = Page.Routing; routingFailure = null
+                }, onDismiss = { showRoutingPresets = false })
             BoxWithConstraints(
                 Modifier
                     .fillMaxSize()
@@ -570,60 +747,87 @@ private fun NovaAndroidApp(
                     label = "page"
                 ) { selected ->
                     when (selected) {
-                        Page.Home -> HomePage(
+                        Page.Home -> Column {
+                          TextButton(onClick = { showRoutingPresets = true }, modifier = Modifier.fillMaxWidth()) {
+                              Text("Маршруты: ${routingDocument.active.name}${if (routingDocument.pending != null) " · применяются" else ""}")
+                          }
+                          Box(Modifier.weight(1f)) { HomePage(
                             profiles = profiles,
                             selectedProfileId = selectedProfileId,
                             profile = profiles.firstOrNull { it.id == selectedProfileId },
                             vpnState = vpnState,
                             error = connectError ?: vpnState.error,
                             onCopyDiagnostics = {
-                                val report = VpnDiagnostics.report(profiles.firstOrNull { it.id == selectedProfileId }, routing,
+                                val profileId = vpnState.appliedConfiguration?.profileId ?: selectedProfileId
+                                diagnosticChecks.reset()
+                                diagnosticProfile = profiles.firstOrNull { it.id == profileId }
+                                diagnosticSnapshot = VpnDiagnostics.snapshot(diagnosticProfile, routingDocument.active.settings,
                                     Build.VERSION.SDK_INT, vpnState)
-                                val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                                clipboard.setPrimaryClip(android.content.ClipData.newPlainText("NOVA VPN diagnostics", report))
-                                Toast.makeText(context, "Диагностика скопирована. Отправьте этот текст разработчику.", Toast.LENGTH_LONG).show()
                             },
                             onSelectProfile = {
+                              if (runCatching { AutoServerSettingsStore.pin(context) }.isSuccess) {
                                 selectedProfileId = it
                                 scope.launch(Dispatchers.IO) {
                                     runCatching { selectedProfileStore.save(it) }
                                 }
-                                applyLiveConfiguration(it, routing)
+                                applyLiveConfiguration(it)
+                              } else profileError = "Не удалось закрепить ручной выбор сервера."
                             },
                             onManageProfiles = { page = Page.Servers },
                             onToggle = {
                                 if (vpnState.connected || vpnState.connecting) {
+                                    reconnectJob?.cancel()
+                                    serverChecks.cancel()
                                     runCatching {
-                                        context.startService(Intent(context, NovaVpnService::class.java).setAction(NovaVpnService.ACTION_STOP))
+                                        VpnUserRequests.stop(context)
                                     }.onFailure { connectError = it.message ?: "Не удалось отключить VPN" }
                                 } else {
                                     val selected = profiles.firstOrNull { it.id == selectedProfileId }
                                     if (selected == null) {
                                         connectError = "Сначала импортируйте VPN-конфигурацию."
                                     } else {
+                                        val request = VpnUserRequests.gate.begin()
                                         runCatching {
-                                            SingBoxConfigFactory.build(selected, routing, context.packageName)
-                                        }.onSuccess { config -> requestVpnStart(config, selected.name) }.onFailure { error ->
+                                            PreparedVpnConfiguration.prepare(context, selected)
+                                        }.onSuccess { config -> requestVpnStart(config, request) }.onFailure { error ->
                                             connectError = error.message ?: "Конфигурация не прошла подготовку."
                                         }
                                     }
                                 }
                             }
                         )
+                          }
+                        }
                         Page.Servers -> ServersPage(
                             profiles = profiles,
                             selectedId = selectedProfileId,
                             vpnState = vpnState,
                             checks = serverCheckState,
                             onCheck = { serverChecks.start(profiles) },
+                            onChooseBest = { candidates ->
+                              if (runCatching { AutoServerSettingsStore.pin(context) }.isSuccess) {
+                                val request = VpnUserRequests.gate.begin()
+                                serverChecks.start(candidates) { best ->
+                                    val current = profiles.firstOrNull { it.id == best.id && it.configurationKey() == best.configurationKey() }
+                                    current != null && VpnUserRequests.gate.accept(request) {
+                                            selectedProfileId = current.id
+                                            scope.launch(Dispatchers.IO) { runCatching { selectedProfileStore.save(current.id) } }
+                                            applyLiveConfiguration(current.id)
+                                    }
+                                }
+                              } else profileError = "Не удалось закрепить ручной выбор сервера."
+                            },
                             onCancelCheck = { serverChecks.cancel() },
                             onConnect = {
                                 serverChecks.cancel()
                                 val selected = profiles.firstOrNull { it.id == selectedProfileId }
-                                if (selected != null) scope.launch {
-                                    runCatching { withContext(Dispatchers.Default) { SingBoxConfigFactory.build(selected, routing, context.packageName) } }
-                                        .onSuccess { requestVpnStart(it, selected.name) }
+                                if (selected != null) {
+                                    val request = VpnUserRequests.gate.begin()
+                                    scope.launch {
+                                    runCatching { withContext(Dispatchers.Default) { PreparedVpnConfiguration.prepare(context, selected) } }
+                                        .onSuccess { requestVpnStart(it, request) }
                                         .onFailure { connectError = "Не удалось подготовить подключение." }
+                                }
                                 }
                             },
                             error = profileError,
@@ -631,12 +835,16 @@ private fun NovaAndroidApp(
                             shareProfileId = profileShareId,
                             transferBusy = profileTransferBusy,
                             onAdd = { importError = null; importText = ""; showImport = true },
+                            onOpenSubscriptions = { showSubscriptions = true },
                             onSelect = {
+                              if (runCatching { AutoServerSettingsStore.pin(context) }.isSuccess) {
+                                serverChecks.cancel()
                                 selectedProfileId = it
                                 scope.launch(Dispatchers.IO) {
                                     runCatching { selectedProfileStore.save(it) }
                                 }
-                                applyLiveConfiguration(it, routing)
+                                applyLiveConfiguration(it)
+                              } else profileError = "Не удалось закрепить ручной выбор сервера."
                             },
                             onSendToWatch = { profile ->
                                 profileShareId = profile.id
@@ -651,18 +859,29 @@ private fun NovaAndroidApp(
                                     }
                                     .onFailure { profileTransferBusy = false; profileShareStatus = it.message ?: "Не удалось подготовить профиль для часов." }
                             },
-                            onDelete = { profileToDelete = it; profileError = null }
+                            onDelete = { profileToDelete = it; profileError = null },
+                            onToggleFavorite = { id ->
+                                scope.launch {
+                                    runCatching { withContext(Dispatchers.IO) {
+                                        vault.update { current -> current.map { profile ->
+                                            if (profile.id == id) profile.copy(userSettings = profile.userSettings.copy(
+                                                favorite = !profile.userSettings.favorite)) else profile
+                                        } }
+                                    } }.onSuccess { profiles = it }.onFailure { profileError = "Не удалось сохранить избранное." }
+                                }
+                            }
                         )
                         Page.Routing -> RoutingPage(
-                            apps = installedApps,
+                            apps = installedApps + if (appsLoaded) routing.packages.filter { name -> installedApps.none { it.packageName == name } }
+                                .map { AppListEntry(it, "Недоступно в списке: $it") } else emptyList(),
                             loading = appsLoading,
                             failed = appsError,
                             settings = routing,
                             onSettingsChanged = { next ->
-                                routing = next
-                                scope.launch(Dispatchers.IO) { runCatching { routingStore.save(next) } }
-                                applyLiveConfiguration(selectedProfileId, next)
-                            }
+                                saveRoutingRules(next)
+                            },
+                            presetsContent = { RoutingPresetPicker(routingDocument, routingPreparing, routingFailure,
+                                editingId = editingRoutingId, onEndEdit = { editingRoutingId = null }, onManage = { showRoutingPresets = true }) }
                         )
                         Page.Settings -> Column {
                             OutlinedButton(onClick = { showIdentities = true }, modifier = Modifier.fillMaxWidth()) { Text("Идентификация подписок") }
@@ -801,17 +1020,25 @@ private fun NovaAndroidApp(
                                 val source = withContext(Dispatchers.IO) {
                                     val deviceId = if (sendSubscriptionDeviceId && rawImport.trim().startsWith("https://", true))
                                         com.nova.vpn.android.data.SubscriptionDeviceIdentity(context).forUrl(rawImport) else null
-                                    SubscriptionFetcher.fetchIfUrl(rawImport, deviceId)
+                                    if (rawImport.trim().startsWith("https://", true)) {
+                                        val identity = com.nova.vpn.android.data.IdentityVault(context).load().forUrl(rawImport.trim())
+                                        SubscriptionFetcher.fetchSubscription(rawImport.trim(), if (identity == null) deviceId else null, null, null, identity).body
+                                    } else SubscriptionFetcher.fetchIfUrl(rawImport, deviceId)
                                 }
                                 withContext(Dispatchers.Default) { ProfileLinkParser.parseReport(source) }
                             }.onSuccess { report ->
                                 val incoming = report.profiles.map { profile ->
                                     if (rawImport.trim().startsWith("https://", true)) profile.copy(subscriptionUrl = rawImport.trim()) else profile
                                 }
-                                val merged = ImportedProfile.merge(profiles, incoming)
+                                var merged = profiles
                                 runCatching {
                                     withContext(Dispatchers.IO) {
-                                        vault.save(merged)
+                                        merged = if (rawImport.trim().startsWith("https://", true)) {
+                                            val state = com.nova.vpn.android.data.SubscriptionRepository(context)
+                                                .importReport(rawImport.trim(), sendSubscriptionDeviceId, report)
+                                            SubscriptionScheduling.request(context, state.subscriptions)
+                                            state.profiles
+                                        } else vault.updateSnapshot { current -> current.importManual(incoming) }.profiles
                                     }
                                 }.onSuccess {
                                     profiles = merged
@@ -889,13 +1116,14 @@ private fun NovaAndroidApp(
                 confirmButton = {
                     TextButton(onClick = {
                         profileToDelete = null
-                        val remaining = profiles.filterNot { it.id == deleting.id }
+                        var remaining = profiles.filterNot { it.id == deleting.id }
                         val deletingSelected = selectedProfileId == deleting.id
-                        val nextSelected = if (deletingSelected) remaining.firstOrNull()?.id.orEmpty() else selectedProfileId
+                        var nextSelected = if (deletingSelected) remaining.firstOrNull()?.id.orEmpty() else selectedProfileId
                         scope.launch {
                             runCatching {
                                 withContext(Dispatchers.IO) {
-                                    vault.save(remaining)
+                                    remaining = vault.update { current -> current.filterNot { it.id == deleting.id } }
+                                    nextSelected = if (deletingSelected) remaining.firstOrNull()?.id.orEmpty() else selectedProfileId
                                     if (nextSelected.isBlank()) selectedProfileStore.clear()
                                     else if (deletingSelected) selectedProfileStore.save(nextSelected)
                                 }
@@ -906,13 +1134,10 @@ private fun NovaAndroidApp(
                                     selectedProfileId = nextSelected
                                     if (nextSelected.isBlank()) {
                                         runCatching {
-                                            context.startService(
-                                                Intent(context, NovaVpnService::class.java)
-                                                    .setAction(NovaVpnService.ACTION_STOP)
-                                            )
+                                            VpnUserRequests.stop(context)
                                         }.onFailure { connectError = it.message ?: "Не удалось отключить VPN." }
                                     } else {
-                                        applyLiveConfiguration(nextSelected, routing)
+                                        applyLiveConfiguration(nextSelected)
                                     }
                                 }
                             }.onFailure {
@@ -925,15 +1150,6 @@ private fun NovaAndroidApp(
             )
         }
     }
-}
-
-private fun startVpnService(context: android.content.Context, config: String, profileName: String) {
-    val intent = Intent(context, NovaVpnService::class.java)
-        .setAction(NovaVpnService.ACTION_START)
-        .putExtra(NovaVpnService.EXTRA_CONFIG, config)
-        .putExtra(NovaVpnService.EXTRA_PROFILE_NAME, profileName)
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) context.startForegroundService(intent)
-    else context.startService(intent)
 }
 
 @Composable
@@ -1009,6 +1225,7 @@ internal fun StandardHomePage(
         Text("СТАТУС", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Text(
             when {
+                vpnState.recoveryStatus != null -> vpnState.recoveryText().orEmpty()
                 vpnState.trafficChecking -> "Туннель включён. Проверяем HTTPS…"
                 vpnState.warning != null -> "Проверка соединения не прошла."
                 vpnState.trafficVerified -> "HTTPS через VPN подтверждён."
@@ -1075,7 +1292,7 @@ internal fun StandardHomePage(
                     .then(if (LocalDesignPreset.current == DesignStyle.IOS_LIQUID_GLASS) Modifier.novaGlass() else Modifier)
                     .border(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.56f), controlShape)
                     .clickable(
-                        enabled = !vpnState.connecting,
+                        enabled = true,
                         role = Role.Button,
                         onClickLabel = if (vpnState.connected) "Отключить VPN" else "Подключить VPN",
                         onClick = onToggle
@@ -1087,7 +1304,7 @@ internal fun StandardHomePage(
                     Spacer(Modifier.height(5.dp))
                     Text(
                         when {
-                            vpnState.connecting -> "Подключение…"
+                            vpnState.connecting -> "Отменить"
                             vpnState.connected -> "Отключить"
                             else -> "Подключить"
                         },
@@ -1100,7 +1317,7 @@ internal fun StandardHomePage(
         }
         Text("NOVA VPN ${BuildConfig.VERSION_NAME}", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         OutlinedButton(onClick = onCopyDiagnostics, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
-            Text("Скопировать диагностику")
+            Text("Открыть диагностику")
         }
         Text("Последние события подключения без ключей, адресов сервера и посещённых сайтов.",
             fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -1215,7 +1432,8 @@ internal fun StandardServersPage(
         SoftCard(onClick = if (profile.id == selectedId) null else ({ onSelect(profile.id) }), tutorialTarget = TutorialStep.Servers) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text(profile.name, fontWeight = FontWeight.SemiBold)
+                    Text(profile.displayName, fontWeight = FontWeight.SemiBold)
+                    FavoriteServerButton(profile)
                     Text("${profile.protocol.uppercase()}${if (profile.server.isNotBlank()) " · ${profile.server}:${profile.port}" else ""}", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     ServerCheckBadge(checks.results[profile.id], checks.currentId == profile.id)
                 }
@@ -1247,7 +1465,8 @@ internal fun RoutingPage(
     loading: Boolean,
     failed: Boolean,
     settings: AppRoutingSettings,
-    onSettingsChanged: (AppRoutingSettings) -> Unit
+    onSettingsChanged: (AppRoutingSettings) -> Unit,
+    presetsContent: (@Composable () -> Unit)? = null
 ) {
     val materialRouting = LocalDesignPreset.current == DesignStyle.MATERIAL_YOU
     val iosRouting = LocalDesignPreset.current == DesignStyle.IOS_LIQUID_GLASS
@@ -1306,6 +1525,7 @@ internal fun RoutingPage(
 
     PageFrame(if (tabbedRouting) "Маршруты" else "Маршрутизация", "Исключённые приложения используют обычную сеть Android",
         tutorialTargetIndex = if (tabbedRouting) 2 else if (LocalTutorialStep.current == TutorialStep.Apps) 2 + settings.sites.size else 1) {
+    presetsContent?.let { panel -> item { panel() } }
     if (iosRouting) item { IOSRoutingTabs(iosRoutingTab) { iosRoutingTab = it } }
     if (materialRouting) item { MaterialRouteTabs(iosRoutingTab) { iosRoutingTab = it } }
     if (windowsRouting) item { WindowsRouteTabs(iosRoutingTab) { iosRoutingTab = it } }

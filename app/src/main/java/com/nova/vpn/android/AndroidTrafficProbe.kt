@@ -1,8 +1,6 @@
 package com.nova.vpn.android
 import org.json.JSONArray
 import org.json.JSONObject
-import java.io.BufferedReader
-import java.io.InputStreamReader
 import java.net.InetSocketAddress
 import java.net.ServerSocket
 import java.net.Socket
@@ -16,22 +14,33 @@ internal class AndroidTrafficProbe private constructor(
     val config: String, private val port: Int, private val username: String, private val password: String
 ) {
     private val cancelled = AtomicBoolean()
+    var onProgress: (() -> Unit)? = null
+    private fun record(code: String, metrics: Map<DiagnosticMetric, Long> = emptyMap()) {
+        VpnDiagnostics.record(code, metrics)
+        runCatching { onProgress?.invoke() }
+    }
     // Response headers over an established TLS channel; never includes SOCKS/TLS setup.
     @Volatile var responseMillis: Int? = null
         private set
     @Volatile private var socket: Socket? = null
     fun cancel() { cancelled.set(true); runCatching { socket?.close() } }
-    fun check(timeoutMillis: Int = 18_000): Boolean {
+    fun check(timeoutMillis: Int = 18_000, target: ProbeTarget = ProbeTarget.CLOUDFLARE): Boolean {
+        require(timeoutMillis > 0)
         responseMillis = null
+        val expired = AtomicBoolean()
+        val attemptSocket = java.util.concurrent.atomic.AtomicReference<Socket?>()
         var stage = "local_socket"
-        VpnDiagnostics.record("probe_start")
+        record("probe_start")
         val deadline = java.util.Timer("nova-probe-deadline", true)
-        deadline.schedule(object : java.util.TimerTask() { override fun run() { cancelProbe() } }, timeoutMillis.toLong())
+        deadline.schedule(object : java.util.TimerTask() { override fun run() {
+            expired.set(true); runCatching { attemptSocket.get()?.close() }
+        } }, timeoutMillis.toLong())
         return try {
-        check(!cancelled.get())
+        check(!cancelled.get() && !expired.get())
         Socket().use { raw ->
             socket = raw
-            check(!cancelled.get())
+            attemptSocket.set(raw)
+            check(!cancelled.get() && !expired.get())
             raw.connect(InetSocketAddress("127.0.0.1", port), 3000)
             raw.soTimeout = 7000
             stage = "socks_auth"
@@ -45,58 +54,55 @@ internal class AndroidTrafficProbe private constructor(
             output.write(byteArrayOf(1, user.size.toByte()) + user + byteArrayOf(secret.size.toByte()) + secret)
             output.flush(); check(input.read() == 1 && input.read() == 0)
             stage = "proxy_connect"
-            // A numeric destination avoids bootstrap dependence on Android/browser DNS.
-            output.write(byteArrayOf(5, 1, 0, 1, 1, 1, 1, 1, 1, -69)); output.flush()
+            record("probe_proxy_connect_started")
+            // Domains are resolved by the proxy, never by the excluded app's DNS.
+            output.write(target.socksDestination()); output.flush()
             check(input.read() == 5)
             val reply = input.read()
-            if (reply in 1..8) VpnDiagnostics.record("probe_socks_reply_$reply")
+            if (reply in 1..8) record("probe_socks_reply_$reply")
             check(reply == 0 && input.read() == 0)
             val addressBytes = when (input.read()) { 1 -> 4; 4 -> 16; 3 -> input.read().also { check(it >= 0) }; else -> error("SOCKS address") }
             repeat(addressBytes + 2) { check(input.read() >= 0) }
-            check(!cancelled.get())
-            ((SSLSocketFactory.getDefault() as SSLSocketFactory).createSocket(raw, "1.1.1.1", 443, false) as SSLSocket).use { tls ->
+            record("probe_proxy_connected")
+            check(!cancelled.get() && !expired.get())
+            ((SSLSocketFactory.getDefault() as SSLSocketFactory).createSocket(raw, target.host, 443, false) as SSLSocket).use { tls ->
                 socket = tls
-                check(!cancelled.get())
+                attemptSocket.set(tls)
+                check(!cancelled.get() && !expired.get())
                 tls.soTimeout = 7000
                 tls.sslParameters = tls.sslParameters.apply { endpointIdentificationAlgorithm = "HTTPS" }
                 stage = "target_tls"
+                record("probe_target_tls_started")
                 tls.startHandshake()
+                record("probe_target_tls_ready")
                 stage = "https_response"
+                record("probe_https_response_started")
                 val responseTimer = ResponseLatency()
                 var headersMillis: Int? = null
                 tls.getOutputStream().apply {
-                    write("GET /cdn-cgi/trace HTTP/1.1\r\nHost: 1.1.1.1\r\nConnection: close\r\n\r\n".toByteArray(StandardCharsets.US_ASCII))
+                    write("GET ${target.path} HTTP/1.1\r\nHost: ${target.host}\r\nConnection: close\r\n\r\n".toByteArray(StandardCharsets.US_ASCII))
                     flush()
                 }
-                val reader = BufferedReader(InputStreamReader(tls.getInputStream(), StandardCharsets.UTF_8))
-                val response = StringBuilder()
-                while (response.length < 8192) {
-                    check(!cancelled.get())
-                    val line = reader.readLine() ?: break
-                    response.append(line).append('\n')
-                    if (line.isEmpty() && headersMillis == null)
-                        headersMillis = responseTimer.millis()
-                    if (line.startsWith("ip=")) break
-                }
-                validTrace(response.toString()).also {
+                (target.readResponse(tls.getInputStream()) { headersMillis = responseTimer.millis() }
+                    && !cancelled.get() && !expired.get()).also {
                     responseMillis = if (it) headersMillis else null
-                    VpnDiagnostics.record(if (it) "probe_success" else "probe_invalid_response")
+                    record(if (it) "probe_success" else "probe_invalid_response",
+                        responseMillis?.let { value -> mapOf(DiagnosticMetric.RESPONSE_MS to value.toLong()) } ?: emptyMap())
                 }
             }
         }
         } catch (error: Exception) {
-            val category = when (error) {
+            val category = if (expired.get()) "timeout" else when (error) {
                 is java.net.SocketTimeoutException -> "timeout"
                 is javax.net.ssl.SSLException -> "tls_error"
                 is java.net.ConnectException -> "connect_error"
                 is java.io.IOException -> "io_error"
                 else -> "protocol_error"
             }
-            VpnDiagnostics.record("probe_failed_${stage}_$category")
+            record(if (cancelled.get()) "core_cancelled" else "probe_failed_${stage}_$category")
             false
         } finally { deadline.cancel(); socket = null }
     }
-    private fun cancelProbe() = cancel()
     companion object {
         internal const val TAG = "nova-local-health"
         internal fun validTrace(response: String): Boolean =

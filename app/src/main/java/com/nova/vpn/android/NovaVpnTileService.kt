@@ -38,44 +38,39 @@ class NovaVpnTileService : TileService() {
         super.onClick()
         val state = VpnRuntime.state.value
         if (state.connected || state.connecting) {
-            startService(Intent(this, NovaVpnService::class.java).setAction(NovaVpnService.ACTION_STOP))
+            VpnUserRequests.stop(this)
             return
         }
 
         val appContext = applicationContext
+        val request = VpnUserRequests.gate.begin()
         tileScope.launch {
             runCatching {
                 val profiles = withContext(Dispatchers.IO) { ProfileVault(appContext).load() }
                 val selectedId = withContext(Dispatchers.IO) { SelectedProfileStore(appContext).load() }
                 val profile = profiles.firstOrNull { it.id == selectedId } ?: profiles.firstOrNull()
                     ?: error("Сначала добавьте VPN-конфигурацию в NOVA VPN.")
-                val routing = withContext(Dispatchers.IO) { AppRoutingStore(appContext).load() }
-                profile.name to withContext(Dispatchers.Default) {
-                    SingBoxConfigFactory.build(profile, routing, appContext.packageName)
-                }
-            }.onSuccess { (profileName, config) ->
+                withContext(Dispatchers.Default) { PreparedVpnConfiguration.prepare(appContext, profile) }
+            }.onSuccess { prepared ->
                 withContext(Dispatchers.Main) {
+                    if (!VpnUserRequests.gate.isCurrent(request)) return@withContext
                     if (VpnService.prepare(this@NovaVpnTileService) != null) {
-                        openAppForConsent()
+                        openAppForConsent(request)
                     } else {
-                        val intent = Intent(this@NovaVpnTileService, NovaVpnService::class.java)
-                            .setAction(NovaVpnService.ACTION_START)
-                            .putExtra(NovaVpnService.EXTRA_CONFIG, config)
-                            .putExtra(NovaVpnService.EXTRA_PROFILE_NAME, profileName)
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(intent)
-                        else startService(intent)
+                        VpnUserRequests.start(this@NovaVpnTileService, prepared, request)
                     }
                 }
             }.onFailure {
-                withContext(Dispatchers.Main) { openAppForConsent() }
+                withContext(Dispatchers.Main) { if (VpnUserRequests.gate.isCurrent(request)) openAppForConsent(request) }
             }
             withContext(Dispatchers.Main) { refreshTile() }
         }
     }
 
-    private fun openAppForConsent() {
+    private fun openAppForConsent(request: String) {
         val intent = Intent(this, MainActivity::class.java)
             .setAction(ACTION_CONNECT_FROM_TILE)
+            .putExtra(VpnUserRequests.EXTRA_REQUEST, request)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
         if (Build.VERSION.SDK_INT >= 34) {
             val pendingIntent = PendingIntent.getActivity(

@@ -80,6 +80,7 @@ internal fun WindowsHome(profiles: List<ImportedProfile>, selectedId: String, pr
     var choose by rememberSaveable { mutableStateOf(false) }
     var details by rememberSaveable { mutableStateOf(false) }
     val status = when {
+        state.recoveryStatus != null -> state.recoveryText().orEmpty()
         error != null || state.warning != null -> "Требуется внимание"
         state.trafficChecking -> "Проверка доступа"
         state.trafficVerified -> "Доступ подтверждён"
@@ -108,8 +109,8 @@ internal fun WindowsHome(profiles: List<ImportedProfile>, selectedId: String, pr
                         else -> "Подключитесь, чтобы направить трафик через выбранный сервер."
                     }, fontSize = 13.sp, lineHeight = 19.sp, color = c.onSurfaceVariant)
                     NovaButton(if (profile == null && !state.connected) onManage else onToggle,
-                        Modifier.fillMaxWidth(), enabled = !state.connecting) {
-                        Text(if (profile == null && !state.connected) "Добавить подключение" else if (state.connecting) "Подключение…" else if (state.connected) "Отключить" else "Подключить")
+                        Modifier.fillMaxWidth()) {
+                        Text(if (profile == null && !state.connected) "Добавить подключение" else if (state.connecting) "Отменить" else if (state.connected) "Отключить" else "Подключить")
                     }
                 }
                 HorizontalDivider(color = c.outlineVariant)
@@ -132,7 +133,7 @@ internal fun WindowsHome(profiles: List<ImportedProfile>, selectedId: String, pr
                         profiles.forEach { p ->
                             Row(Modifier.fillMaxWidth().selectable(p.id == selectedId, role = Role.RadioButton, onClick = { onSelect(p.id); choose = false })
                                 .padding(horizontal = 12.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                                RadioButton(p.id == selectedId, null); Text(p.name, Modifier.weight(1f), fontSize = 14.sp)
+                                RadioButton(p.id == selectedId, null); Text(p.displayName, Modifier.weight(1f), fontSize = 14.sp)
                             }
                         }
                         NovaTextButton(onManage, Modifier.padding(horizontal = 12.dp)) { Text("Управление серверами") }
@@ -147,7 +148,7 @@ internal fun WindowsHome(profiles: List<ImportedProfile>, selectedId: String, pr
                 AnimatedVisibility(details) {
                     Column(Modifier.fillMaxWidth().background(c.surfaceVariant).padding(16.dp)) {
                         Text("Журнал без ключей, адресов сервера и истории сайтов.", fontSize = 13.sp, lineHeight = 19.sp)
-                        NovaOutlinedButton(onCopy, Modifier.padding(top = 12.dp)) { Text("Копировать журнал") }
+                        NovaOutlinedButton(onCopy, Modifier.padding(top = 12.dp)) { Text("Открыть диагностику") }
                     }
                 }
             }
@@ -240,7 +241,8 @@ internal fun WindowsServers(profiles: List<ImportedProfile>, selectedId: String,
                     Row(Modifier.weight(1f).selectable(selectedId == profile.id, role = Role.RadioButton, onClick = { onSelect(profile.id) }).heightIn(min = 80.dp).padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Outlined.Dns, null, Modifier.size(22.dp), tint = c.onSurfaceVariant)
                         Column(Modifier.weight(1f).padding(start = 12.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                            Text(profile.name, fontSize = 14.sp, lineHeight = 20.sp, fontWeight = FontWeight.Medium)
+                            Text(profile.displayName, fontSize = 14.sp, lineHeight = 20.sp, fontWeight = FontWeight.Medium)
+                            FavoriteServerButton(profile)
                             Text(profile.protocol.uppercase() + if (selectedId == profile.id) " · Выбран" else "", fontSize = 12.sp, color = c.onSurfaceVariant)
                         }
                     }

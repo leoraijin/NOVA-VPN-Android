@@ -2,15 +2,21 @@ package com.nova.vpn.android
 
 import com.nova.vpn.android.data.ImportedProfile
 import com.nova.vpn.android.data.SingBoxConfigFactory
+import com.nova.vpn.android.data.RealityConfigFactory
+import com.nova.vpn.android.data.VpnEngine
 import org.json.JSONArray
 import org.json.JSONObject
 
 /** A temporary proxy-only configuration. Never creates a TUN or runs a URL-test group. */
 internal object ServerCheckConfig {
-    fun build(profile: ImportedProfile): String? {
+    fun build(profile: ImportedProfile, engine: VpnEngine = VpnEngine.SING_BOX, ownPackage: String = "com.nova.vpn.android"): String? {
         // Full documents can contain selectors, rulesets and providers with their own timers.
         if (profile.fullConfigJson != null) return null
-        val config = JSONObject(SingBoxConfigFactory.build(profile))
+        val generated = SingBoxConfigFactory.build(profile)
+        // Run the same adaptation as the VPN before removing its TUN. The probe
+        // must not certify a profile with a different engine's parser or DNS schema.
+        val config = JSONObject(if (engine == VpnEngine.REALITY_CORE)
+            RealityConfigFactory.prepare(generated, ownPackage).config else generated)
         val outbounds = config.getJSONArray("outbounds")
         val proxy = (0 until outbounds.length()).mapNotNull(outbounds::optJSONObject)
             .firstOrNull { it.optString("tag") == "proxy" } ?: return null

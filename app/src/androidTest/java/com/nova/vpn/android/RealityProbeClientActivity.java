@@ -57,7 +57,9 @@ public final class RealityProbeClientActivity extends Activity {
                     }
                 } catch (Exception ignored) {}
                 String result;
-                try (Socket socket = new Socket()) {
+                if (getIntent().getBooleanExtra("inspectOnly", false)) {
+                    result = "inspection";
+                } else try (Socket socket = new Socket()) {
                     socket.setSoTimeout(5000);
                     socket.connect(new InetSocketAddress(site ? "native.test" : ipv6 ? "2001:db8::7" : "198.51.100.7", 80), 5000);
                     byte[] payload = "nova-tun-smoke".getBytes(StandardCharsets.US_ASCII);
@@ -68,6 +70,9 @@ public final class RealityProbeClientActivity extends Activity {
                     if (!Arrays.equals(payload, answer)) throw new IllegalStateException("Unexpected echo");
                     result = "ok";
                 } catch (Exception failure) { result = failure.getClass().getSimpleName(); }
+                android.util.Log.i("NovaVpnVisibility", "nonce=" + nonce + " uid=" + android.os.Process.myUid() +
+                    " physicalDefault=" + physicalDefault + " vpnTransportVisible=" + vpnTransportVisible +
+                    " tunInterfaceVisible=" + tunInterfaceVisible + " vpnInterfaces=" + vpnInterfaces);
                 sendBroadcast(new Intent(target + ".REALITY_SMOKE_RESULT").setPackage(target)
                     .putExtra("nonce", nonce).putExtra("result", result)
                     .putExtra("physicalDefault", physicalDefault)

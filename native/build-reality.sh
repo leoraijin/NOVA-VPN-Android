@@ -17,7 +17,7 @@ git -C "$source_dir" fetch https://github.com/leoraijin/vpn-core.git "$source_re
 git -C "$source_dir" cat-file -e "$revision^{commit}"
 git -C "$source_dir" checkout --detach "$revision"
 : "${ANDROID_NDK_HOME:?Set ANDROID_NDK_HOME}"
-export RUSTFLAGS="${RUSTFLAGS:-} -C link-arg=-Wl,-z,max-page-size=16384"
+export RUSTFLAGS="${RUSTFLAGS:-} -C link-arg=-Wl,-z,max-page-size=16384 -C link-arg=-Wl,-z,common-page-size=16384"
 abis=("$@")
 if [[ ${#abis[@]} == 0 ]]; then abis=(arm64-v8a armeabi-v7a x86_64); fi
 for abi in "${abis[@]}"; do
@@ -33,7 +33,7 @@ for abi in "${abis[@]}"; do
   mkdir -p "$dest"
   cp "$source_dir/target/$target/release/libreality.so" "$dest/"
   "$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/$compiler" \
-    -shared -fPIC -O2 -Wall -Wextra -Werror -Wl,-z,max-page-size=16384 \
+    -shared -fPIC -O2 -Wall -Wextra -Werror -Wl,-z,max-page-size=16384,-z,common-page-size=16384 \
     -I"$source_dir/ffi/include" "$root/native/reality-jni.c" \
     -L"$dest" -lreality -Wl,--no-undefined -o "$dest/libnova_reality_jni.so"
 done

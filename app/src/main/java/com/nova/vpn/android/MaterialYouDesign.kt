@@ -89,6 +89,7 @@ internal fun MaterialHome(profiles: List<ImportedProfile>, selectedId: String, p
     var diagnostics by rememberSaveable { mutableStateOf(false) }
     val warning = error ?: state.warning
     val headline = when {
+        state.recoveryStatus != null -> state.recoveryText().orEmpty()
         warning != null -> "Нужна проверка"
         state.trafficChecking -> "Проверяем доступ"
         state.trafficVerified -> "Вы подключены"
@@ -108,6 +109,7 @@ internal fun MaterialHome(profiles: List<ImportedProfile>, selectedId: String, p
                 }
                 Text(headline, fontSize = 32.sp, lineHeight = 38.sp, fontWeight = FontWeight.Normal)
                 Text(when {
+                    state.recoveryStatus != null -> "Можно отменить подключение кнопкой ниже."
                     warning != null -> warning
                     state.trafficVerified -> "Доступ через VPN подтверждён HTTPS-запросом."
                     state.connected -> "Туннель работает. Доступ через VPN пока не подтверждён."
@@ -119,12 +121,12 @@ internal fun MaterialHome(profiles: List<ImportedProfile>, selectedId: String, p
                 val pressed by interactions.collectIsPressedAsState()
                 val radius by animateDpAsState(if (pressed) 16.dp else 28.dp, spring(.75f, 450f), label = "material-connect-shape")
                 Button(onClick = if (profile == null && !state.connected) onManage else onToggle,
-                    enabled = !state.connecting, interactionSource = interactions, shape = RoundedCornerShape(radius),
+                    interactionSource = interactions, shape = RoundedCornerShape(radius),
                     modifier = Modifier.fillMaxWidth().heightIn(min = 60.dp)) {
                     if (state.connecting) CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
                     else Icon(if (profile == null && !state.connected) Icons.Rounded.Add else Icons.Rounded.PowerSettingsNew, null)
                     Spacer(Modifier.width(12.dp))
-                    Text(if (state.connecting) "Подключение…" else if (state.connected) "Отключить" else if (profile == null) "Добавить сервер" else "Подключить", fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
+                    Text(if (state.connecting) "Отменить" else if (state.connected) "Отключить" else if (profile == null) "Добавить сервер" else "Подключить", fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
                 }
             }
         }
@@ -140,7 +142,7 @@ internal fun MaterialHome(profiles: List<ImportedProfile>, selectedId: String, p
                             Row(Modifier.fillMaxWidth().selectable(p.id == selectedId, role = Role.RadioButton,
                                 onClick = { onSelect(p.id); choose = false }).padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                                 RadioButton(p.id == selectedId, null)
-                                Spacer(Modifier.width(12.dp)); Text(p.name, Modifier.weight(1f))
+                                Spacer(Modifier.width(12.dp)); Text(p.displayName, Modifier.weight(1f))
                             }
                         }
                         TextButton(onManage) { Text("Управление серверами") }
@@ -163,7 +165,7 @@ internal fun MaterialHome(profiles: List<ImportedProfile>, selectedId: String, p
                 MaterialPanel {
                     Text("NOVA VPN ${BuildConfig.VERSION_NAME}")
                     Text("Журнал событий без ключей, адресов сервера и истории сайтов.", style = MaterialTheme.typography.bodySmall)
-                    TextButton(onCopy) { Text("Скопировать диагностику") }
+                    TextButton(onCopy) { Text("Открыть диагностику") }
                 }
             }
         }
@@ -262,7 +264,8 @@ internal fun MaterialServers(profiles: List<ImportedProfile>, selectedId: String
                 Row(Modifier.fillMaxWidth().selectable(selected, role = Role.RadioButton, onClick = { onSelect(profile.id) }).heightIn(min = 56.dp), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text(profile.protocol.uppercase(), style = MaterialTheme.typography.labelSmall)
-                        Text(profile.name, style = MaterialTheme.typography.titleLarge)
+                        Text(profile.displayName, style = MaterialTheme.typography.titleLarge)
+                        FavoriteServerButton(profile)
                     }
                     RadioButton(selected, null)
                 }

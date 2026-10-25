@@ -13,19 +13,29 @@ data class VpnUiState(
     val trafficChecking: Boolean = false,
     val trafficVerified: Boolean = false,
     val trafficCheckFailed: Boolean = false,
-    val transportNotice: String? = null
+    val transportNotice: String? = null,
+    val recoveryStatus: String? = null,
+    val recoveryAttempt: Int = 0,
+    val sessionRevision: Long = 0,
+    val appliedConfiguration: AppliedConfiguration? = null
 )
 
 /** In-process connection state shared by the activity and the VPN service. */
 object VpnRuntime {
     @Volatile private var appContext: Context? = null
     private val mutableState = MutableStateFlow(VpnUiState())
+    private val sessionSequence = java.util.concurrent.atomic.AtomicLong()
     val state: StateFlow<VpnUiState> = mutableState.asStateFlow()
 
     fun attach(context: Context) { appContext = context.applicationContext }
 
     fun setConnecting() = publish(VpnUiState(connecting = true))
-    fun setConnected() = publish(VpnUiState(connected = true))
+    fun setConnected(identity: AppliedConfiguration? = null) = publish(VpnUiState(connected = true,
+        sessionRevision = sessionSequence.incrementAndGet(), appliedConfiguration = identity))
+    fun setRecovery(waiting: Boolean, attempt: Int, tunPresent: Boolean) = publish(VpnUiState(
+        connected = tunPresent, connecting = !tunPresent, recoveryStatus = if (waiting) "waiting_network" else "recovering",
+        recoveryAttempt = attempt, sessionRevision = mutableState.value.sessionRevision,
+        appliedConfiguration = mutableState.value.appliedConfiguration))
     fun setTrafficChecking() { if (mutableState.value.connected) publish(mutableState.value.copy(trafficChecking = true, trafficVerified = false, trafficCheckFailed = false, warning = null)) }
     fun setTrafficResult(success: Boolean) {
         val current = mutableState.value
@@ -50,4 +60,10 @@ object VpnRuntime {
             appContext?.let(NovaVpnTileService::requestRefresh)
         }
     }
+}
+
+internal fun VpnUiState.recoveryText(): String? = when (recoveryStatus) {
+    "waiting_network" -> "Ожидаем сеть"
+    "recovering" -> "Восстанавливаем соединение${if (recoveryAttempt > 0) " · попытка $recoveryAttempt" else ""}"
+    else -> null
 }

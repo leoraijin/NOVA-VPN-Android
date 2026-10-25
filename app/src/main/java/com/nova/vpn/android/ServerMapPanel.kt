@@ -113,7 +113,7 @@ private data class MapMarker(val members: List<LocatedProfile>, val selected: Lo
         selected?.let { profile ->
             HorizontalDivider(color = colors.outlineVariant)
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(profile.name, fontWeight = FontWeight.SemiBold, fontSize = 17.sp)
+                Text(profile.displayName, fontWeight = FontWeight.SemiBold, fontSize = 17.sp)
                 Text(selectedLocation?.label ?: "Локация не указана в названии профиля", fontSize = 12.sp, color = colors.onSurfaceVariant)
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Text(profile.server.ifBlank { profile.protocol.uppercase() }, Modifier.weight(1f), maxLines = 1, fontSize = 12.sp, color = colors.onSurfaceVariant)

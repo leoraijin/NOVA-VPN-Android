@@ -202,27 +202,7 @@ object ProfileLinkParser {
             }
             else -> throw IllegalArgumentException("Транспорт Xray ${stream.optString("network")} пока не поддержан")
         }
-        val security = stream.optString("security").lowercase()
-        if (security == "tls" || security == "reality") {
-            val settings = stream.optJSONObject(if (security == "reality") "realitySettings" else "tlsSettings") ?: JSONObject()
-            val serverName = settings.optString("serverName").ifBlank { outbound.optString("server") }
-            val tls = JSONObject().put("enabled", true).put("server_name", serverName)
-            settings.optJSONArray("alpn")?.let { tls.put("alpn", it) }
-            if (settings.optBoolean("allowInsecure")) tls.put("insecure", true)
-            settings.optString("fingerprint").takeIf(String::isNotBlank)?.let {
-                tls.put("utls", JSONObject().put("enabled", true).put("fingerprint", it))
-            }
-            if (security == "reality") {
-                val publicKey = settings.optString("publicKey")
-                require(publicKey.isNotBlank()) { "Xray Reality не содержит publicKey" }
-                if (!tls.has("utls")) tls.put("utls", JSONObject().put("enabled", true).put("fingerprint", "chrome"))
-                tls.put("reality", JSONObject().put("enabled", true)
-                    .put("public_key", publicKey).put("short_id", settings.optString("shortId")))
-            }
-            outbound.put("tls", tls)
-        } else if (security.isNotBlank() && security != "none") {
-            throw IllegalArgumentException("Защита Xray $security пока не поддержана")
-        }
+        XrayStreamTls.fromStream(stream, outbound.optString("server"))?.let { outbound.put("tls", it) }
     }
 
     private fun parseFullConfig(text: String): ImportedProfile {
@@ -492,6 +472,9 @@ object ProfileLinkParser {
         val insecure = query["allowinsecure"] == "1" || query["insecure"] == "1"
         if (insecure) tls.put("insecure", true)
         if (security == "reality") {
+            require(query["pqv"].isNullOrEmpty() && query["mldsa65verify"].isNullOrEmpty()) {
+                "Проверка ML-DSA Reality пока не поддержана этой сборкой клиента"
+            }
             val publicKey = query["pbk"] ?: query["publickey"]
             require(!publicKey.isNullOrBlank()) { "Reality-ссылка не содержит pbk" }
             val fingerprint = query["fp"]?.takeIf(String::isNotBlank) ?: "chrome"

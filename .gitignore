@@ -11,3 +11,8 @@ native/work/
 app/src/main/jniLibs/
 vendor/maven/
 app/libs/libbox-xhttp.aar
+__pycache__/
+*.pyc
+
+# These are checked-in reproducible native build tools, not Gradle outputs.
+!native/xhttp/build/

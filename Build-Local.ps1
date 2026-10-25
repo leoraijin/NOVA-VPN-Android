@@ -1,4 +1,5 @@
-param(
+﻿param(
+    [string] $ToolchainRoot = $env:NOVA_TOOLCHAIN_ROOT,
     [Parameter(ValueFromRemainingArguments = $true)]
     [string[]] $GradleArguments
 )
@@ -20,8 +21,16 @@ function Get-NovaBuildPath([string] $path) {
     if ([NovaBuildPaths]::GetShortPathName($path, $buffer, 4096) -eq 0) { throw "Cannot resolve build path: $path" }
     $buffer.ToString()
 }
-$toolchainRoot = (Join-Path (Split-Path (Split-Path $PSScriptRoot)) 'toolchain')
-$toolchainRoot = Get-NovaBuildPath $toolchainRoot
+if (-not $ToolchainRoot) {
+    $ancestor = [IO.DirectoryInfo]::new($PSScriptRoot)
+    while ($ancestor) {
+        $candidate = Join-Path $ancestor.FullName 'toolchain'
+        if (Test-Path -LiteralPath (Join-Path $candidate 'jdk17/jdk-17.0.20.1+1/bin/java.exe')) { $ToolchainRoot = $candidate; break }
+        $ancestor = $ancestor.Parent
+    }
+}
+if (-not $ToolchainRoot) { throw 'Toolchain not found. Supply -ToolchainRoot or NOVA_TOOLCHAIN_ROOT.' }
+$toolchainRoot = Get-NovaBuildPath ([IO.Path]::GetFullPath($ToolchainRoot))
 $javaHome = Join-Path $toolchainRoot 'jdk17\jdk-17.0.20.1+1'
 $sdkRoot = Join-Path $toolchainRoot 'android-sdk'
 $gradleHome = Join-Path $toolchainRoot 'gradle-home'

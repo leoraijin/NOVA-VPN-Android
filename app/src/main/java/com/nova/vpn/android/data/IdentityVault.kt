@@ -17,12 +17,13 @@ import javax.crypto.spec.GCMParameterSpec
 
 /** App-private AES-256-GCM vault; VPN secrets are never written as cleartext JSON. */
 class IdentityVault(context: Context, testNamespace: Boolean = false) {
+    private val recoveryContext = context.applicationContext
     private val file = AtomicFile(File(context.filesDir, if (testNamespace) "identities-test.vault" else "identities.vault"))
     private val alias = if (testNamespace) "nova.vpn.identity-test.v1" else "nova.vpn.identity-store.v1"
 
-    @Synchronized
-    fun load(): IdentityState {
-        if (!file.baseFile.exists()) return IdentityState()
+    fun load(): IdentityState = synchronized(ProfileVault.lock) {
+        StoreRecoveryGuard.beforeAccess(recoveryContext)
+        if (!file.baseFile.exists() && !File(file.baseFile.path + ".bak").exists()) return@synchronized IdentityState()
         val bytes = file.openRead().use { it.readBytes() }
         require(bytes.size > HEADER_SIZE + GCM_TAG_BYTES) { "Хранилище профилей повреждено" }
         require(bytes.copyOfRange(0, MAGIC.size).contentEquals(MAGIC)) { "Неизвестный формат хранилища профилей" }
@@ -31,11 +32,11 @@ class IdentityVault(context: Context, testNamespace: Boolean = false) {
         val cipher = Cipher.getInstance(TRANSFORMATION)
         cipher.init(Cipher.DECRYPT_MODE, getOrCreateKey(), GCMParameterSpec(128, iv))
         val json = JSONObject(String(cipher.doFinal(encrypted), Charsets.UTF_8))
-        return IdentityState.fromJson(json)
+        IdentityState.fromJson(json)
     }
 
-    @Synchronized
-    fun save(state: IdentityState) {
+    fun save(state: IdentityState) = synchronized(ProfileVault.lock) {
+        StoreRecoveryGuard.beforeAccess(recoveryContext)
         state.validate()
         val json = state.toJson()
         val cipher = Cipher.getInstance(TRANSFORMATION)

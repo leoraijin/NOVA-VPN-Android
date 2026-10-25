@@ -57,6 +57,7 @@ internal fun HomePage(profiles: List<ImportedProfile>, selectedProfileId: String
     var serversExpanded by rememberSaveable { mutableStateOf(false) }
     var detailsExpanded by rememberSaveable { mutableStateOf(false) }
     val status = when {
+        vpnState.recoveryStatus != null -> vpnState.recoveryText().orEmpty()
         vpnState.trafficChecking -> "Проверяем соединение"
         vpnState.warning != null -> "Нужна проверка"
         vpnState.trafficVerified -> "Соединение проверено"
@@ -87,8 +88,8 @@ internal fun HomePage(profiles: List<ImportedProfile>, selectedProfileId: String
                         .shadow(6.dp, CircleShape).clip(CircleShape).novaGlass()
                         .border(1.dp, c.outline.copy(alpha = .35f), CircleShape)
                         .then(if (LocalTutorialStep.current == TutorialStep.Connect) Modifier.border(2.dp, c.primary, CircleShape) else Modifier)
-                        .clickable(interactionSource = interactions, indication = null, enabled = !vpnState.connecting,
-                            role = Role.Button, onClickLabel = if (vpnState.connected) "Отключить VPN" else if (profile == null) "Добавить сервер" else "Подключить VPN",
+                        .clickable(interactionSource = interactions, indication = null,
+                            role = Role.Button, onClickLabel = if (vpnState.connecting) "Отменить подключение" else if (vpnState.connected) "Отключить VPN" else if (profile == null) "Добавить сервер" else "Подключить VPN",
                             onClick = if (profile == null && !vpnState.connected) onManageProfiles else onToggle), contentAlignment = Alignment.Center) {
                         if (vpnState.connecting) CircularProgressIndicator(Modifier.size(42.dp), color = c.primary, strokeWidth = 2.dp)
                         else Icon(Icons.Rounded.PowerSettingsNew, if (vpnState.connected) "Отключить VPN" else if (profile == null) "Добавить сервер" else "Подключить VPN", tint = c.primary, modifier = Modifier.size(48.dp))
@@ -120,7 +121,7 @@ internal fun HomePage(profiles: List<ImportedProfile>, selectedProfileId: String
                             profiles.forEach { p ->
                                 HorizontalDivider(Modifier.padding(start = 54.dp), color = c.outlineVariant.copy(alpha = .45f))
                                 Row(Modifier.fillMaxWidth().clickable(role = Role.RadioButton) { onSelectProfile(p.id); serversExpanded = false }.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                                    Text(p.name, Modifier.weight(1f), fontSize = 16.sp)
+                                    Text(p.displayName, Modifier.weight(1f), fontSize = 16.sp)
                                     if (p.id == selectedProfileId) Icon(Icons.Rounded.Check, "Выбран", tint = c.primary)
                                 }
                             }
@@ -137,7 +138,7 @@ internal fun HomePage(profiles: List<ImportedProfile>, selectedProfileId: String
                     Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         Text("NOVA VPN ${BuildConfig.VERSION_NAME}", fontSize = 13.sp, color = c.onSurfaceVariant)
                         Text("Диагностика содержит события соединения без ключей, адресов сервера и истории сайтов.", fontSize = 13.sp, color = c.onSurfaceVariant)
-                        NovaTextButton(onCopyDiagnostics) { Text("Скопировать диагностику") }
+                        NovaTextButton(onCopyDiagnostics) { Text("Открыть диагностику") }
                     }
                 }
             }
@@ -311,13 +312,14 @@ internal fun UngroupedServersPage(
             items(profiles, key = { it.id }) { profile ->
                 var expanded by rememberSaveable(profile.id) { mutableStateOf(false) }
                 IOSGroup {
-                    IOSRow(Icons.Rounded.Public, profile.name, profile.protocol.uppercase(), onClick = { expanded = !expanded }, trailing = {
+                    IOSRow(Icons.Rounded.Public, profile.displayName, profile.protocol.uppercase(), onClick = { expanded = !expanded }, trailing = {
                         if (profile.id == selectedId) Icon(Icons.Rounded.CheckCircle, "Выбран", tint = c.primary, modifier = Modifier.size(22.dp))
                         NovaDisclosure(expanded)
                     })
                     AnimatedVisibility(expanded) {
                         Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             Text(profile.server, fontSize = 13.sp, color = c.onSurfaceVariant)
+                            FavoriteServerButton(profile)
                             if (profile.id != selectedId) NovaButton({ onSelect(profile.id) }, modifier = Modifier.fillMaxWidth()) { Text("Выбрать сервер") }
                             NovaTextButton({ onSendToWatch(profile) }, enabled = !transferBusy) { Text(if (transferBusy && shareProfileId == profile.id) "Передача…" else "Передать на часы") }
                             if (shareProfileId == profile.id) shareStatus?.let { Text(it, fontSize = 13.sp, color = c.onSurfaceVariant) }

@@ -1,6 +1,7 @@
 package com.nova.vpn.android.data
 
 import org.json.JSONObject
+import com.nova.vpn.android.BuildConfig
 
 /** Maps Xray share-link/JSON options to the pinned sing-box-lx native transport. */
 internal object XhttpTransport {
@@ -23,7 +24,7 @@ internal object XhttpTransport {
     private val ranges = setOf("x_padding_bytes", "session_length", "uplink_chunk_size", "sc_max_each_post_bytes",
         "sc_min_posts_interval_ms", "sc_stream_up_server_secs")
 
-    fun fromQuery(query: Map<String, String>): JSONObject {
+    fun fromQuery(query: Map<String, String>, allowDownload: Boolean = BuildConfig.XHTTP_DOWNLOAD_SUPPORTED): JSONObject {
         val settings = JSONObject()
         query["extra"]?.takeIf(String::isNotBlank)?.let {
             val extra = try { JSONObject(it) } catch (_: Exception) { throw IllegalArgumentException("Некорректный extra XHTTP") }
@@ -41,13 +42,16 @@ internal object XhttpTransport {
         } }
         query["xmux"]?.let { value -> settings.put("xmux", try { JSONObject(value) }
             catch (_: Exception) { throw IllegalArgumentException("Некорректный XMUX XHTTP") }) }
-        return fromSettings(settings)
+        query["downloadsettings"]?.let { value -> settings.put("downloadSettings", try { JSONObject(value) }
+            catch (_: Exception) { throw IllegalArgumentException("Некорректный downloadSettings XHTTP") }) }
+        return fromSettings(settings, allowDownload)
     }
 
-    fun fromSettings(settings: JSONObject): JSONObject {
+    fun fromSettings(settings: JSONObject, allowDownload: Boolean = BuildConfig.XHTTP_DOWNLOAD_SUPPORTED): JSONObject {
         val merged = JSONObject(settings.toString())
         settings.optJSONObject("extra")?.let { extra -> extra.keys().forEach { key -> merged.put(key, extra.get(key)) } }
-        require(!merged.has("downloadSettings") || merged.isNull("downloadSettings")) { "XHTTP downloadSettings требует отдельного подключения и пока не поддержан" }
+        val hasDownload = merged.has("downloadSettings") && !merged.isNull("downloadSettings")
+        require(!hasDownload || allowDownload) { "XHTTP downloadSettings требует обновлённого ядра" }
         val out = JSONObject().put("type", "xhttp")
         fields.forEach { (source, target) ->
             if (merged.has(source) && !merged.isNull(source)) {
@@ -67,6 +71,31 @@ internal object XhttpTransport {
         val mode = out.optString("mode", "auto").ifBlank { "auto" }
         require(mode in setOf("auto", "packet-up", "stream-up", "stream-one")) { "Неизвестный режим XHTTP" }
         out.put("mode", mode)
+        if (hasDownload) {
+            require(mode != "stream-one") { "XHTTP downloadSettings несовместим с stream-one" }
+            val download = merged.optJSONObject("downloadSettings")
+                ?: throw IllegalArgumentException("Некорректный downloadSettings XHTTP")
+            out.put("download_settings", downloadSettings(download))
+        }
         return out
+    }
+
+    private fun downloadSettings(stream: JSONObject): JSONObject {
+        val allowed = setOf("address", "port", "network", "method", "security", "tlsSettings", "realitySettings", "xhttpSettings", "splithttpSettings")
+        require(stream.keys().asSequence().all { it in allowed || stream.isNull(it) }) {
+            "XHTTP downloadSettings содержит неподдерживаемые параметры подключения"
+        }
+        val network = stream.optString("method").ifBlank { stream.optString("network", "tcp") }.lowercase()
+        require(network == "xhttp" || network == "splithttp") { "XHTTP downloadSettings требует network=xhttp" }
+        val server = stream.optString("address").trim()
+        val port = stream.opt("port")
+        require(server.isNotEmpty() && port is Number && port.toDouble() == port.toInt().toDouble() && port.toInt() in 1..65535) {
+            "XHTTP downloadSettings требует address и корректный port"
+        }
+        val child = fromSettings(stream.optJSONObject("xhttpSettings") ?: stream.optJSONObject("splithttpSettings") ?: JSONObject(), false)
+        child.remove("type")
+        return JSONObject().put("server", server).put("server_port", port.toInt()).put("xhttp", child).apply {
+            XrayStreamTls.fromStream(stream, server)?.let { put("tls", it) }
+        }
     }
 }
