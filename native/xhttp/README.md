@@ -87,3 +87,12 @@ Source packaging now requires `host-tests.jsonl` in addition to four Android ABI
 ### Preview .2 bootstrap correction
 
 PR #57 commit 53a6aa1c fixes IP uplink plus domain downlink by wrapping the same direct dialer in the core resolver. Local host red/green and Windows/Linux race CI passed. The .2 all-ABI AAR is `e7c08635ead7ed7189620ae6f2297b5a633e4101c89e6df2966af47e59d2909e`; all four ELF architectures/alignment/version checks passed. This does not close Android runtime or physical ARM/16 KB gates. Candidate5 and its .1 AAR do not contain this correction; production remains unchanged.
+
+
+### Canonical CGo bytes and reproducibility correction
+
+The initial .2 AAR e7c08635... used a Windows checkout with CRLF in CGo sources. Its code/data sections matched the restored build, but two generated CGo names and dependent ELF dynamic tables differed. This artifact is retained for audit and must not be the source-package reproduction target.
+
+After restoring original Git bytes for the affected CGo files, the build workspace and independent fresh source restoration both produced the byte-identical all-ABI AAR `cc4d05b08061d072993993e7dd5d46a6d4c867897eb479bcf807e07429a39c63`. Source patch remains c91140f5... and native version remains .2; production is unchanged. Candidate6 metadata predates this correction, so candidate7 is the next packaging target.
+
+The source guard now hashes Git stdout bytes directly, independent of console encoding, and checks raw bytes of pinned CGo sources against Git blobs. A deliberately normalized-index/CRLF working file is rejected, then restoration to the original bytes passes. Clone native inputs using `git -c core.autocrlf=false clone ...`; do not rely on changing that setting only after checkout.

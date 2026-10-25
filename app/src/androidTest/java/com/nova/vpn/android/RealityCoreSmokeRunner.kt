@@ -701,7 +701,11 @@ class RealityCoreSmokeRunner : Instrumentation() {
                     certificates += file; file.writeText(ca, Charsets.UTF_8)
                 }
             } }
-            if (xhttpDownlinkOnly) check(io.nekohasekai.libbox.Libbox.version().contains("nova-downlink.1")) { "Downlink smoke requires the newly built native core" }
+            if (xhttpDownlinkOnly) check(BuildConfig.XHTTP_DOWNLOAD_SUPPORTED &&
+                BuildConfig.LIBBOX_REVISION.startsWith("1.14.3-lx.23-nova-downlink.") &&
+                io.nekohasekai.libbox.Libbox.version() == BuildConfig.LIBBOX_REVISION) {
+                "Downlink smoke requires the exact checksum-pinned preview core"
+            }
             val modes = if (xhttpTlsRefusal) listOf("packet-up", "packet-up", "packet-up")
                 else if (xhttpDownlinkOnly) listOf("packet-up", "stream-up", "auto") else listOf("packet-up", "stream-up", "stream-one", "auto")
             for ((caseIndex, mode) in modes.withIndex()) {

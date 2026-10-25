@@ -168,7 +168,7 @@ with zipfile.ZipFile(output, 'x', allowZip64=True) as bundle:
     put_file(bundle, 'bindings/libbox-sources.jar', bindings)
     manifest['binding_sources_sha256'] = sha(bindings)
     manifest['aar_sha256'] = sha(root / 'work/xhttp-downlink-build/libbox-arm64-arm-amd64-386.aar')
-    assert manifest['aar_sha256'] == 'e7c08635ead7ed7189620ae6f2297b5a633e4101c89e6df2966af47e59d2909e'
+    assert manifest['aar_sha256'] == 'cc4d05b08061d072993993e7dd5d46a6d4c867897eb479bcf807e07429a39c63'
     for number, ((path, version), module) in enumerate(sorted(modules.items()), 1):
         module_zip = Path(module['GoMod']).with_suffix('.zip')
         module_mod = Path(module['GoMod'])
