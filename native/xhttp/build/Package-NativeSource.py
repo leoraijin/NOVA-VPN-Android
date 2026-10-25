@@ -46,6 +46,10 @@ assert git(core, 'rev-parse', 'HEAD').decode().strip() == base
 assert sha(patch) == patch_sha
 assert hashlib.sha256(git(core, 'diff', 'HEAD', '--binary', '--no-ext-diff', '--abbrev=8')).hexdigest() == patch_sha
 inputs = json.loads((root / 'work/native-source-package/graphs/inputs.json').read_text(encoding='utf-8-sig'))
+required_graphs = {f'android-{arch}.jsonl' for arch in ('arm64', 'arm', 'amd64', '386')} | {
+    'binding-tools.jsonl', 'host-tests.jsonl'}
+assert required_graphs <= {p.name for p in (root / 'work/native-source-package/graphs').glob('*.jsonl')}, \
+    'Collect all Android, binding tool and Windows regression test graphs before packaging'
 modules = {}
 counts = {}
 decoder = json.JSONDecoder()

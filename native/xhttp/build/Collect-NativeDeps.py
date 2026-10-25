@@ -42,6 +42,15 @@ for arch, target in targets.items():
                         'github.com/sagernet/gomobile/bind/seq'], cwd=root / 'native-source/sing-box-lx',
                        env=env, stdout=stdout, stderr=stderr, check=True)
     print(f'PASS offline Android {arch} package graph', flush=True)
+# Android runtime graphs do not include Windows-only packages or test imports.
+# Include the actual host regression closure in the portable source package.
+with (output / 'host-tests.jsonl').open('wb') as stdout, (output / 'host-tests.stderr').open('wb') as stderr:
+    subprocess.run([str(go), 'list', '-deps', '-test', '-json', '-tags',
+                    'with_xhttp,with_quic,with_utls,with_reality', './transport/v2rayxhttp', './option'],
+                   cwd=root / 'native-source/sing-box-lx',
+                   env=dict(environment, GOOS='windows', GOARCH='amd64', CGO_ENABLED='0'),
+                   stdout=stdout, stderr=stderr, check=True)
+print('PASS offline Windows native regression/test package graph', flush=True)
 with (output / 'binding-tools.jsonl').open('wb') as stdout, (output / 'binding-tools.stderr').open('wb') as stderr:
     subprocess.run([str(go), 'list', '-deps', '-json', './cmd/gomobile', './cmd/gobind'],
                    cwd=root / 'native-source/gomobile', env=dict(environment, GOOS='windows', GOARCH='amd64', CGO_ENABLED='0'),

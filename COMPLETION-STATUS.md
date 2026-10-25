@@ -11,7 +11,7 @@ Scope remains all seven sections and release gates in ANDROID-DEVELOPMENT-PLAN-2
 
 ## Requirement audit
 
-1. Subscription store, shared nodes, metadata, partial refresh and schedule: transferred implementation; rerun full migration/import checks. New deterministic stale snapshot/prune and real terminal retry exhaustion tests added, not yet passed at this writing.
+1. Subscription store, shared nodes, metadata, partial refresh and schedule: transferred implementation; rerun full migration/import checks. Deterministic stale snapshot/prune and real terminal retry exhaustion tests passed in API35 CI run 40207419679.
 2. Best-server and auto switching: transferred HTTPS-through-engine implementation; revalidate cancellation, physical-network epochs, limits, rollback, application bypass and physical performance. Not game RTT.
 3. Favorites/search/aliases/order: saved four-design 2000-node run is historical evidence; rotation/restart/TalkBack/physical performance remain open.
 4. Diagnostics: transferred structured redacted events and ownership guards; rerun complete negative/runtime and export matrix.
@@ -39,3 +39,11 @@ Local WHPX AVD process is alive but not visible to ADB; software diagnostic AVD 
 - Upstream draft PR opened with explicit user authorization: https://github.com/Leadaxe/sing-box-lx/pull/57 . Outstanding gates are disclosed in its description. Additional five-repeat race-detector CI is now running at c21ffba3.
 - Four-design, two-theme library tests now exercise rotation and actual Activity recreation, including retained search/selection/personal edits and three screenshots per appearance. They compiled locally (lifecycle-build.log). Runtime execution and process-death UI restoration are not yet proven.
 - Only an existing debug keystore was found locally; the original stable signing identity has not been demonstrated. Do not publish an incompatible replacement APK.
+
+## Completed scheduler and race runs
+
+- Android CI 40207419679 succeeded: normal import reconciliation, stale-snapshot, stale-prune, real terminal retry exhaustion (four actual executions), startup repair after force-stop all passed. These use real WorkManager, not a mocked scheduler.
+- Native CI 40209154598 succeeded, including five-repeat Linux race-detector run and Windows official-Xray checks.
+- Fresh candidate5 offline host tests initially failed because go-ole and testify were absent from its Android/binding-only module closure. Preserve native-offline-tests.jsonl as the negative evidence. After downloading the pinned missing modules, host tests passed locally, and passed again offline through the corrected portable runner. This is not a fresh candidate5 success.
+- Collect-NativeDeps now includes a Windows go-list -deps -test graph. Packaging refuses missing host-test/ABI/tool graphs. A new complete source candidate and its fresh-cache restoration remain required.
+- Eight-appearance library lifecycle tests compiled locally. Next CI includes them; no runtime result yet. Image/Gradle caching added, timeout increased to cover cold SDK downloads plus runtime tests.

@@ -11,13 +11,14 @@ concurrency:
 jobs:
   schedule:
     runs-on: ubuntu-24.04
-    timeout-minutes: 35
+    timeout-minutes: 55
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
+          cache: gradle
       - name: Set up Android SDK
         uses: android-actions/setup-android@v4
         with:
@@ -29,6 +30,11 @@ jobs:
           set -o pipefail
           mkdir -p work/completion
           bash gradlew --no-daemon '-Dorg.gradle.jvmargs=-Xmx4g -Dfile.encoding=UTF-8' :app:testOptimizedUnitTest :app:assembleRealitypreview :app:assembleRealitypreviewAndroidTest -PnovaRealitySmoke -PnovaUsbTest -PnovaRealityAbi=x86_64 2>&1 | tee work/completion/build.log
+      - name: Cache isolated Android system image
+        uses: actions/cache@v4
+        with:
+          path: /usr/local/lib/android/sdk/system-images/android-35/default/x86_64
+          key: nova-android35-default-x86_64-v1
       - name: Enable KVM in isolated runner
         run: sudo chmod 666 /dev/kvm
       - name: Android WorkManager race and failure checks

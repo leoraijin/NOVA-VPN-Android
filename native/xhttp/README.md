@@ -75,3 +75,10 @@ The patch adds independent download endpoint, TLS/Reality configuration, request
 Host tests exercise distinct HTTP/1.1, HTTP/2 and HTTP/3 frontend pairs with the official Xray fixture behind an HTTP/2 backend. Android x86-64 tests separately verify imported packet-up/stream-up/auto download settings through a real TUN with separate-UID IPv4/IPv6 traffic. These results do not establish ARM runtime behavior or the complete Android TLS/HTTP3/Reality matrix. An all-architecture AAR build alone is not a release gate.
 
 Before changing the production dependency, verify each JNI ABI and ELF page alignment, package the corresponding source/dependency notices, run the Android transport matrix, and pin the exact released AAR checksum. Artifact hashes from earlier preview builds must not be reused after a source change.
+
+
+### Host regression dependency closure
+
+Source packaging now requires `host-tests.jsonl` in addition to four Android ABI graphs and binding-tool graphs. It is collected with `go list -deps -test` for the Windows XHTTP/option regression packages. Android runtime graphs alone miss Windows-only `go-ole` and test-only `testify` dependencies; candidate5 cannot run these host checks from its restored offline module cache without obtaining those dependencies separately. Preserve that limitation when referring to candidate5.
+
+`Run-XhttpCoreChecks.ps1 -ToolchainRoot PATH` accepts the external directory containing `go-1.25.5/`; module/build caches remain inside the restored workspace. Host checks default to offline module lookup. Use explicit `-Online` only to populate missing pinned dependencies before recollecting graphs and creating a new source candidate. The next candidate must be restored and checked offline again; a populated cache does not retroactively prove candidate5 complete.
