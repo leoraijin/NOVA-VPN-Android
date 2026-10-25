@@ -1,5 +1,6 @@
 package com.nova.vpn.android
 
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -129,7 +130,14 @@ internal fun ServersPage(
                 ServerSort.valueOf(sortName), names) { name -> map?.resolve(name)?.country }
         }
     }
-    Column(Modifier.fillMaxSize()) {
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+      // Keep a usable list viewport in landscape and with large fonts. Filters
+      // can scroll independently instead of consuming all available height.
+      val compact = maxHeight < 400.dp
+      val controlsHeight = (maxHeight * if (compact) .25f else .45f)
+          .coerceAtLeast(if (compact) 80.dp else 112.dp).coerceAtMost(maxHeight * .6f)
+      Column(Modifier.fillMaxSize()) {
+       Column(Modifier.fillMaxWidth().heightIn(max = controlsHeight).verticalScroll(rememberScrollState())) {
         OutlinedTextField(value = query, onValueChange = { query = it }, singleLine = true,
             label = { Text("Поиск серверов") }, modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp))
         Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
@@ -192,6 +200,7 @@ internal fun ServersPage(
             if (mode == ServerGrouping.COUNTRY) Text("Страна определяется по названию или флагу сервера.",
                 modifier = Modifier.padding(horizontal = 16.dp), style = MaterialTheme.typography.bodySmall)
         }
+       }
         Box(Modifier.weight(1f)) {
             CompositionLocalProvider(LocalToggleFavorite provides onToggleFavorite,
                 LocalEditServer provides { profile -> editingProfile = profile; personalName = profile.userSettings.personalName.orEmpty(); editError = null }) {
@@ -200,6 +209,7 @@ internal fun ServersPage(
                     error, shareStatus, shareProfileId, transferBusy, onAdd, onSelect, onSendToWatch, onDelete)
             }
         }
+      }
     }
 }
 

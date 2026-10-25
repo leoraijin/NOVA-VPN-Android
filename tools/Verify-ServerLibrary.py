@@ -7,11 +7,13 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--adb', required=True)
 parser.add_argument('--serial', required=True)
 parser.add_argument('--work', type=Path, required=True)
+parser.add_argument('--style', action='append', choices=('IOS_LIQUID_GLASS', 'MATERIAL_YOU', 'ONE_UI', 'WINDOWS_11'))
+parser.add_argument('--theme', action='append', choices=('LIGHT', 'DARK'))
 args = parser.parse_args()
 args.work.mkdir(parents=True, exist_ok=False)
 package = 'com.nova.vpn.android.usbtest.realitypreview'
-for style in ('IOS_LIQUID_GLASS', 'MATERIAL_YOU', 'ONE_UI', 'WINDOWS_11'):
-    for theme in ('LIGHT', 'DARK'):
+for style in args.style or ('IOS_LIQUID_GLASS', 'MATERIAL_YOU', 'ONE_UI', 'WINDOWS_11'):
+    for theme in args.theme or ('LIGHT', 'DARK'):
         label = style + '-' + theme
         result = subprocess.run([args.adb, '-s', args.serial, 'shell', 'am', 'instrument', '-w', '-r',
                                  '-e', 'serverLibraryStyle', style, '-e', 'serverLibraryTheme', theme,
@@ -25,6 +27,9 @@ for style in ('IOS_LIQUID_GLASS', 'MATERIAL_YOU', 'ONE_UI', 'WINDOWS_11'):
             subprocess.run([args.adb, '-s', args.serial, 'pull',
                 f'/sdcard/Android/data/{package}/files/server-library-failed-{style}.png',
                 str(args.work / (label + '-failed.png'))], capture_output=True, timeout=30)
+            subprocess.run([args.adb, '-s', args.serial, 'pull',
+                f'/sdcard/Android/data/{package}/files/server-library-failed-{style}.txt',
+                str(args.work / (label + '-failed.txt'))], capture_output=True, timeout=30)
         assert passed, output[-1800:]
         for stage in ('portrait', 'landscape', 'recreated'):
             screenshot = subprocess.run([args.adb, '-s', args.serial, 'pull',

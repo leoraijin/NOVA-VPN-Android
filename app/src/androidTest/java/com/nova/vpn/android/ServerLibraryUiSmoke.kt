@@ -34,10 +34,10 @@ internal object ServerLibraryUiSmoke {
             return visit(ui.rootInActiveWindow)
         }
         fun waitFor(text: String, action: Boolean = false): AccessibilityNodeInfo {
-            val until = SystemClock.elapsedRealtime() + 15_000
+            val until = SystemClock.elapsedRealtime() + 45_000
             var attempts = 0
             while (SystemClock.elapsedRealtime() < until) {
-                find { node ->
+                val candidate = find { node ->
                     val matches = node.text?.toString() == text || node.contentDescription?.toString() == text
                     var ancestor: AccessibilityNodeInfo? = node
                     var editable = false
@@ -50,12 +50,65 @@ internal object ServerLibraryUiSmoke {
                     // A heading and the navigation item can share the same text.
                     // Choose a node with an actionable ancestor before returning it.
                     matches && (!action || !editable && clickable)
-                }?.let { return it }
-                if (++attempts % 25 == 0) {
-                    find { it.isScrollable && !it.isEditable }?.performAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD)
+                }
+                if (candidate?.isVisibleToUser == true) return candidate
+                if (++attempts % 10 == 0) {
+                    var parent = candidate?.parent
+                    var scrollParent: AccessibilityNodeInfo? = null
+                    while (parent != null) {
+                        if (parent.isScrollable && parent.actionList.any {
+                            it.id == AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_DOWN.id ||
+                                it.id == AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_UP.id
+                        }) { scrollParent = parent; break }
+                        parent = parent.parent
+                    }
+                    if (scrollParent != null) {
+                        val targetBounds = android.graphics.Rect()
+                        val scrollBounds = android.graphics.Rect()
+                        candidate!!.getBoundsInScreen(targetBounds)
+                        scrollParent.getBoundsInScreen(scrollBounds)
+                        scrollParent.performAction(if (targetBounds.top < scrollBounds.top)
+                            AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD else AccessibilityNodeInfo.ACTION_SCROLL_FORWARD)
+                    } else {
+                        // Search both vertical viewports: controls and lazy server list.
+                        // Offscreen Compose nodes may not exist in the accessibility tree.
+                        val lists = mutableListOf<AccessibilityNodeInfo>()
+                        fun visit(node: AccessibilityNodeInfo?) {
+                            if (node == null) return
+                            if (node.isScrollable && node.actionList.any {
+                                it.id == AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_DOWN.id ||
+                                it.id == AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_UP.id
+                            }) lists += node
+                            for (i in 0 until node.childCount) visit(node.getChild(i))
+                        }
+                        visit(ui.rootInActiveWindow)
+                        lists.getOrNull((attempts / 10 - 1) % lists.size.coerceAtLeast(1))?.let { scroll ->
+                            // Compose can advertise both actions even at a boundary.
+                            // Labels normally need the top; actions normally need the bottom.
+                            // Reverse periodically so an offscreen lazy item is still discoverable.
+                            val reverse = ((attempts / 10 - 1) / (lists.size.coerceAtLeast(1) * 4)) % 2 != 0
+                            val forward = action != reverse
+                            scroll.performAction(if (forward) AccessibilityNodeInfo.ACTION_SCROLL_FORWARD
+                                else AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD)
+                        }
+                    }
                 }
                 SystemClock.sleep(100)
             }
+            val tree = buildString {
+                fun visit(node: AccessibilityNodeInfo?, depth: Int) {
+                    if (node == null) return
+                    val bounds = android.graphics.Rect()
+                    node.getBoundsInScreen(bounds)
+                    append(" ".repeat(depth)).append(node.className).append(" text=").append(node.text)
+                        .append(" desc=").append(node.contentDescription).append(" visible=").append(node.isVisibleToUser)
+                        .append(" scrollable=").append(node.isScrollable).append(" bounds=").append(bounds)
+                        .append(" actions=").append(node.actionList.map { it.id }).append('\n')
+                    for (index in 0 until node.childCount) visit(node.getChild(index), depth + 1)
+                }
+                visit(ui.rootInActiveWindow, 0)
+            }
+            File(context.getExternalFilesDir(null), "server-library-failed-$style.txt").writeText(tree)
             error("Missing library UI control: $text")
         }
         fun click(text: String) {
@@ -67,6 +120,17 @@ internal object ServerLibraryUiSmoke {
                 node = node?.parent
             }
             error("Unclickable library UI control: $text")
+        }
+        fun awaitEditorClosed() {
+            val deadline = SystemClock.elapsedRealtime() + 15_000
+            while (SystemClock.elapsedRealtime() < deadline) {
+                if (find { it.text?.toString() == "Настройки сервера" } == null) {
+                    instrumentation.waitForIdleSync()
+                    return
+                }
+                SystemClock.sleep(100)
+            }
+            error("Server editor did not close after saving")
         }
         fun enter(text: String) {
             val field = requireNotNull(find { it.isEditable })
@@ -138,14 +202,16 @@ internal object ServerLibraryUiSmoke {
             waitFor("Моё название")
             enter("Мой игровой узел")
             click("Сохранить")
+            awaitEditorClosed()
             waitFor("Мой игровой узел")
             stage = "search-personal-name"
-            click("Сбросить")
+            // Replace the query directly; reset is in the horizontally scrollable filters.
             enter("МОЙ ИГРОВОЙ")
             waitFor("Найдено: 1 из 2000")
             stage = "reopen-personal-actions"
             click("Название и порядок")
             click("Ниже")
+            awaitEditorClosed()
             stage = "await-persisted-order"
             val untilSaved = SystemClock.elapsedRealtime() + 10_000
             while (vault.load().single { it.id == "library-0" }.userSettings.order != 1L &&
