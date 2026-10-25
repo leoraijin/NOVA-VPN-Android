@@ -17,6 +17,7 @@ import zipfile
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--workspace', type=Path, required=True)
+parser.add_argument('--toolchain-root', type=Path, help='External workspace containing toolchain/go-1.25.5; module sources remain local')
 parser.add_argument('--output', type=Path, required=True)
 parser.add_argument('--cronet-source', type=Path, required=True, help='Directory verified by Fetch-CronetSource.py')
 args = parser.parse_args()
@@ -115,7 +116,7 @@ mobile_tar = parts / 'gomobile-patched.tar'
 with tarfile.open(mobile_tar, 'w') as archive:
     for name in sorted(files):
         archive.add(mobile / name, arcname=f'gomobile/{name}', recursive=False, filter=clean_header)
-go_root = root / 'toolchain/go-1.25.5/go'
+go_root = (args.toolchain_root.resolve(strict=True) if args.toolchain_root else root) / 'toolchain/go-1.25.5/go'
 assert (go_root / 'VERSION').read_text(encoding='utf-8').startswith('go1.25.5')
 go_tar = parts / 'go-sdk-source.tar'
 with tarfile.open(go_tar, 'w') as archive:

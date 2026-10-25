@@ -41,8 +41,15 @@ internal object ServerLibraryUiSmoke {
                     val matches = node.text?.toString() == text || node.contentDescription?.toString() == text
                     var ancestor: AccessibilityNodeInfo? = node
                     var editable = false
-                    repeat(6) { editable = editable || ancestor?.isEditable == true; ancestor = ancestor?.parent }
-                    matches && (!action || !editable)
+                    var clickable = false
+                    repeat(10) {
+                        editable = editable || ancestor?.isEditable == true
+                        clickable = clickable || ancestor?.isClickable == true
+                        ancestor = ancestor?.parent
+                    }
+                    // A heading and the navigation item can share the same text.
+                    // Choose a node with an actionable ancestor before returning it.
+                    matches && (!action || !editable && clickable)
                 }?.let { return it }
                 if (++attempts % 25 == 0) {
                     find { it.isScrollable && !it.isEditable }?.performAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD)

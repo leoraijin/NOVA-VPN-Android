@@ -47,3 +47,10 @@ Local WHPX AVD process is alive but not visible to ADB; software diagnostic AVD 
 - Fresh candidate5 offline host tests initially failed because go-ole and testify were absent from its Android/binding-only module closure. Preserve native-offline-tests.jsonl as the negative evidence. After downloading the pinned missing modules, host tests passed locally, and passed again offline through the corrected portable runner. This is not a fresh candidate5 success.
 - Collect-NativeDeps now includes a Windows go-list -deps -test graph. Packaging refuses missing host-test/ABI/tool graphs. A new complete source candidate and its fresh-cache restoration remain required.
 - Eight-appearance library lifecycle tests compiled locally. Next CI includes them; no runtime result yet. Image/Gradle caching added, timeout increased to cover cold SDK downloads plus runtime tests.
+
+## Follow-up on UI and bootstrap
+
+- Native bootstrap regression proved a separate failure: IP uplink inherits an unresolved DefaultDialer for domain downlink. Draft PR commit 53a6aa1c adds a resolver wrapper preserving the same direct dialer. Both artificial bootstrap variants now pass; complete local host suite has 301 pass results, no failures/skips. CI 40210797324 passed Windows and Linux race jobs.
+- This fix is not in the existing .1 preview AAR. New .2 all-ABI compilation is running separately under native-build-candidate6 (patch c91140f59478c11a8ce9d1796491075221f642bd4b426086bc174cfa038df73d). Do not describe the old AAR as containing it. Original candidate5 restoration and sources remain preserved.
+- Android UI run 40209903341 repeated all scheduler phases successfully, then failed because the test selected the non-clickable Servers heading before the navigation button. The harness now requires a clickable ancestor and saves failure screenshots. Recompiled successfully; next runtime result remains pending.
+- User confirms no physical phone is currently available. Physical ARM64, Wi-Fi/LTE/Doze, 30 transitions and battery gates remain open; emulator checks cannot replace them.

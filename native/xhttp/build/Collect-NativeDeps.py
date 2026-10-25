@@ -26,7 +26,7 @@ go = toolchain_root / 'toolchain/go-1.25.5/go/bin/go.exe'
 clang = toolchain_root / 'toolchain/android-sdk/ndk/28.0.13004108/toolchains/llvm/prebuilt/windows-x86_64/bin/clang.exe'
 for directory in ['go-workspace', 'go-cache', 'tmp']:
     (root / 'toolchain' / directory).mkdir(parents=True, exist_ok=True)
-environment = dict(os.environ, GOPATH=str(root / 'toolchain/go-workspace'), GOMODCACHE=str(root / 'toolchain/go-mod'),
+environment = dict(os.environ, GOENV='off', GOTELEMETRY='off', GOPATH=str(root / 'toolchain/go-workspace'), GOMODCACHE=str(root / 'toolchain/go-mod'),
                    GOCACHE=str(root / 'toolchain/go-cache'), GOTMPDIR=str(root / 'toolchain/tmp'),
                    TEMP=str(root / 'toolchain/tmp'), TMP=str(root / 'toolchain/tmp'),
                    GOTOOLCHAIN='local', GOPROXY='off', GOSUMDB='off', GONOPROXY='none', GOPRIVATE='',

@@ -19,8 +19,13 @@ for style in ('IOS_LIQUID_GLASS', 'MATERIAL_YOU', 'ONE_UI', 'WINDOWS_11'):
                                 capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=240)
         output = result.stdout + result.stderr
         (args.work / (label + '.log')).write_text(output, encoding='utf-8')
-        assert result.returncode == 0 and f'PASS server library UI: {style}' in output \
-            and 'INSTRUMENTATION_CODE: -1' in output, output[-1800:]
+        passed = result.returncode == 0 and f'PASS server library UI: {style}' in output \
+            and 'INSTRUMENTATION_CODE: -1' in output
+        if not passed:
+            subprocess.run([args.adb, '-s', args.serial, 'pull',
+                f'/sdcard/Android/data/{package}/files/server-library-failed-{style}.png',
+                str(args.work / (label + '-failed.png'))], capture_output=True, timeout=30)
+        assert passed, output[-1800:]
         for stage in ('portrait', 'landscape', 'recreated'):
             screenshot = subprocess.run([args.adb, '-s', args.serial, 'pull',
                 f'/sdcard/Android/data/{package}/files/server-library-{label}-{stage}.png',
