@@ -9,6 +9,26 @@ import org.junit.Test
 class VpnDiagnosticsTest {
     @Before fun reset() { VpnDiagnostics.reset() }
 
+    @Test fun httpFailuresDoNotInventGrpcTransport() {
+        assertEquals("http_not_found", VpnDiagnostics.coreCode("xhttp response status 404"))
+        assertEquals("http_not_found", VpnDiagnostics.coreCode("HTTP status 404"))
+        assertEquals("grpc_service_not_found", VpnDiagnostics.coreCode("grpc: status 404"))
+        assertEquals("remote_unauthorized", VpnDiagnostics.coreCode("HTTP status 401"))
+        assertEquals("unclassified_warning", VpnDiagnostics.coreCode("request id 14041"))
+        assertEquals("unclassified_warning", VpnDiagnostics.coreCode("request id 14031"))
+    }
+
+    @Test fun xhttpReportIdentifiesPinnedCoreWithoutSecrets() {
+        VpnDiagnostics.setEngine(false)
+        val profile = ImportedProfile(name = "PRIVATE_NAME", protocol = "vless", server = "PRIVATE_HOST", port = 443,
+            outboundJson = """{"type":"vless","uuid":"PRIVATE_UUID","transport":{"type":"xhttp","path":"PRIVATE_PATH"}}""")
+        val report = VpnDiagnostics.report(profile, AppRoutingSettings(), 35, VpnUiState())
+        assertTrue(report.contains("transport=xhttp"))
+        assertTrue(report.contains("engine_version=${BuildConfig.LIBBOX_REVISION}"))
+        assertFalse(report.contains("libbox_1.14.1"))
+        assertFalse(report.contains("PRIVATE"))
+    }
+
     @Test fun reportContainsStagesButNoProfileOrLogSecrets() {
         val profile = ImportedProfile(name = "PRIVATE_NAME", protocol = "vless", server = "private.example", port = 443,
             outboundJson = """{"type":"vless","server":"private.example","uuid":"PRIVATE_UUID","password":"PRIVATE_PASSWORD","transport":{"type":"grpc","service_name":"PRIVATE_SERVICE"},"tls":{"enabled":true,"server_name":"PRIVATE_SNI","alpn":["h2"]}}""",
@@ -22,11 +42,10 @@ class VpnDiagnosticsTest {
     }
 
     @Test fun eventsAreBoundedAndRawTextIsRejected() {
-        repeat(100) { VpnDiagnostics.record("fixture_$it") }
+        repeat(100) { VpnDiagnostics.record("recovery_retry_${it % 30 + 1}") }
         val report = VpnDiagnostics.report(null, AppRoutingSettings(), 35, VpnUiState())
-        assertFalse(report.contains("fixture_0\n"))
-        assertTrue(report.contains("fixture_99"))
-        assertEquals(40, report.lineSequence().count { "s fixture_" in it })
+        assertTrue(report.contains("recovery_retry_10"))
+        assertEquals(40, report.lineSequence().count { "s recovery_retry_" in it })
         assertThrows(IllegalArgumentException::class.java) { VpnDiagnostics.record("raw password=secret host.example") }
     }
 

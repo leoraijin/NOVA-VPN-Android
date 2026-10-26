@@ -21,6 +21,18 @@
         android:label="${novaAppLabel}"
         android:supportsRtl="true"
         android:theme="@android:style/Theme.Material.Light.NoActionBar">
+        <provider
+            android:name=".RestoreRecoveryProvider"
+            android:authorities="${applicationId}.restore-recovery"
+            android:exported="false"
+            android:directBootAware="false"
+            android:initOrder="1000" />
+        <provider
+            android:name=".SubscriptionScheduleProvider"
+            android:authorities="${applicationId}.subscription-scheduling"
+            android:exported="false"
+            android:directBootAware="false"
+            android:initOrder="-100" />
         <meta-data
             android:name="com.google.mlkit.vision.DEPENDENCIES"
             android:value="barcode_ui" />
@@ -40,7 +52,7 @@
         <service
             android:name=".NovaVpnService"
             android:exported="false"
-            android:foregroundServiceType="systemExempted"
+            android:foregroundServiceType="systemExempted|shortService"
             tools:ignore="ForegroundServicePermission"
             android:permission="android.permission.BIND_VPN_SERVICE">
             <intent-filter>

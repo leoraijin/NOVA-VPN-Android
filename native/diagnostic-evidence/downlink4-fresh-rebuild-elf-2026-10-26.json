@@ -1,0 +1,70 @@
+{
+  "aar_sha256": "67abf3aafeff36f5b042929d74f75fbc646aa7085a3b3bb69091874a1e70559c",
+  "version": "1.14.3-lx.23-nova-downlink.4",
+  "libraries": [
+    {
+      "abi": "arm64-v8a",
+      "bits": 64,
+      "bytes": 82634360,
+      "sha256": "7154764bd5662dd34ba8c6d9bebcc20c91e1da5f45a206d9d0279998ce4a89e4",
+      "load_alignment": [
+        16384,
+        16384,
+        16384,
+        16384
+      ],
+      "relro_end_remainder": [
+        0
+      ],
+      "checked_page_size": 16384
+    },
+    {
+      "abi": "armeabi-v7a",
+      "bits": 32,
+      "bytes": 74429976,
+      "sha256": "a51bf8aea781c2441b6bd270649652da744daf4e2d1d2fbd20bcb66071458c34",
+      "load_alignment": [
+        16384,
+        16384,
+        16384,
+        16384
+      ],
+      "relro_end_remainder": [
+        0
+      ],
+      "checked_page_size": 4096
+    },
+    {
+      "abi": "x86_64",
+      "bits": 64,
+      "bytes": 87037000,
+      "sha256": "712f1f1ec0723c061b36e50a5f8adf9adfca27639f28cdc5b73aa041d34d9b51",
+      "load_alignment": [
+        16384,
+        16384,
+        16384,
+        16384
+      ],
+      "relro_end_remainder": [
+        0
+      ],
+      "checked_page_size": 16384
+    },
+    {
+      "abi": "x86",
+      "bits": 32,
+      "bytes": 79967876,
+      "sha256": "86ce064ce77cb436e658e79369930744efc2c538f183a76914a3c18d2e1ed995",
+      "load_alignment": [
+        16384,
+        16384,
+        16384,
+        16384
+      ],
+      "relro_end_remainder": [
+        0
+      ],
+      "checked_page_size": 4096
+    }
+  ]
+}

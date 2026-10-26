@@ -1,0 +1,149 @@
+{
+  "schema": 1,
+  "collected_date": "2026-10-26",
+  "scope": "Metadata and published binary identity only; not a C++ rebuild, runtime test or complete license closure.",
+  "library_commit": {
+    "url": "https://api.github.com/repos/SagerNet/cronet-go/commits/c10c03c318db",
+    "sha": "c10c03c318db6d47bec8705c8290bad34bc32b64",
+    "message": "Build from 049f2909",
+    "parent": "049f2909701ca088c9569f6b303bba5376a2b2ff"
+  },
+  "binding_commit": {
+    "url": "https://api.github.com/repos/SagerNet/cronet-go/git/trees/0d28acc44093",
+    "sha": "0d28acc44093df24b2526dea3d6ffefd6b0a54f0",
+    "naiveproxy": {
+      "path": "naiveproxy",
+      "mode": "160000",
+      "type": "commit",
+      "sha": "72a06c9fca0e2d228588c7f3074bf7efff3ff686"
+    }
+  },
+  "build_source": {
+    "url": "https://api.github.com/repos/SagerNet/cronet-go/git/trees/049f2909701ca088c9569f6b303bba5376a2b2ff",
+    "sha": "049f2909701ca088c9569f6b303bba5376a2b2ff",
+    "naiveproxy": {
+      "path": "naiveproxy",
+      "mode": "160000",
+      "type": "commit",
+      "sha": "72a06c9fca0e2d228588c7f3074bf7efff3ff686"
+    }
+  },
+  "published_files": {
+    "url": "https://api.github.com/repos/SagerNet/cronet-go/git/trees/c10c03c318db6d47bec8705c8290bad34bc32b64?recursive=1",
+    "truncated": false,
+    "entries": [
+      {
+        "path": "LICENSE",
+        "mode": "100644",
+        "type": "blob",
+        "sha": "3e3e29e359d205307555aa41f19fb2a8415de885",
+        "size": 674,
+        "url": "https://api.github.com/repos/SagerNet/cronet-go/git/blobs/3e3e29e359d205307555aa41f19fb2a8415de885"
+      },
+      {
+        "path": "lib/android_386/libcronet.a",
+        "mode": "100644",
+        "type": "blob",
+        "sha": "5d0b6b63ad980d74db77c12f69bdb9d9df1c0d75",
+        "size": 70000078,
+        "url": "https://api.github.com/repos/SagerNet/cronet-go/git/blobs/5d0b6b63ad980d74db77c12f69bdb9d9df1c0d75"
+      },
+      {
+        "path": "lib/android_386/libcronet_cgo.go",
+        "mode": "100644",
+        "type": "blob",
+        "sha": "91cd07e6655047c2124fd8def9f0374c478d68f5",
+        "size": 486,
+        "url": "https://api.github.com/repos/SagerNet/cronet-go/git/blobs/91cd07e6655047c2124fd8def9f0374c478d68f5"
+      },
+      {
+        "path": "lib/android_amd64/libcronet.a",
+        "mode": "100644",
+        "type": "blob",
+        "sha": "9d0d587d2b86388bae6761df1f5a9bdabd3571e3",
+        "size": 63614414,
+        "url": "https://api.github.com/repos/SagerNet/cronet-go/git/blobs/9d0d587d2b86388bae6761df1f5a9bdabd3571e3"
+      },
+      {
+        "path": "lib/android_amd64/libcronet_cgo.go",
+        "mode": "100644",
+        "type": "blob",
+        "sha": "5384a5bf40ce10076a1e8b3189a94a717796abca",
+        "size": 490,
+        "url": "https://api.github.com/repos/SagerNet/cronet-go/git/blobs/5384a5bf40ce10076a1e8b3189a94a717796abca"
+      },
+      {
+        "path": "lib/android_arm/libcronet.a",
+        "mode": "100644",
+        "type": "blob",
+        "sha": "a07f773247c9369c94763ffb815dca1878f7361c",
+        "size": 80131608,
+        "url": "https://api.github.com/repos/SagerNet/cronet-go/git/blobs/a07f773247c9369c94763ffb815dca1878f7361c"
+      },
+      {
+        "path": "lib/android_arm/libcronet_cgo.go",
+        "mode": "100644",
+        "type": "blob",
+        "sha": "6e4ec4ddfc1452b8c5fe1e35dda6ced212f92797",
+        "size": 486,
+        "url": "https://api.github.com/repos/SagerNet/cronet-go/git/blobs/6e4ec4ddfc1452b8c5fe1e35dda6ced212f92797"
+      },
+      {
+        "path": "lib/android_arm64/libcronet.a",
+        "mode": "100644",
+        "type": "blob",
+        "sha": "8f91d4c5862f87f00d27af499c48ca420e8b6cae",
+        "size": 67626274,
+        "url": "https://api.github.com/repos/SagerNet/cronet-go/git/blobs/8f91d4c5862f87f00d27af499c48ca420e8b6cae"
+      },
+      {
+        "path": "lib/android_arm64/libcronet_cgo.go",
+        "mode": "100644",
+        "type": "blob",
+        "sha": "7ff10af65c00e72d68f71ae59329fe94984b96d0",
+        "size": 490,
+        "url": "https://api.github.com/repos/SagerNet/cronet-go/git/blobs/7ff10af65c00e72d68f71ae59329fe94984b96d0"
+      }
+    ]
+  },
+  "build_jobs": {
+    "url": "https://api.github.com/repos/SagerNet/cronet-go/actions/runs/34685391617/jobs?per_page=100",
+    "jobs": [
+      {
+        "name": "android (amd64, x86_64-linux-android23-clang)",
+        "conclusion": "success",
+        "started_at": "2026-09-12T09:16:03Z",
+        "completed_at": "2026-09-12T09:57:24Z",
+        "url": "https://github.com/SagerNet/cronet-go/actions/runs/34685391617/job/103531389445"
+      },
+      {
+        "name": "android (arm64, aarch64-linux-android23-clang)",
+        "conclusion": "success",
+        "started_at": "2026-09-12T09:43:06Z",
+        "completed_at": "2026-09-12T10:10:21Z",
+        "url": "https://github.com/SagerNet/cronet-go/actions/runs/34685391617/job/103531389515"
+      },
+      {
+        "name": "android (386, i686-linux-android23-clang)",
+        "conclusion": "success",
+        "started_at": "2026-09-12T09:51:05Z",
+        "completed_at": "2026-09-12T10:26:14Z",
+        "url": "https://github.com/SagerNet/cronet-go/actions/runs/34685391617/job/103531389524"
+      },
+      {
+        "name": "android (arm, armv7a-linux-androideabi23-clang)",
+        "conclusion": "success",
+        "started_at": "2026-09-12T09:45:40Z",
+        "completed_at": "2026-09-12T10:11:50Z",
+        "url": "https://github.com/SagerNet/cronet-go/actions/runs/34685391617/job/103531389533"
+      },
+      {
+        "name": "publish",
+        "conclusion": "success",
+        "started_at": "2026-09-12T10:39:09Z",
+        "completed_at": "2026-09-12T10:47:31Z",
+        "url": "https://github.com/SagerNet/cronet-go/actions/runs/34685391617/job/103540882694"
+      }
+    ]
+  }
+}

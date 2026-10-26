@@ -1,0 +1,170 @@
+{
+  "date": "2026-10-26",
+  "environment": "Android16 API36 x86_64 16KB emulator",
+  "native_commit": "2b08fc5cb739f569e56fe27d0c641a0d606e1d88",
+  "native_version": "1.14.3-lx.23-nova-downlink.4",
+  "aar_sha256": "da4379903d96aad02e72b8581a1647d020f55e4eba64c68c8444228f1503f183",
+  "aar_abis": [
+    "x86_64"
+  ],
+  "apk_sha256": "2B4255A42D4AF3A60C4CE5D54997C4B5F57F319CEE4D533D95491880AB7E731E",
+  "test_apk_sha256": "D6470E3CD62A9732A76196CCB5860E53E172F68A3F0B6A63D0042ECD11AA2A45",
+  "runs": [
+    {
+      "round": 1,
+      "counters": {
+        "upload_http": 1,
+        "download_http": 2,
+        "counters": {
+          "download": {
+            "backend_h2": 11,
+            "errors": 0,
+            "requests": 11,
+            "wrong_leg": 0,
+            "wrong_protocol": 0
+          },
+          "upload": {
+            "backend_h2": 20,
+            "errors": 0,
+            "requests": 20,
+            "wrong_leg": 0,
+            "wrong_protocol": 0
+          }
+        }
+      },
+      "android_log_sha256": "495B821FF9BCFC5701EAF5EA9985AA69D206A8E76D461206EE6CDF5E44589474",
+      "frontend_log_sha256": "3FFBCFC2DFE041578A7F2EC1AD32E7F3D8B18A38FA60F6305E7F72E9220DA15E"
+    },
+    {
+      "round": 2,
+      "counters": {
+        "upload_http": 1,
+        "download_http": 2,
+        "counters": {
+          "download": {
+            "backend_h2": 10,
+            "errors": 0,
+            "requests": 10,
+            "wrong_leg": 0,
+            "wrong_protocol": 0
+          },
+          "upload": {
+            "backend_h2": 19,
+            "errors": 0,
+            "requests": 19,
+            "wrong_leg": 0,
+            "wrong_protocol": 0
+          }
+        }
+      },
+      "android_log_sha256": "17EE40486D92AC82DA426C824184AAECF1F3B5F4E3015F338F6602E835D33C20",
+      "frontend_log_sha256": "F2C23BFB5EE226C0FAFB68265638788E3976B0A7DFD9B9525765A96B1C299314"
+    },
+    {
+      "round": 3,
+      "counters": {
+        "upload_http": 1,
+        "download_http": 2,
+        "counters": {
+          "download": {
+            "backend_h2": 11,
+            "errors": 0,
+            "requests": 11,
+            "wrong_leg": 0,
+            "wrong_protocol": 0
+          },
+          "upload": {
+            "backend_h2": 20,
+            "errors": 0,
+            "requests": 20,
+            "wrong_leg": 0,
+            "wrong_protocol": 0
+          }
+        }
+      },
+      "android_log_sha256": "6EA5A11A815399C3E5757504A76E8302FDCABC181E77A13A3AE6C8190A5353F5",
+      "frontend_log_sha256": "0F4CBFF03674D5A20070AF22D21AC5E589C95EE44346D55A07CBD99B1873A430"
+    },
+    {
+      "round": 4,
+      "counters": {
+        "upload_http": 1,
+        "download_http": 2,
+        "counters": {
+          "download": {
+            "backend_h2": 10,
+            "errors": 0,
+            "requests": 10,
+            "wrong_leg": 0,
+            "wrong_protocol": 0
+          },
+          "upload": {
+            "backend_h2": 19,
+            "errors": 0,
+            "requests": 19,
+            "wrong_leg": 0,
+            "wrong_protocol": 0
+          }
+        }
+      },
+      "android_log_sha256": "5EA41F6F538E3E191A5D6AC3D8289B34105743DB2D7922EAC45A422F13F3F3C9",
+      "frontend_log_sha256": "6266FF514177F9FFC6428941F39016DD368ABF1B0DCC5A40EC54EAD1E1D20F6C"
+    },
+    {
+      "round": 5,
+      "counters": {
+        "upload_http": 1,
+        "download_http": 2,
+        "counters": {
+          "download": {
+            "backend_h2": 10,
+            "errors": 0,
+            "requests": 10,
+            "wrong_leg": 0,
+            "wrong_protocol": 0
+          },
+          "upload": {
+            "backend_h2": 19,
+            "errors": 0,
+            "requests": 19,
+            "wrong_leg": 0,
+            "wrong_protocol": 0
+          }
+        }
+      },
+      "android_log_sha256": "6E9E642D0F489CD9E19E5AE70444F854AE6D0993F38220B5CE962BFD2ED33DAC",
+      "frontend_log_sha256": "5AB6FC3DBED4962902CBCB3777B9F392BB9AD58707ED6C0024BA1ECE8CBA9A4C"
+    },
+    {
+      "round": 6,
+      "counters": {
+        "upload_http": 1,
+        "download_http": 2,
+        "counters": {
+          "download": {
+            "backend_h2": 10,
+            "errors": 0,
+            "requests": 10,
+            "wrong_leg": 0,
+            "wrong_protocol": 0
+          },
+          "upload": {
+            "backend_h2": 19,
+            "errors": 0,
+            "requests": 19,
+            "wrong_leg": 0,
+            "wrong_protocol": 0
+          }
+        }
+      },
+      "android_log_sha256": "A96BADC01DAD8D86225E189AD1E7C71FC1F8713863D8E8D23302980B0D742535",
+      "frontend_log_sha256": "BC010696DC3651E626B0EE95C6FD44AC53B09EFDEFFA3CBFB32EC7E9277F0A67"
+    }
+  ],
+  "result": "Six consecutive H1 TLS upload/H2 TLS download runs passed packet-up/stream-up/auto and separate-UID IPv4/IPv6 TUN echo; prior failure not reproduced in these runs",
+  "limitations": [
+    "Not proof of all network conditions or long-term absence of intermittent failures",
+    "Physical ARM64 and other protocol combinations still pending for .4",
+    "All-ABI build, source reproduction, release signing and stable update not yet complete"
+  ]
+}

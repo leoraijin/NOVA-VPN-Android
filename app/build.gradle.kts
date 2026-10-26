@@ -7,6 +7,30 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
+val usbTestSlot = providers.gradleProperty("novaUsbTestSlot").orNull ?: "realitypreview"
+require(usbTestSlot in setOf("realitypreview", "completionpreview")) { "Unsupported USB test slot" }
+require(!providers.gradleProperty("novaUsbTestSlot").isPresent ||
+    (providers.gradleProperty("novaUsbTest").isPresent && providers.gradleProperty("novaRealitySmoke").isPresent)) {
+    "USB test slots require isolated Reality smoke builds"
+}
+
+val xhttpPreviewAar = providers.gradleProperty("novaXhttpPreviewAar").orNull
+val xhttpPreviewSha = providers.gradleProperty("novaXhttpPreviewSha256").orNull
+val xhttpPreviewRevision = when (xhttpPreviewSha) {
+    "c8a9981a684cc42c8a83e3b6d3a2839f08e1d91fd8f7b27c64e73bd87ce61583" -> "1.14.3-lx.23-nova-downlink.1"
+    "e7c08635ead7ed7189620ae6f2297b5a633e4101c89e6df2966af47e59d2909e" -> "1.14.3-lx.23-nova-downlink.2"
+    "cc4d05b08061d072993993e7dd5d46a6d4c867897eb479bcf807e07429a39c63" -> "1.14.3-lx.23-nova-downlink.2"
+    "598e070a4da697edeac316ca3739f32b9554dcf17ad475346394d5971bae7f92" -> "1.14.3-lx.23-nova-downlink.3"
+    "da4379903d96aad02e72b8581a1647d020f55e4eba64c68c8444228f1503f183" -> "1.14.3-lx.23-nova-downlink.4"
+    "67abf3aafeff36f5b042929d74f75fbc646aa7085a3b3bb69091874a1e70559c" -> "1.14.3-lx.23-nova-downlink.4"
+    else -> "local-xhttp-sha256:$xhttpPreviewSha"
+}
+check((xhttpPreviewAar == null) == (xhttpPreviewSha == null)) { "Local XHTTP AAR and SHA-256 must be supplied together" }
+check(xhttpPreviewAar == null || (providers.gradleProperty("novaUsbTest").isPresent &&
+    providers.gradleProperty("novaRealitySmoke").isPresent && xhttpPreviewSha?.matches(Regex("[a-f0-9]{64}")) == true)) {
+    "Local XHTTP cores require an isolated USB smoke build and a SHA-256 pin"
+}
+
 android {
     namespace = "com.nova.vpn.android"
     compileSdk = 35
@@ -38,6 +62,9 @@ android {
         versionName = "0.2.52"
         manifestPlaceholders["novaAppLabel"] = "NOVA VPN"
         buildConfigField("boolean", "REALITY_PREVIEW", "false")
+        buildConfigField("boolean", "XHTTP_DOWNLOAD_SUPPORTED", (xhttpPreviewAar != null).toString())
+        buildConfigField("String", "LIBBOX_REVISION", if (xhttpPreviewAar == null)
+            "\"1.14.3-lx.23_20f89c2f4cb3f77acaf3daa063bd857a055a5259\"" else "\"$xhttpPreviewRevision\"")
         testInstrumentationRunner = when {
             providers.gradleProperty("novaIdentitySmoke").isPresent -> "com.nova.vpn.android.IdentitySmokeRunner"
             providers.gradleProperty("novaRealitySmoke").isPresent -> "com.nova.vpn.android.RealityCoreSmokeRunner"
@@ -95,10 +122,14 @@ android {
         create("realitypreview") {
             initWith(getByName("optimized"))
             applicationIdSuffix = if (providers.gradleProperty("novaUsbTest").isPresent)
-                ".usbtest.realitypreview" else ".realitypreview"
-            versionNameSuffix = "-reality-preview.2"
+                ".usbtest.$usbTestSlot" else ".realitypreview"
+            versionNameSuffix = when (xhttpPreviewRevision) {
+                "1.14.3-lx.23-nova-downlink.4" -> "-reality-preview.4"
+                "1.14.3-lx.23-nova-downlink.3" -> "-reality-preview.3"
+                else -> "-reality-preview.2"
+            }
             manifestPlaceholders["novaAppLabel"] = if (providers.gradleProperty("novaUsbTest").isPresent)
-                "NOVA VPN · USB Test" else "NOVA VPN · Reality Test"
+                "NOVA VPN · USB ${if (usbTestSlot == "completionpreview") "TECNO" else "Test"}" else "NOVA VPN · Reality Test"
             buildConfigField("boolean", "REALITY_PREVIEW", "true")
             matchingFallbacks += listOf("optimized", "release")
         }
@@ -127,13 +158,14 @@ android {
 }
 
 // A pinned downstream is necessary: upstream libbox does not implement XHTTP.
-val xhttpCore = layout.projectDirectory.file("libs/libbox-xhttp.aar")
+val xhttpCore = xhttpPreviewAar?.let(::file) ?: layout.projectDirectory.file("libs/libbox-xhttp.aar").asFile
 val prepareXhttpCore = tasks.register("prepareXhttpCore") {
     outputs.file(xhttpCore)
     outputs.upToDateWhen { false } // Verify cached bytes as well as downloads.
     doLast {
-        val target = xhttpCore.asFile
+        val target = xhttpCore
         if (!target.exists()) {
+            check(xhttpPreviewAar == null) { "Local XHTTP AAR does not exist" }
             check(!gradle.startParameter.isOffline) { "XHTTP core missing; run :app:prepareXhttpCore once without --offline" }
             target.parentFile.mkdirs()
             val temporary = File(target.path + ".download")
@@ -144,7 +176,8 @@ val prepareXhttpCore = tasks.register("prepareXhttpCore") {
         }
         val digest = MessageDigest.getInstance("SHA-256")
         target.inputStream().use { input -> val buffer = ByteArray(65536); while (true) { val count = input.read(buffer); if (count < 0) break; digest.update(buffer, 0, count) } }
-        check(digest.digest().joinToString("") { "%02x".format(it) } == "d7be8b1297f68ad8bad47e5eb766f59501100b1e9377de403d9c53cd364ecef1") { "XHTTP core checksum mismatch" }
+        check(digest.digest().joinToString("") { "%02x".format(it) } ==
+            (xhttpPreviewSha ?: "d7be8b1297f68ad8bad47e5eb766f59501100b1e9377de403d9c53cd364ecef1")) { "XHTTP core checksum mismatch" }
     }
 }
 
@@ -160,6 +193,7 @@ dependencies {
     implementation("androidx.compose.material:material-icons-extended")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
+    implementation("androidx.work:work-runtime-ktx:2.10.5")
     implementation("com.google.android.gms:play-services-wearable:20.0.1")
     implementation("com.google.android.gms:play-services-code-scanner:16.1.0")
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")

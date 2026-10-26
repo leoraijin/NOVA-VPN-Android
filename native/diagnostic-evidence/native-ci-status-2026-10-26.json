@@ -1,0 +1,12 @@
+{
+  "repository": "leoraijin/sing-box-lx",
+  "run_id": 40223536789,
+  "head_sha": "eca41490008142bd8db3044619c7ef6472d5d90f",
+  "race_job": 121260030758,
+  "race_status": "success",
+  "race_scope": "ubuntu-24.04 go test -race -count=5 ./transport/v2rayxhttp ./option",
+  "windows_job": 121260030958,
+  "windows_status": "cancelled during persistent XMUX step",
+  "rerun_attempt": "GitHub integration returned 403 Resource not accessible by integration",
+  "full_run_passed": false
+}

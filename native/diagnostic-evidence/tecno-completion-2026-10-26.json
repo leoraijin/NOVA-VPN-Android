@@ -1,0 +1,68 @@
+{
+  "date": "2026-10-26",
+  "device": "TECNO KM4",
+  "package": "com.nova.vpn.android.usbtest.completionpreview",
+  "runtime_app_sha256": "fbb1d28bf71e725a620963f3d219b654cf68abc4ad6e3364895d942d23a882b3",
+  "scheduler_phases": [
+    "normal",
+    "stale-snapshot",
+    "stale-prune",
+    "terminal-retry",
+    "prepare-boot",
+    "verify-boot"
+  ],
+  "restore": {
+    "process_death_boundaries": 8,
+    "injected_faults": 5,
+    "corrupt_journal_startup_ui": true
+  },
+  "routing": {
+    "engines": [
+      "sing_box",
+      "reality_core"
+    ],
+    "ipv4_ipv6_uid_traffic": true,
+    "invalid_configuration_rollback": true,
+    "rapid_start_stop_and_supersession": true,
+    "excluded_uid_not_recaptured_by_site_rule": true,
+    "automatic_diagnostic_ownership": true
+  },
+  "xhttp": {
+    "revision": "1.14.3-lx.23-nova-downlink.3",
+    "modes": [
+      "packet-up",
+      "stream-up",
+      "auto"
+    ],
+    "separate_download_pool": true,
+    "ipv4_ipv6_uid_traffic": true,
+    "backend": "official local Xray via owned TCP ADB reverse"
+  },
+  "logs": {
+    "tecno-final-schedule.log": "71809f914c6d9523200d3348ce0b567d106747dafa22af653c6681c522c6fad1",
+    "tecno-final-transfer.log": "7c923e71a0a928ec415df8345822bb8afc0ef721509d32c3418c867c0f3c7636",
+    "tecno-final-live-routing.log": "8329e300aa3b5b53f1fd2743843790f7d016e5f1cec8d1fc7ed76c1b6f467e31",
+    "tecno-final-xhttp-downlink3.log": "4d72a83ea101b9c0416e7d9acd6f2dc0c30937e204477020167c6b424fb8c582"
+  },
+  "limits": [
+    "Synthetic fixtures except separately recorded live subscription assessment.",
+    "No physical 30-transition, Doze/battery or 16KB runtime claim.",
+    "XHTTP local backend test does not establish the complete independent TLS/Reality/H3 frontend matrix.",
+    "Stable signing and in-place update deliberately deferred by user."
+  ],
+  "physical_wifi_recovery": {
+    "app_sha256": "7c5d65b4489eedfcf2dacff95789b1dfa50193508f16826b0156b2db6b557669",
+    "test_sha256": "be2e2803431c25b49dc51a8ef57b99cd5d6aed0b7022847d1fecd9668ede65e9",
+    "cycles_per_engine": 2,
+    "engines": [
+      "sing_box",
+      "reality_core"
+    ],
+    "retained_tun": true,
+    "ipv4_ipv6_after_recovery": true,
+    "manual_stop_not_undone_on_network_return": true,
+    "wifi_restored": true,
+    "log_sha256": "cb2169c6e2aa4afb76247556a1108530190980eae0bdf77c2d3f7187e550f10a",
+    "limits": "Four loss/return cycles, not the full 30-transition Wi-Fi/cellular/Doze matrix."
+  }
+}

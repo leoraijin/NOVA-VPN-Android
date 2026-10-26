@@ -6,6 +6,7 @@ internal data class NovaTilePresentation(val active: Boolean, val subtitle: Stri
         fun from(state: VpnUiState, profileName: String?): NovaTilePresentation {
             val active = state.connected || state.connecting
             val status = when {
+                state.recoveryStatus != null -> state.recoveryText().orEmpty()
                 state.connecting -> "Подключение…"
                 state.connected && state.trafficVerified -> "VPN включён"
                 state.connected && state.trafficChecking -> "Проверка трафика…"

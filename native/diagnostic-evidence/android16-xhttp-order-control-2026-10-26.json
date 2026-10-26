@@ -1,0 +1,50 @@
+{
+  "date": "2026-10-26",
+  "scope": "H1 upload/H2 download, Android16 x86_64 16KB, canonical .3 native AAR, synthetic local TLS proxies",
+  "previous_failures": "Three stream-up IPv6 EOF runs retained in android16-xhttp-h1-investigation-2026-10-26.json",
+  "reverse_order": {
+    "upload_http": 1,
+    "download_http": 2,
+    "counters": {
+      "download": {
+        "backend_h2": 10,
+        "errors": 0,
+        "requests": 10,
+        "wrong_leg": 0,
+        "wrong_protocol": 0
+      },
+      "upload": {
+        "backend_h2": 19,
+        "errors": 0,
+        "requests": 19,
+        "wrong_leg": 0,
+        "wrong_protocol": 0
+      }
+    }
+  },
+  "normal_order_same_build": {
+    "upload_http": 1,
+    "download_http": 2,
+    "counters": {
+      "download": {
+        "backend_h2": 11,
+        "errors": 0,
+        "requests": 11,
+        "wrong_leg": 0,
+        "wrong_protocol": 0
+      },
+      "upload": {
+        "backend_h2": 20,
+        "errors": 0,
+        "requests": 20,
+        "wrong_leg": 0,
+        "wrong_protocol": 0
+      }
+    }
+  },
+  "conclusion": "Both orders now pass without native/product changes. IPv6 is supported, but prior failure remains unresolved and cannot be described as fixed or deterministically order-dependent.",
+  "test_change": "Optional reversal of independent IPv4/IPv6 probe order; default remains IPv4 first",
+  "apk_sha256": "9ECCEAA7308355FCDBAEA99ED74E1AA5A04E7ACC70BD86EBBB3F2664BCD014BA",
+  "test_apk_sha256": "EB9F7C4B9815D87DA42E4FF6963AE5070D51D6BF08645CDA250667693C69521C",
+  "next": "Capture per-session proxy lifecycle and Android core errors in a failure to distinguish fixture cancellation from native stream teardown"
+}

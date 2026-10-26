@@ -1,0 +1,19 @@
+{
+  "date": "2026-10-26",
+  "native_version": "1.14.3-lx.23-nova-downlink.4",
+  "apk_sha256": "f9461ead99b39baec25a818e3dd8a6e9c29e6cec03290c6f66c6a1a637439b57",
+  "test_apk_sha256": "d6470e3cd62a9732a76196ccb5860e53e172f68a3f0b6a63d0042ecd11aa2a45",
+  "aar_sha256": "67abf3aafeff36f5b042929d74f75fbc646aa7085a3b3bb69091874a1e70559c",
+  "embedded_arm64_libbox_sha256": "7154764bd5662dd34ba8c6d9bebcc20c91e1da5f45a206d9d0279998ce4a89e4",
+  "embedded_library_matches_tested_aar": true,
+  "source_archive_r2_sha256": "af38cca8fb930d4a87f05002e5fddc65b15c53bc70bc58b0a88710f8788a8415",
+  "archive_restore_helper_matches_current_source": true,
+  "application_id": "com.nova.vpn.android.usbtest.completionpreview",
+  "version_name": "0.2.52-reality-preview.4",
+  "signature": "apksigner verify PASS, APK v2, Android Debug certificate dcc5e2e06f44047be6e16b49256a0b2df02cc6649f50bacf5fd3499242fd4ac2",
+  "limitations": [
+    "ARM64 runtime not yet tested for this APK",
+    "Separate preview package; not a stable update",
+    "Archive r1 reproduces CGo CRLF defect; r2 embeds corrected restorer; corrected-restoration all-ABI compilation is now byte-identical"
+  ]
+}

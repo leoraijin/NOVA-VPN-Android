@@ -17,7 +17,19 @@ object SubscriptionFetcher {
     fun fetchIfUrl(input: String, deviceId: String? = null): String =
         fetchWith(input, deviceId, ::download)
 
-    internal data class Response(val body: String, val hwidMissing: Boolean = false, val deviceLimit: Boolean = false)
+    internal data class Response(val body: String, val hwidMissing: Boolean = false, val deviceLimit: Boolean = false,
+        val status: Int = 200, val etag: String? = null, val lastModified: String? = null, val userInfo: String? = null)
+
+    internal class FetchFailure(val status: Int, val retryAfterMillis: Long = 0) : IOException("Ошибка обновления подписки (HTTP $status).")
+
+    internal fun fetchSubscription(url: String, deviceId: String?, etag: String?, lastModified: String?, identity: SubscriptionIdentity? = null): Response {
+        var response: Response? = null
+        identity?.validate()
+        fetchWith(url, deviceId) { uri, agent, providedDeviceId ->
+            download(uri, agent, providedDeviceId, etag, lastModified, identity).also { response = it }
+        }
+        return requireNotNull(response) { "Нужна HTTPS-ссылка на подписку" }
+    }
 
     internal fun fetchWith(input: String, deviceId: String?, request: (URI, String, String?) -> Response): String {
         val text = input.trim()
@@ -64,14 +76,18 @@ object SubscriptionFetcher {
         uri.host == "0.0.0.0" && uri.port == 1
     }.getOrDefault(false)
 
-    private fun download(initialUri: URI, userAgent: String, deviceId: String?): Response {
+    private fun download(initialUri: URI, userAgent: String, deviceId: String?): Response = download(initialUri, userAgent, deviceId, null, null)
+
+    internal fun download(initialUri: URI, userAgent: String, deviceId: String?, etag: String?, lastModified: String?, identity: SubscriptionIdentity? = null,
+        open: (URI) -> HttpsURLConnection = { uri -> uri.toURL().openConnection() as? HttpsURLConnection
+            ?: throw IOException("Не удалось открыть защищённое соединение.") }): Response {
         var current = initialUri
         repeat(MAX_REDIRECTS + 1) { redirectIndex ->
-            require(current.scheme.equals("https", ignoreCase = true)) {
+            require(current.scheme.equals("https", ignoreCase = true) && current.host != null && current.userInfo == null &&
+                (current.port == -1 || current.port in 1..65535)) {
                 "Сервер перенаправил подписку на небезопасное соединение."
             }
-            val connection = current.toURL().openConnection() as? HttpsURLConnection
-                ?: throw IOException("Не удалось открыть защищённое соединение.")
+            val connection = open(current)
             try {
                 connection.instanceFollowRedirects = false
                 connection.connectTimeout = CONNECT_TIMEOUT_MS
@@ -79,9 +95,15 @@ object SubscriptionFetcher {
                 connection.requestMethod = "GET"
                 connection.setRequestProperty("Accept", "text/plain, application/json, */*;q=0.5")
                 connection.setRequestProperty("User-Agent", userAgent)
+                val sameOrigin = current.host.equals(initialUri.host, ignoreCase = true) &&
+                    (if (current.port == -1) 443 else current.port) == (if (initialUri.port == -1) 443 else initialUri.port)
+                if (sameOrigin) {
+                    identity?.requestHeaders()?.forEach { (name, value) -> connection.setRequestProperty(name, value) }
+                    etag?.takeIf { it.length <= 1024 && '\r' !in it && '\n' !in it }?.let { connection.setRequestProperty("If-None-Match", it) }
+                    lastModified?.takeIf { it.length <= 128 && '\r' !in it && '\n' !in it }?.let { connection.setRequestProperty("If-Modified-Since", it) }
+                }
                 // A redirect to another origin must not receive this provider's identifier.
-                if (deviceId != null && current.host.equals(initialUri.host, ignoreCase = true) &&
-                    current.port == initialUri.port) {
+                if (deviceId != null && sameOrigin) {
                     connection.setRequestProperty("x-hwid", deviceId)
                     connection.setRequestProperty("x-device-os", "Android")
                 }
@@ -102,7 +124,18 @@ object SubscriptionFetcher {
                     connection.getHeaderField("x-hwid-max-devices-reached").equals("true", ignoreCase = true) ||
                     connection.getHeaderField("x-hwid-limit").equals("true", ignoreCase = true))
                 if (hwidMissing || deviceLimit) return Response("", hwidMissing, deviceLimit)
-                if (status !in 200..299) throw IOException("Не удалось скачать подписку (HTTP $status).")
+                fun header(name: String, limit: Int) = connection.getHeaderField(name)?.takeIf { it.length <= limit && '\r' !in it && '\n' !in it }
+                if (status == 304) return Response("", status = status, etag = header("ETag", 1024),
+                    lastModified = header("Last-Modified", 128), userInfo = header("subscription-userinfo", 2048))
+                if (status !in 200..299) {
+                    val delay = header("Retry-After", 128)?.let { value ->
+                        value.toLongOrNull()?.coerceIn(0, 86400)?.times(1000) ?: runCatching {
+                            (java.time.ZonedDateTime.parse(value, java.time.format.DateTimeFormatter.RFC_1123_DATE_TIME)
+                                .toInstant().toEpochMilli() - System.currentTimeMillis()).coerceIn(0, 86400000)
+                        }.getOrDefault(0)
+                    } ?: 0
+                    throw FetchFailure(status, delay)
+                }
                 val declaredLength = connection.contentLengthLong
                 if (declaredLength > MAX_BYTES) throw IOException("Файл подписки превышает 4 МБ.")
                 val contentType = connection.contentType.orEmpty().lowercase()
@@ -119,7 +152,8 @@ object SubscriptionFetcher {
                     }
                     output.toByteArray()
                 }
-                return Response(String(bytes, Charsets.UTF_8).removePrefix("\uFEFF"))
+                return Response(String(bytes, Charsets.UTF_8).removePrefix("\uFEFF"), status = status,
+                    etag = header("ETag", 1024), lastModified = header("Last-Modified", 128), userInfo = header("subscription-userinfo", 2048))
             } finally {
                 connection.disconnect()
             }

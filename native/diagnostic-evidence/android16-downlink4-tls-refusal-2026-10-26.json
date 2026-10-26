@@ -1,0 +1,33 @@
+{
+  "date": "2026-10-26",
+  "native_version": "1.14.3-lx.23-nova-downlink.4",
+  "serial": "emulator-5590",
+  "scope": "API36 x86_64 16KB Android TUN; H2 upload/download; packet-up; separate UID IPv4/IPv6; correct identity before/after and wrong download TLS identity refusal",
+  "result": "PASS",
+  "log_sha256": "038d72b614e4f8a8b87524f4056d2ef90aeed0eee689e1674235c7a041705c9b",
+  "counters": {
+    "upload_http": 2,
+    "download_http": 2,
+    "counters": {
+      "download": {
+        "backend_h2": 7,
+        "errors": 0,
+        "requests": 7,
+        "wrong_leg": 0,
+        "wrong_protocol": 0
+      },
+      "upload": {
+        "backend_h2": 18,
+        "errors": 2,
+        "requests": 20,
+        "wrong_leg": 0,
+        "wrong_protocol": 0
+      }
+    }
+  },
+  "limitations": [
+    "Not a physical ARM64 test",
+    "Not Reality or direct H3 server validation",
+    "Not mobile network handover"
+  ]
+}

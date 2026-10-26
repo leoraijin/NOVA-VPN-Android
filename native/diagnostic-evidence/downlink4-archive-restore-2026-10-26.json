@@ -1,0 +1,16 @@
+{
+  "date": "2026-10-26",
+  "result": "PASS corrected restoration and pinned source guard",
+  "defect": "Windows Git archive CRLF CGo source bytes differ despite normalized clean diff",
+  "fix": "restore unchanged pinned CGo files from original Git blobs; reject changes other than newline conversion",
+  "restored_folder": "native-restored-candidate12",
+  "input_archive_sha256": "42278c8d38ed5bdefffd3b28c1ceec9a538a711b218507cb022b0a3028e87210",
+  "corrected_archive_sha256": "af38cca8fb930d4a87f05002e5fddc65b15c53bc70bc58b0a88710f8788a8415",
+  "archive_payload_comparison": "All member SHA256 values identical except build/Restore-NativeSource.py; corrected helper matches current source",
+  "source_guard": "PASS pinned base, exact .4 patch, exact original CGo bytes",
+  "modules_restored": 117,
+  "offline": true,
+  "all_abi_archive_rebuild": "PASS fresh offline compilation from corrected restored sources; byte-identical to tested all-ABI AAR",
+  "rebuilt_aar_sha256": "67abf3aafeff36f5b042929d74f75fbc646aa7085a3b3bb69091874a1e70559c",
+  "elf_evidence": "downlink4-archive-rebuild-elf-2026-10-26.json"
+}

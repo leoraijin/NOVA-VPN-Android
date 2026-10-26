@@ -1,0 +1,85 @@
+{
+  "date": "2026-10-26",
+  "source_commit": "eca41490",
+  "source_archive": "NOVA-XHTTP-source-1.14.3-lx.23-nova-downlink.3-candidate9.zip",
+  "source_archive_sha256": "5a102eec58bc4d395a5423defbabef84b093f1e3d778bc75eec5dc89a1e7eca2",
+  "fresh_workspace": "native-restored-candidate9",
+  "restored_module_distributions": 117,
+  "aar_verification": {
+    "aar_sha256": "598e070a4da697edeac316ca3739f32b9554dcf17ad475346394d5971bae7f92",
+    "libraries": [
+      {
+        "abi": "arm64-v8a",
+        "bits": 64,
+        "bytes": 82634328,
+        "sha256": "6a03844cb7c0f3ba275c2f3b8818d95fe90be4f05db093447f34bd9a765ebf1f",
+        "load_alignment": [
+          16384,
+          16384,
+          16384,
+          16384
+        ],
+        "relro_end_remainder": [
+          0
+        ],
+        "checked_page_size": 16384
+      },
+      {
+        "abi": "armeabi-v7a",
+        "bits": 32,
+        "bytes": 74429960,
+        "sha256": "bab398babdf6bd7a56519caecc148db271f86a55e691b2ed3f08bc45c0c9cca2",
+        "load_alignment": [
+          16384,
+          16384,
+          16384,
+          16384
+        ],
+        "relro_end_remainder": [
+          0
+        ],
+        "checked_page_size": 4096
+      },
+      {
+        "abi": "x86_64",
+        "bits": 64,
+        "bytes": 87036968,
+        "sha256": "8d2bc826a0ca663038edf9ca502a3eb041c5e05c9e24412e0e49b3f6e5038298",
+        "load_alignment": [
+          16384,
+          16384,
+          16384,
+          16384
+        ],
+        "relro_end_remainder": [
+          0
+        ],
+        "checked_page_size": 16384
+      },
+      {
+        "abi": "x86",
+        "bits": 32,
+        "bytes": 79968004,
+        "sha256": "ea0ec5c610547d90c27d0d9de91b527ddbd861ce86174c6220607da1741a1dab",
+        "load_alignment": [
+          16384,
+          16384,
+          16384,
+          16384
+        ],
+        "relro_end_remainder": [
+          0
+        ],
+        "checked_page_size": 4096
+      }
+    ]
+  },
+  "whole_aar_byte_identical": true,
+  "logs": [
+    "native-restore-candidate9.log",
+    "native-restored9-tools-build.log",
+    "native-restored9-allabi-build.log",
+    "native-restored9-aar-verification.log"
+  ],
+  "scope": "Fresh source restore and four-ABI Go AAR build from a new module cache with GOPROXY/GOSUMDB off. Pinned prebuilt Cronet inputs are reused. No unit or device tests run in this reproduction. Independent C++ Cronet build and 16KB runtime remain open."
+}

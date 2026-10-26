@@ -1,0 +1,70 @@
+{
+  "date": "2026-10-26",
+  "environment": "Android16 API36 x86_64 16KB, canonical .3 AAR",
+  "passed": "H1 upload/H1 download: packet-up, stream-up, auto; separate-UID IPv4/IPv6; observed protocol counters",
+  "failure": "H1 upload/H2 download: stream-up IPv6 echo EOF, reproduced on two original fixture runs and one full-duplex fixture control",
+  "failed_runs": [
+    "release-api36-h1-matrix",
+    "release-api36-h1-h2-repeat",
+    "release-api36-h1-duplex-matrix"
+  ],
+  "unproven_hypothesis": "EnableFullDuplex on HTTP/1 fixture did not resolve failure; experimental source change removed",
+  "scope": "TLS reverse proxies to official Xray H2 backend; failure is not yet localized to client, proxy or Xray",
+  "pending": [
+    "Locate and fix H1/H2 stream-up failure",
+    "H2/H1, H1/H3, H3/H1 not executed due to early failure"
+  ],
+  "h1_h1_counters": {
+    "download": {
+      "backend_h2": 12,
+      "errors": 0,
+      "requests": 12,
+      "wrong_leg": 0,
+      "wrong_protocol": 0
+    },
+    "upload": {
+      "backend_h2": 22,
+      "errors": 0,
+      "requests": 22,
+      "wrong_leg": 0,
+      "wrong_protocol": 0
+    }
+  },
+  "repeat_counters": {
+    "download": {
+      "backend_h2": 8,
+      "errors": 0,
+      "requests": 8,
+      "wrong_leg": 0,
+      "wrong_protocol": 0
+    },
+    "upload": {
+      "backend_h2": 12,
+      "errors": 0,
+      "requests": 12,
+      "wrong_leg": 0,
+      "wrong_protocol": 0
+    }
+  },
+  "duplex_counters": {
+    "download": {
+      "backend_h2": 8,
+      "errors": 0,
+      "requests": 8,
+      "wrong_leg": 0,
+      "wrong_protocol": 0
+    },
+    "upload": {
+      "backend_h2": 12,
+      "errors": 0,
+      "requests": 12,
+      "wrong_leg": 0,
+      "wrong_protocol": 0
+    }
+  },
+  "log_sha256": [
+    "E1A98C2C9714FB63D9D9C2CF30E67C2E8464494670F211605665002CF3CC774F",
+    "4696FF8FBCB967B4C8060628D2F495AB650A53131A4B0501684EF1F3D8A9255A",
+    "BC1923E7B3F15EE6EFD773480B594D3B3322A284DF9EBC0BCECD16E66E243D41"
+  ]
+}

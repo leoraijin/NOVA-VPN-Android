@@ -1,0 +1,57 @@
+{
+  "date": "2026-10-26",
+  "release_gate": "NOT_PASSED",
+  "physical_device": "TECNO KM4 Android 15",
+  "recovery": {
+    "first_run": "Reality Core IPv6 timeout at cycle 5",
+    "second_run": "Reality Core 30 cycles passed; sing-box IPv4 failure at cycle 27",
+    "third_run": "Both engines passed 30 cycles and manual-stop cancellation",
+    "prior_failures_resolved": false,
+    "scope": "Physical Wi-Fi loss/return, retained TUN, separate-UID IPv4/IPv6 echo; not LTE, Doze or endurance"
+  },
+  "page16k": {
+    "device": "sdk_gphone16k_x86_64 Android 15",
+    "getconf_page_size": 16384,
+    "apk_zipalign": "passed",
+    "reality_routing": "IPv4/IPv6 and exclusion checks passed before sing-box crash",
+    "singbox": "Crashed both after Rust and in a fresh process without Rust JNI initialization",
+    "first_crash": "gvisor iovecBuffer.pullBuffer nil pointer",
+    "isolated_crash": "SIGSEGV at native PC 0xf131cc",
+    "root_cause": "unresolved; debug-symbol AAR building",
+    "standalone_control": "Go 1.25.5 and libc report 16384; 10000 mmap/malloc cycles passed"
+  },
+  "evidence": [
+    {
+      "sha256": "f114f52289e05e545e3c43111245baf5fb4839b280c85235378d361c40869591",
+      "file": "release-recovery-revisions.log"
+    },
+    {
+      "sha256": "a62d92cb28c19479f12e5764bd60c2b81a8fdeaef6933cd3ba725067c6ecc1fe",
+      "file": "release-tecno-recovery30.log"
+    },
+    {
+      "sha256": "be76e6e09e815548f923a9a91e2c9209d3d81f266f39cb0a5580e02f948886f8",
+      "file": "release-tecno-recovery30-diagnostic.log"
+    },
+    {
+      "sha256": "8f672e7ee991f6ccabb913ebd384adf3e91d5eb9ca40e17c2faa7c758de16afc",
+      "file": "release-16k-routing.log"
+    },
+    {
+      "sha256": "eddd4932ff3ba7096f95c5a22284ae44e539124191c2b016893e06f432443cb4",
+      "file": "release-16k-app-crash-context.log"
+    },
+    {
+      "sha256": "52b41d99f5b078611a5e66fe958f6ef9c06cd81718453b468432556581729042",
+      "file": "release-16k-singbox-only.log"
+    },
+    {
+      "sha256": "ad3f16dc0f35a821e55ce30a0b284516e46ee7b741b51cc0914ed31b830ca5d2",
+      "file": "release-16k-singbox-only-context.log"
+    },
+    {
+      "sha256": "83433dc456a71452b1680be4ef820c1e04643137fbe4a21ae164103632a57e4e",
+      "file": "page-size-probe\\runtime.log"
+    }
+  ]
+}

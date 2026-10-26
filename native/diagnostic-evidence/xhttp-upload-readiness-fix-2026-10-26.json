@@ -1,0 +1,25 @@
+{
+  "date": "2026-10-26",
+  "native_commit": "2b08fc5cb739f569e56fe27d0c641a0d606e1d88",
+  "confirmed_defect": "awaitRaise accepted successful download headers before upload adoption, violating SPEC077 and bypassing pending dial cancellation",
+  "fix": "Wait for upload adoption; download errors still fail immediately and pending dial cancellation remains effective",
+  "red_log_sha256": "DB6A0896A79E7AD65FB147A5FE026C85DF69DC55437C21DBC78B616B5303F1BD",
+  "green_log_sha256": "F13A15D090C96152EABDB06B34CC4710179CF7B79E1058B6B1C52F4D287C286C",
+  "passed_packages": [
+    "github.com/sagernet/sing-box/option",
+    "github.com/sagernet/sing-box/transport/v2rayxhttp"
+  ],
+  "skipped_tests": [
+    "TestIndependentDownloadOfficialXrayConcurrent",
+    "TestIndependentDownloadOfficialXray"
+  ],
+  "android_status": "Not rebuilt with this fix yet. Prior H1/H2 IPv6 failure is not proven resolved.",
+  "core_trace": "release-api36-corelog-1: Android sees IPv6 inbound and outbound; native debug trace available only for synthetic profiles",
+  "official_xray_after_fix": {
+    "result": "PASS",
+    "scope": "5 clients, 40 consecutive TLS H1/H2 stream-up connections each; alternating IPv4/IPv6; no Windows TUN",
+    "log_sha256": "03448EDBBCC490E3F93EEBAA5B77A4BE8C5472335A2A2570BA7F04EAB8B6CC1B",
+    "overlay": "native-h1-tls-reuse-overlay.json",
+    "android_failure_resolution": "Not yet verified"
+  }
+}

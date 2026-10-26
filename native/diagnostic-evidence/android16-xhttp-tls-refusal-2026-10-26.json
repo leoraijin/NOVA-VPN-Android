@@ -1,0 +1,35 @@
+{
+  "date": "2026-10-26",
+  "environment": "Android 16 API36 x86_64, PAGE_SIZE=16384",
+  "apk_sha256": "0a633f35c56a46044af63033335c09c198c170b954a7d9fab1bb43380fb65559",
+  "test_apk_sha256": "4ac31b663ac389a63d1d8280a47f0eb86283685e60af40fcf33898da970e9979",
+  "canonical_aar_sha256": "598e070a4da697edeac316ca3739f32b9554dcf17ad475346394d5971bae7f92",
+  "verified": "H2/H2 independent download TLS: positive control, wrong server identity refuses IPv4 and IPv6, positive control after refusal",
+  "instrumentation_pass": true,
+  "counters": {
+    "upload_http": 2,
+    "download_http": 2,
+    "counters": {
+      "download": {
+        "backend_h2": 8,
+        "errors": 0,
+        "requests": 8,
+        "wrong_leg": 0,
+        "wrong_protocol": 0
+      },
+      "upload": {
+        "backend_h2": 19,
+        "errors": 0,
+        "requests": 19,
+        "wrong_leg": 0,
+        "wrong_protocol": 0
+      }
+    }
+  },
+  "limitations": [
+    "Synthetic local TLS fixtures; not provider REALITY or direct Xray H3",
+    "Android 16 x86_64 16KB emulator; not physical ARM64",
+    "Wi-Fi/mobile handover untested: user has no available SIM-enabled device"
+  ],
+  "log_sha256": "9b31cb197ce55daa7b0e3c408fbb7d83777ba4b0579b693d0ea94b2eb8b554b4"
+}

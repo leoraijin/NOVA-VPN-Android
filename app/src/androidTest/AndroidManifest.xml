@@ -2,6 +2,7 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <application>
+        <receiver android:name="com.nova.vpn.android.VpnVisibilityReceiver" android:exported="true" />
         <activity android:name="com.nova.vpn.android.RealityProbeClientActivity"
             android:exported="true" android:theme="@android:style/Theme.Material.Light.NoActionBar">
             <intent-filter>
@@ -9,5 +10,6 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <activity android:name="com.nova.vpn.android.LiveHttpsProbeActivity" android:exported="true" android:theme="@android:style/Theme.Material.Light.NoActionBar" />
     </application>
 </manifest>

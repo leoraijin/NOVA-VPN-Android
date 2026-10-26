@@ -1,0 +1,114 @@
+{
+  "schema": 1,
+  "metadata_sha256": "5fe196528b0360f360135b3985cff1105f4ac0885174da1b4e5a4e9963ac9a11",
+  "library_commit": "c10c03c318db6d47bec8705c8290bad34bc32b64",
+  "build_source_commit": "049f2909701ca088c9569f6b303bba5376a2b2ff",
+  "naiveproxy_commit": "72a06c9fca0e2d228588c7f3074bf7efff3ff686",
+  "architectures": [
+    {
+      "abi": "x86",
+      "module": "github.com/sagernet/cronet-go/lib/android_386",
+      "version": "v0.0.0-20260912104006-c10c03c318db",
+      "files": [
+        {
+          "name": "libcronet.a",
+          "bytes": 70000078,
+          "sha256": "2689a22a37a3774130551e16b6a89872db66d4a74f8ab7b3e0bc7faac1458af8",
+          "published_git_blob": "5d0b6b63ad980d74db77c12f69bdb9d9df1c0d75"
+        },
+        {
+          "name": "libcronet_cgo.go",
+          "bytes": 486,
+          "sha256": "1a71617e74a380c2a01364ef3eb5974268ac93f52637cf20878369e0e2ccdd31",
+          "published_git_blob": "91cd07e6655047c2124fd8def9f0374c478d68f5"
+        }
+      ],
+      "module_license": {
+        "name": "LICENSE",
+        "bytes": 674,
+        "sha256": "2f02b7486bcfa90d115c71a20437f3906b6fd5bef81c5dc0efd341399e89d0fd",
+        "published_root_git_blob": "3e3e29e359d205307555aa41f19fb2a8415de885"
+      }
+    },
+    {
+      "abi": "x86_64",
+      "module": "github.com/sagernet/cronet-go/lib/android_amd64",
+      "version": "v0.0.0-20260912104006-c10c03c318db",
+      "files": [
+        {
+          "name": "libcronet.a",
+          "bytes": 63614414,
+          "sha256": "85d39fdb4eabc04d2427bd578b69546602e727e1ee88be2232699be668bede3a",
+          "published_git_blob": "9d0d587d2b86388bae6761df1f5a9bdabd3571e3"
+        },
+        {
+          "name": "libcronet_cgo.go",
+          "bytes": 490,
+          "sha256": "88654fe42421a82a4729cf1ad025d81ce496388c1a4f50b47804b823bbfc3ae7",
+          "published_git_blob": "5384a5bf40ce10076a1e8b3189a94a717796abca"
+        }
+      ],
+      "module_license": {
+        "name": "LICENSE",
+        "bytes": 674,
+        "sha256": "2f02b7486bcfa90d115c71a20437f3906b6fd5bef81c5dc0efd341399e89d0fd",
+        "published_root_git_blob": "3e3e29e359d205307555aa41f19fb2a8415de885"
+      }
+    },
+    {
+      "abi": "armeabi-v7a",
+      "module": "github.com/sagernet/cronet-go/lib/android_arm",
+      "version": "v0.0.0-20260912104006-c10c03c318db",
+      "files": [
+        {
+          "name": "libcronet.a",
+          "bytes": 80131608,
+          "sha256": "7987c5507b0f0bdf401b830ddaa4734b357f282fc1233aaa52973ffef9e9a5cc",
+          "published_git_blob": "a07f773247c9369c94763ffb815dca1878f7361c"
+        },
+        {
+          "name": "libcronet_cgo.go",
+          "bytes": 486,
+          "sha256": "0066e9b28f79d3dd72681d240ea1037c45ac2985577546a22e9a107789cf7702",
+          "published_git_blob": "6e4ec4ddfc1452b8c5fe1e35dda6ced212f92797"
+        }
+      ],
+      "module_license": {
+        "name": "LICENSE",
+        "bytes": 674,
+        "sha256": "2f02b7486bcfa90d115c71a20437f3906b6fd5bef81c5dc0efd341399e89d0fd",
+        "published_root_git_blob": "3e3e29e359d205307555aa41f19fb2a8415de885"
+      }
+    },
+    {
+      "abi": "arm64-v8a",
+      "module": "github.com/sagernet/cronet-go/lib/android_arm64",
+      "version": "v0.0.0-20260912104006-c10c03c318db",
+      "files": [
+        {
+          "name": "libcronet.a",
+          "bytes": 67626274,
+          "sha256": "3588acd27dfa992852ffb3225c3bddb1c65eaeea785ea4e3bfb1f927b65c8733",
+          "published_git_blob": "8f91d4c5862f87f00d27af499c48ca420e8b6cae"
+        },
+        {
+          "name": "libcronet_cgo.go",
+          "bytes": 490,
+          "sha256": "e4e47b310f057d24c464868950a61f2784005c2da9fb0b72844c0be0d8c65352",
+          "published_git_blob": "7ff10af65c00e72d68f71ae59329fe94984b96d0"
+        }
+      ],
+      "module_license": {
+        "name": "LICENSE",
+        "bytes": 674,
+        "sha256": "2f02b7486bcfa90d115c71a20437f3906b6fd5bef81c5dc0efd341399e89d0fd",
+        "published_root_git_blob": "3e3e29e359d205307555aa41f19fb2a8415de885"
+      }
+    }
+  ],
+  "limits": [
+    "Published input identity only; no C++ rebuild or runtime test.",
+    "The copied module license is the cronet-go license, not proof of all linked C++ notices.",
+    "Upstream job success is metadata, not cryptographic build attestation."
+  ]
+}

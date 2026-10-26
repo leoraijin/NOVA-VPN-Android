@@ -1,0 +1,56 @@
+{
+  "date": "2026-10-26",
+  "environment": "Android 16 API36 x86_64, PAGE_SIZE=16384",
+  "canonical_aar_sha256": "598e070a4da697edeac316ca3739f32b9554dcf17ad475346394d5971bae7f92",
+  "apk_sha256": "0a633f35c56a46044af63033335c09c198c170b954a7d9fab1bb43380fb65559",
+  "test_apk_sha256": "4ac31b663ac389a63d1d8280a47f0eb86283685e60af40fcf33898da970e9979",
+  "frontend_sha256": "be2f9425893e97c497648a01e5a36c6385a0ffba764507c50eb759e41632f880",
+  "verified": "Independent upload/download TLS, observed H2/H3 and H3/H2, packet-up/stream-up/auto, separate-UID IPv4/IPv6 TUN",
+  "pairs": [
+    {
+      "upload_http": 2,
+      "download_http": 3,
+      "counters": {
+        "download": {
+          "backend_h2": 12,
+          "errors": 0,
+          "requests": 12,
+          "wrong_leg": 0,
+          "wrong_protocol": 0
+        },
+        "upload": {
+          "backend_h2": 22,
+          "errors": 0,
+          "requests": 22,
+          "wrong_leg": 0,
+          "wrong_protocol": 0
+        }
+      }
+    },
+    {
+      "upload_http": 3,
+      "download_http": 2,
+      "counters": {
+        "download": {
+          "backend_h2": 11,
+          "errors": 0,
+          "requests": 11,
+          "wrong_leg": 0,
+          "wrong_protocol": 0
+        },
+        "upload": {
+          "backend_h2": 20,
+          "errors": 0,
+          "requests": 20,
+          "wrong_leg": 0,
+          "wrong_protocol": 0
+        }
+      }
+    }
+  ],
+  "limitations": [
+    "TLS reverse proxies to official Xray HTTP2 backend, not direct Xray H3 ingress",
+    "Not Reality protocol, ARM64 H3, long sessions or network-change recovery"
+  ],
+  "log_sha256": "0ab266e31f2506040212a9148c4c32bb7a3c0109e9628a2547e5b63af7143c8b"
+}

@@ -1,0 +1,31 @@
+{
+  "date": "2026-10-26",
+  "result": "PASS five repeats after fixture-owned target cleanup",
+  "native_revision": "fe2e2f52ae0b360b95b6cd82900208f1d393f357",
+  "test": "TestDownloadRealityRejectsOtherLegIdentity",
+  "repeats": 5,
+  "negative_cases_per_repeat": [
+    "public-key",
+    "short-id",
+    "sni",
+    "upload-key"
+  ],
+  "trusted_https_controls": 40,
+  "log_sha256": "f07507c526a850fd18dd5a23743436056d3062cf013f2876f5956fdb4625e3c4",
+  "initial_failed_log_sha256": "a07501765038d5bf43d914e59776d36e98e062c1febcf6c77519f345121072dd",
+  "initial_failure": "All authentication checks rejected correctly; final fixture connection cleanup timed out after 5s",
+  "fixture_change": "Close owned camouflage client connections before waiting for frontend workers; same 5s limit and assertions retained",
+  "fixture": {
+    "target": "transport/v2rayxhttp/download_reality_lx_test.go",
+    "target_sha256_lf": "7355bb40877619ca088b9dff7b7f69f1ca2c0d06bd4c1ac626092cf467f0480d",
+    "fixture": "trusted-camouflage_test.go",
+    "fixture_sha256": "3e0a4674444d02adde7473983dcc20e2fb50f9964ff2c3f965a9b190b3969761",
+    "tags": "with_xhttp,with_quic,with_utls,with_reality"
+  },
+  "trust_scope": "Ephemeral CA only in isolated Go test process, x509.SetFallbackRoots plus GODEBUG=x509usefallbackroots=1; no Windows certificate changes",
+  "limits": [
+    "Native sing-box REALITY frontend, not direct official Xray Reality ingress",
+    "Not Android trust-store/runtime acceptance",
+    "Initial fixture failure retained; passing repeats do not erase it"
+  ]
+}

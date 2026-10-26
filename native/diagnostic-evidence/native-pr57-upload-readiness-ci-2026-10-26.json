@@ -1,0 +1,31 @@
+{
+  "date": "2026-10-26",
+  "pr": "https://github.com/Leadaxe/sing-box-lx/pull/57",
+  "draft": true,
+  "head_sha": "fe2e2f52ae0b360b95b6cd82900208f1d393f357",
+  "runtime_fix_revision": "2b08fc5c",
+  "published_to": "leoraijin/sing-box-lx:codex/xhttp-independent-downlink",
+  "source_patch_sha256": "cc2ed1a5cb930c8342c28eb4809e70f84df8990b8631f2fa963c61d50e0fa1e3",
+  "description_updated_and_verified": true,
+  "ci_url": "https://github.com/leoraijin/sing-box-lx/actions/runs/40314651170",
+  "ci_at_observation": {
+    "linux_race_count5": "success",
+    "windows_format_vet_tests": "success",
+    "windows_extended_soak": "in_progress",
+    "windows_baseline_canonical_cli_checks": "pending"
+  },
+  "limits": [
+    "PR remains draft and unmerged",
+    "Full baseline vet has previously recorded unchanged unsafe.Pointer warnings",
+    "NOVA stable APK/signing/production AAR unchanged"
+  ],
+  "ci_final": {
+    "status": "completed",
+    "conclusion": "success",
+    "head_sha": "fe2e2f52ae0b360b95b6cd82900208f1d393f357",
+    "linux_race_count5": "success",
+    "windows_format_vet_tests": "success",
+    "windows_extended_soak": "success",
+    "windows_baseline_canonical_cli_checks": "success"
+  }
+}

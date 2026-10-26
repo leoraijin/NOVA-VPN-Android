@@ -1,0 +1,124 @@
+{
+  "date": "2026-10-26",
+  "device": "TECNO KM4",
+  "scenarios": [
+    {
+      "style": "IOS_LIQUID_GLASS",
+      "theme": "LIGHT",
+      "run": "tecno-compact-layout-verified",
+      "app_sha256": "7c5d65b4489eedfcf2dacff95789b1dfa50193508f16826b0156b2db6b557669",
+      "log_sha256": "19f2e82694db3df065ad7fb4f13fc01247b5467280c26695c37950c75375e22f",
+      "screenshots": {
+        "portrait": "b312678f0ebec8293111729e9cf0252a52d8868e8b942f02d21e6797c00e6026",
+        "landscape": "29e09480a4999d7ddc6d3cb413dfba15f69a7f28b8781adfc689b8d802c22c86",
+        "recreated": "1aa106c23b7b114791f0542219e3c88bb076ad009a6302a0fd24ab25b16656db"
+      },
+      "landscape_nonoverlap_assertion": true
+    },
+    {
+      "style": "IOS_LIQUID_GLASS",
+      "theme": "DARK",
+      "run": "tecno-compact-layout-verified",
+      "app_sha256": "7c5d65b4489eedfcf2dacff95789b1dfa50193508f16826b0156b2db6b557669",
+      "log_sha256": "19f2e82694db3df065ad7fb4f13fc01247b5467280c26695c37950c75375e22f",
+      "screenshots": {
+        "portrait": "cff633543d77afa4d73c76494235d738e932e9b36c34d8a7da7064249dc8fb88",
+        "landscape": "822a58dc2200b469d009a058150fa7d8ca1aa8253de478da6b2186cf062bc0b9",
+        "recreated": "31e5d97302adc16c43cebbfaeeef541b599048fa974aba4fd4ec10d6797f367e"
+      },
+      "landscape_nonoverlap_assertion": true
+    },
+    {
+      "style": "MATERIAL_YOU",
+      "theme": "LIGHT",
+      "run": "tecno-final-eight-live-build",
+      "app_sha256": "fbb1d28bf71e725a620963f3d219b654cf68abc4ad6e3364895d942d23a882b3",
+      "log_sha256": "3b8aecc7011612098348582a7f769182579a5ce732898688cacca53895da397a",
+      "screenshots": {
+        "portrait": "79b8f4fc83b11ef7ac5fbdbc953c8d1df53e1cd3cbc566fae8b02938438e7b23",
+        "landscape": "8f8565f43687352ce3f8a8fd3f7f5e9a79c78476a3e7cc7f465ea9fa2a44d2c7",
+        "recreated": "40bd18de3b02ea4adff512bfb07ae745a145559f5550329bfdbfaa55fdcbdee0"
+      },
+      "landscape_nonoverlap_assertion": false
+    },
+    {
+      "style": "MATERIAL_YOU",
+      "theme": "DARK",
+      "run": "tecno-final-eight-live-build",
+      "app_sha256": "fbb1d28bf71e725a620963f3d219b654cf68abc4ad6e3364895d942d23a882b3",
+      "log_sha256": "3b8aecc7011612098348582a7f769182579a5ce732898688cacca53895da397a",
+      "screenshots": {
+        "portrait": "44f3ebd46552eb34c32ba3650bd1294110f92f8c83d8ae87217c085f28179b06",
+        "landscape": "82d116da8e23aab9cdf385daaee5b457ca949f1469edd67a54bc4e71335875ab",
+        "recreated": "25c6b62575be441e9be368115737b7461d5da363f7e21c79e7374e42b1a4a011"
+      },
+      "landscape_nonoverlap_assertion": false
+    },
+    {
+      "style": "ONE_UI",
+      "theme": "LIGHT",
+      "run": "tecno-landscape-visibility-final",
+      "app_sha256": "7c5d65b4489eedfcf2dacff95789b1dfa50193508f16826b0156b2db6b557669",
+      "log_sha256": "b7bfce4c932c01002b8c78766fd5ffdb31014d3ca2b5ba37291737517d6e0c45",
+      "screenshots": {
+        "portrait": "da7655b9958963317510bb347053484c45ac6cc75597d53679e138e8b50f0b39",
+        "landscape": "28186407a7be183fcd8aa3402d7e9285b8000212ea2e6b9aa2cbf653dcaa845d",
+        "recreated": "e686ef741fac72779db86a88defd0c3d599c3e7e11a13ad378fb0c7122f7b3e7"
+      },
+      "landscape_nonoverlap_assertion": true
+    },
+    {
+      "style": "ONE_UI",
+      "theme": "DARK",
+      "run": "tecno-landscape-visibility-final",
+      "app_sha256": "7c5d65b4489eedfcf2dacff95789b1dfa50193508f16826b0156b2db6b557669",
+      "log_sha256": "b7bfce4c932c01002b8c78766fd5ffdb31014d3ca2b5ba37291737517d6e0c45",
+      "screenshots": {
+        "portrait": "aed61ab47615476f0c05140ce5ceaab5d265c97a80953b9856319bc6b267d503",
+        "landscape": "35b30eb5be497671a85273a4b1be81fc066ae6198359f0e6091f11c253796be7",
+        "recreated": "26e65b2d21383d5c8945b9f21cdad5d6252c214b9917943fa270c31cfd9ae664"
+      },
+      "landscape_nonoverlap_assertion": true
+    },
+    {
+      "style": "WINDOWS_11",
+      "theme": "LIGHT",
+      "run": "tecno-landscape-visibility-final",
+      "app_sha256": "7c5d65b4489eedfcf2dacff95789b1dfa50193508f16826b0156b2db6b557669",
+      "log_sha256": "ef10ce25681749da4108361b6244a3af5aab080708038b721caa03517540ab7b",
+      "screenshots": {
+        "portrait": "20cde1bca8982338011c99c7ae6943ebf393207c4cbe849691abecbbe7ab6995",
+        "landscape": "a3bb42268db1c00c97dbb4ec99f7c0517e1cc7e6a9d6c9db031580221a2ed473",
+        "recreated": "757ab6aa7b01afc39a3d6ec6b99b4bb7f651aa38a9fa1de811a0bc1ee574daa7"
+      },
+      "landscape_nonoverlap_assertion": true
+    },
+    {
+      "style": "WINDOWS_11",
+      "theme": "DARK",
+      "run": "tecno-landscape-visibility-final",
+      "app_sha256": "7c5d65b4489eedfcf2dacff95789b1dfa50193508f16826b0156b2db6b557669",
+      "log_sha256": "ef10ce25681749da4108361b6244a3af5aab080708038b721caa03517540ab7b",
+      "screenshots": {
+        "portrait": "e5be6cfe5b99e7b74880733d6bc5b99158dd8bd3116a4d346aaaf40c74e6ef8e",
+        "landscape": "1d05c9951418e183d5b5717dfc90acc69982d8a61c2e55294f153e49d076cb0a",
+        "recreated": "7bcfa8239eb4aeca1dbed1b5fc10da18ad94f73fbc38d32e7a591065784f25a1"
+      },
+      "landscape_nonoverlap_assertion": true
+    }
+  ],
+  "checks": [
+    "2000-node filtering",
+    "personal name and order persistence",
+    "rotation",
+    "Activity recreation",
+    "selection retained"
+  ],
+  "source_ui_test_sha256": "407c0a5d7fbb739607a0cb3e9b7123803ba395966d51bed10b96759e10718105",
+  "notes": [
+    "Material scenarios passed before compact iOS/One UI-only product edits; their code was unchanged.",
+    "iOS/One UI/Windows final scenarios assert title bounds above navigation after scrolling into view.",
+    "All screenshots contain synthetic profiles.",
+    "Earlier failed runs retained outside repository; neither is counted as passing."
+  ]
+}

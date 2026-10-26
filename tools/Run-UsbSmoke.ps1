@@ -1,11 +1,12 @@
-param(
+﻿param(
     [string] $AdbPath = 'adb',
     [string] $LogDirectory,
+    [ValidateSet('com.nova.vpn.android.usbtest.realitypreview','com.nova.vpn.android.usbtest.completionpreview')]
+    [string] $Package = 'com.nova.vpn.android.usbtest.realitypreview',
     [switch] $BypassOnly
 )
 $ErrorActionPreference = 'Stop'
 $source = Split-Path $PSScriptRoot -Parent
-$package = 'com.nova.vpn.android.usbtest.realitypreview'
 if (-not $LogDirectory) { $LogDirectory = Join-Path $source 'build/usb-smoke' }
 New-Item -ItemType Directory -Path $LogDirectory -Force | Out-Null
 $metadata = Get-Content -LiteralPath (Join-Path $source 'app/build/outputs/apk/realitypreview/output-metadata.json') -Raw | ConvertFrom-Json

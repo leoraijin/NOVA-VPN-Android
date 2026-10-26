@@ -1,0 +1,254 @@
+{
+  "date": "2026-10-26",
+  "result": "PASS",
+  "native_version": "1.14.3-lx.23-nova-downlink.4",
+  "android": "API36 x86_64 16KB emulator-5590",
+  "installed_product_apk_sha256": "2b4255a42d4af3a60c4ce5d54997c4b5f57f319cee4d533d95491880ab7e731e",
+  "installed_test_apk_sha256": "273dece3d57381616324330dc71c09d4c403fb342f26b2b5ba240baf074149a6",
+  "cases": [
+    {
+      "transport": "h2",
+      "case": "ip-domain",
+      "modes": [
+        "packet-up",
+        "stream-up",
+        "auto"
+      ],
+      "dns_counters": [
+        {
+          "download_queries": 4,
+          "upload_queries": 0
+        },
+        {
+          "download_queries": 4,
+          "upload_queries": 0
+        },
+        {
+          "download_queries": 4,
+          "upload_queries": 0
+        }
+      ],
+      "verification": {
+        "result": "PASS",
+        "serial": "emulator-5590",
+        "http_version": 2,
+        "test": "packet-up/stream-up/auto",
+        "security": "tls",
+        "bootstrap_case": "ip-domain",
+        "scope": "Direct official Xray ingress; Android TUN; separate-UID IPv4/IPv6; imported download_settings",
+        "android_log_sha256": "29b50f5f2b58c51b085cfed37925ac0454893b93976dc70dfbf2d2ceb357b0b6",
+        "fixture_config_sha256": "24549bbe62248505fe11fde546507d22cc1da61d9c373c72175b87dc7ae03836",
+        "limits": [
+          "Same endpoint/path for upload and download",
+          "Emulator only",
+          "Not network handover"
+        ]
+      }
+    },
+    {
+      "transport": "h2",
+      "case": "domain-domain",
+      "modes": [
+        "packet-up",
+        "stream-up",
+        "auto"
+      ],
+      "dns_counters": [
+        {
+          "download_queries": 4,
+          "upload_queries": 4
+        },
+        {
+          "download_queries": 4,
+          "upload_queries": 4
+        },
+        {
+          "download_queries": 4,
+          "upload_queries": 4
+        }
+      ],
+      "verification": {
+        "result": "PASS",
+        "serial": "emulator-5590",
+        "http_version": 2,
+        "test": "packet-up/stream-up/auto",
+        "security": "tls",
+        "bootstrap_case": "domain-domain",
+        "scope": "Direct official Xray ingress; Android TUN; separate-UID IPv4/IPv6; imported download_settings",
+        "android_log_sha256": "740f551c4aef35333fb47204583255321126c9b8ed603390eec92330741275f0",
+        "fixture_config_sha256": "24549bbe62248505fe11fde546507d22cc1da61d9c373c72175b87dc7ae03836",
+        "limits": [
+          "Same endpoint/path for upload and download",
+          "Emulator only",
+          "Not network handover"
+        ]
+      }
+    },
+    {
+      "transport": "h3",
+      "case": "ip-domain",
+      "modes": [
+        "packet-up",
+        "stream-up",
+        "auto"
+      ],
+      "dns_counters": [
+        {
+          "download_queries": 4,
+          "upload_queries": 0
+        },
+        {
+          "download_queries": 4,
+          "upload_queries": 0
+        },
+        {
+          "download_queries": 4,
+          "upload_queries": 0
+        }
+      ],
+      "verification": {
+        "result": "PASS",
+        "serial": "emulator-5590",
+        "http_version": 3,
+        "test": "packet-up/stream-up/auto",
+        "security": "tls",
+        "bootstrap_case": "ip-domain",
+        "scope": "Direct official Xray ingress; Android TUN; separate-UID IPv4/IPv6; imported download_settings",
+        "android_log_sha256": "ca2eff322c7569b8485bd5b5ec8a38eb1aa5b5a63d08b9096905bc54dda8ad0c",
+        "fixture_config_sha256": "575530a2d1eaa3f04cb75b3998907bd7fe54e730a3a3b642401ca583ca9fc710",
+        "limits": [
+          "Same endpoint/path for upload and download",
+          "Emulator only",
+          "Not network handover"
+        ]
+      }
+    },
+    {
+      "transport": "h3",
+      "case": "domain-domain",
+      "modes": [
+        "packet-up",
+        "stream-up",
+        "auto"
+      ],
+      "dns_counters": [
+        {
+          "download_queries": 4,
+          "upload_queries": 4
+        },
+        {
+          "download_queries": 4,
+          "upload_queries": 4
+        },
+        {
+          "download_queries": 4,
+          "upload_queries": 4
+        }
+      ],
+      "verification": {
+        "result": "PASS",
+        "serial": "emulator-5590",
+        "http_version": 3,
+        "test": "packet-up/stream-up/auto",
+        "security": "tls",
+        "bootstrap_case": "domain-domain",
+        "scope": "Direct official Xray ingress; Android TUN; separate-UID IPv4/IPv6; imported download_settings",
+        "android_log_sha256": "0b88b45d4f66377e5a3d40ae8cb11b2e35df9081006fcc8f9a6e47e956b26898",
+        "fixture_config_sha256": "575530a2d1eaa3f04cb75b3998907bd7fe54e730a3a3b642401ca583ca9fc710",
+        "limits": [
+          "Same endpoint/path for upload and download",
+          "Emulator only",
+          "Not network handover"
+        ]
+      }
+    },
+    {
+      "transport": "reality",
+      "case": "ip-domain",
+      "modes": [
+        "packet-up",
+        "stream-up",
+        "auto"
+      ],
+      "dns_counters": [
+        {
+          "download_queries": 4,
+          "upload_queries": 0
+        },
+        {
+          "download_queries": 4,
+          "upload_queries": 0
+        },
+        {
+          "download_queries": 4,
+          "upload_queries": 0
+        }
+      ],
+      "verification": {
+        "result": "PASS",
+        "serial": "emulator-5590",
+        "http_version": 2,
+        "test": "packet-up/stream-up/auto",
+        "security": "reality",
+        "bootstrap_case": "ip-domain",
+        "scope": "Direct official Xray ingress; Android TUN; separate-UID IPv4/IPv6; imported download_settings",
+        "android_log_sha256": "b61d5bbffd779f77a33b2431960ed186be79da292aa06f0f2320130a8cb97a99",
+        "fixture_config_sha256": "2d784d6395fbb78f1ea09c505fdeb59553ae5478b5f554a6f1e2e2b49e21d4e6",
+        "limits": [
+          "Same endpoint/path for upload and download",
+          "Emulator only",
+          "Not network handover"
+        ]
+      }
+    },
+    {
+      "transport": "reality",
+      "case": "domain-domain",
+      "modes": [
+        "packet-up",
+        "stream-up",
+        "auto"
+      ],
+      "dns_counters": [
+        {
+          "download_queries": 4,
+          "upload_queries": 4
+        },
+        {
+          "download_queries": 4,
+          "upload_queries": 4
+        },
+        {
+          "download_queries": 4,
+          "upload_queries": 4
+        }
+      ],
+      "verification": {
+        "result": "PASS",
+        "serial": "emulator-5590",
+        "http_version": 2,
+        "test": "packet-up/stream-up/auto",
+        "security": "reality",
+        "bootstrap_case": "domain-domain",
+        "scope": "Direct official Xray ingress; Android TUN; separate-UID IPv4/IPv6; imported download_settings",
+        "android_log_sha256": "0b6fef6b86835eaf1bb7234c20787b38da313117af487bea01b2289d9dbd33ee",
+        "fixture_config_sha256": "2d784d6395fbb78f1ea09c505fdeb59553ae5478b5f554a6f1e2e2b49e21d4e6",
+        "limits": [
+          "Same endpoint/path for upload and download",
+          "Emulator only",
+          "Not network handover"
+        ]
+      }
+    }
+  ],
+  "vpn_start_stop_cases": 18,
+  "separate_uid_ipv4_ipv6_flows": 36,
+  "original_dns_fixture_regression_log_sha256": "23f6f4c79b116d438a3dd1eabac41c20935ad81abaf17157dfe33b14f8e1e0f7",
+  "test_configuration": "Production factory resolver tag retained; only its test server replaced with owned direct loopback UDP DNS. Unique per-mode .test names resolve to emulator host alias. No forwarding/system-cache reliance. TLS/Reality identities retained.",
+  "limits": [
+    "Test uses a controlled bootstrap DNS server, not actual system DNS changes",
+    "Own VPN app UID is excluded by production policy, so this does not independently prove every protect/bind callback",
+    "Not physical ARM64, cellular handover or network-generation transition",
+    "Both directions resolve to same official Xray fixture address/path"
+  ]
+}

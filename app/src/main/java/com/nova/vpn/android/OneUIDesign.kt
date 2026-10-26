@@ -38,8 +38,11 @@ internal fun OneUIFrame(title: String, subtitle: String, tutorialTargetIndex: In
     val compact = config.screenHeightDp < 650 || config.fontScale > 1.3f
     val step = LocalTutorialStep.current
     LaunchedEffect(step, tutorialTargetIndex) { if (step != null) state.scrollToItem(tutorialTargetIndex) }
-    Column(Modifier.fillMaxSize()) {
-        Crossfade(collapsed, label = "one-ui-header") { small ->
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+      // The server filters can leave a short viewport even on a tall phone.
+      val shortWindow = maxHeight < 280.dp
+      Column(Modifier.fillMaxSize()) {
+        if (!shortWindow) Crossfade(collapsed, label = "one-ui-header") { small ->
             Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).padding(horizontal = 24.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(if (small) title else "NOVA VPN", fontSize = if (small) 20.sp else 13.sp,
                     fontWeight = if (small) FontWeight.SemiBold else FontWeight.Medium,
@@ -49,16 +52,18 @@ internal fun OneUIFrame(title: String, subtitle: String, tutorialTargetIndex: In
         LazyColumn(state = state, contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp),
             modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             item(contentType = "one-ui-viewing-area") {
-                Column(Modifier.fillMaxWidth().heightIn(min = if (compact) 120.dp else 206.dp).padding(horizontal = 12.dp, vertical = 20.dp),
+                Column(Modifier.fillMaxWidth().heightIn(min = if (shortWindow) 64.dp else if (compact) 120.dp else 206.dp)
+                    .padding(horizontal = 12.dp, vertical = if (shortWindow) 8.dp else 20.dp),
                     verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
-                    icon?.let { Icon(it, null, Modifier.size(42.dp), tint = MaterialTheme.colorScheme.primary); Spacer(Modifier.height(12.dp)) }
-                    Text(title, fontSize = 38.sp, lineHeight = 44.sp, fontWeight = FontWeight.Normal, textAlign = TextAlign.Center)
-                    Spacer(Modifier.height(10.dp))
+                    icon?.takeUnless { shortWindow }?.let { Icon(it, null, Modifier.size(42.dp), tint = MaterialTheme.colorScheme.primary); Spacer(Modifier.height(12.dp)) }
+                    Text(title, fontSize = if (shortWindow) 24.sp else 38.sp, lineHeight = if (shortWindow) 30.sp else 44.sp, fontWeight = FontWeight.Normal, textAlign = TextAlign.Center)
+                    Spacer(Modifier.height(if (shortWindow) 4.dp else 10.dp))
                     Text(subtitle, fontSize = 14.sp, lineHeight = 20.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
                 }
             }
             content()
         }
+      }
     }
 }
 
@@ -102,6 +107,7 @@ internal fun OneUIHome(profiles: List<ImportedProfile>, selectedId: String, prof
     var choose by rememberSaveable { mutableStateOf(false) }
     var details by rememberSaveable { mutableStateOf(false) }
     val status = when {
+        state.recoveryStatus != null -> state.recoveryText().orEmpty()
         error != null || state.warning != null -> "Нужна проверка"
         state.trafficChecking -> "Проверяем доступ через VPN"
         state.trafficVerified -> "Доступ через VPN подтверждён"
@@ -112,14 +118,14 @@ internal fun OneUIHome(profiles: List<ImportedProfile>, selectedId: String, prof
     OneUIFrame("Подключение", status, icon = Icons.Rounded.Shield) {
         item {
             val control = if (profile == null && !state.connected) Modifier.clickable(role = Role.Button, onClick = onManage)
-                else Modifier.toggleable(state.connected, enabled = !state.connecting, role = Role.Switch, onValueChange = { onToggle() })
+                else Modifier.toggleable(state.connected, role = Role.Switch, onValueChange = { onToggle() })
             Surface(Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp)).then(control)
                 .then(if (LocalTutorialStep.current == TutorialStep.Connect) Modifier.border(2.dp, c.primary, RoundedCornerShape(24.dp)) else Modifier),
                 color = if (state.connected) c.primary else c.surface, contentColor = if (state.connected) c.onPrimary else c.onSurface,
                 shape = RoundedCornerShape(24.dp)) {
                 Row(Modifier.padding(24.dp).heightIn(min = 40.dp), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
-                        Text(if (profile == null && !state.connected) "Добавить сервер" else if (state.connecting) "Подключение…" else if (state.connected) "Включено" else "Выключено", fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
+                        Text(if (profile == null && !state.connected) "Добавить сервер" else if (state.connecting) "Отменить подключение" else if (state.connected) "Включено" else "Выключено", fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
                         Text(if (profile == null && !state.connected) "Для первого подключения" else if (state.connected) "Нажмите, чтобы отключить" else "Нажмите, чтобы подключить", fontSize = 13.sp, modifier = Modifier.padding(top = 4.dp))
                     }
                     Spacer(Modifier.width(12.dp))
@@ -148,7 +154,7 @@ internal fun OneUIHome(profiles: List<ImportedProfile>, selectedId: String, prof
                         profiles.forEach { p ->
                             Row(Modifier.fillMaxWidth().selectable(p.id == selectedId, role = Role.RadioButton,
                                 onClick = { onSelect(p.id); choose = false }).padding(horizontal = 20.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Text(p.name, Modifier.weight(1f)); RadioButton(p.id == selectedId, null)
+                                Text(p.displayName, Modifier.weight(1f)); RadioButton(p.id == selectedId, null)
                             }
                         }
                         NovaTextButton(onManage, Modifier.padding(horizontal = 16.dp)) { Text("Все серверы") }
@@ -165,7 +171,7 @@ internal fun OneUIHome(profiles: List<ImportedProfile>, selectedId: String, prof
                     Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text("NOVA VPN ${BuildConfig.VERSION_NAME}", fontSize = 13.sp)
                         Text("Журнал не содержит ключей, адресов сервера и истории сайтов.", fontSize = 13.sp, color = c.onSurfaceVariant)
-                        NovaTextButton(onCopy) { Text("Скопировать диагностику") }
+                        NovaTextButton(onCopy) { Text("Открыть диагностику") }
                     }
                 }
             }
@@ -262,7 +268,8 @@ internal fun OneUIServers(profiles: List<ImportedProfile>, selectedId: String, s
                 Row(Modifier.fillMaxWidth().selectable(profile.id == selectedId, role = Role.RadioButton, onClick = { onSelect(profile.id) })
                     .heightIn(min = 76.dp).padding(start = 20.dp, end = 8.dp, top = 12.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text(profile.name, fontSize = 17.sp, lineHeight = 23.sp, fontWeight = FontWeight.Medium)
+                        Text(profile.displayName, fontSize = 17.sp, lineHeight = 23.sp, fontWeight = FontWeight.Medium)
+                        FavoriteServerButton(profile)
                         Text(profile.protocol.uppercase() + if (profile.id == selectedId) " · Выбран" else "", fontSize = 13.sp, color = MaterialTheme.colorScheme.primary)
                     }
                     ProfileActionsMenu(profile, busy, onWatch, onDelete)

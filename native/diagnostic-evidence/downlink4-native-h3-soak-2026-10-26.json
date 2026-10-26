@@ -1,0 +1,52 @@
+{
+  "date": "2026-10-26",
+  "result": "PASS",
+  "native_revision": "fe2e2f52ae0b360b95b6cd82900208f1d393f357",
+  "native_version": "1.14.3-lx.23-nova-downlink.4",
+  "runs": [
+    {
+      "mode": "auto",
+      "seconds": 300,
+      "workers": 12,
+      "peak": 12,
+      "exchanges": 35124,
+      "payload_bytes": 575471616
+    },
+    {
+      "mode": "packet-up",
+      "seconds": 300,
+      "workers": 12,
+      "peak": 12,
+      "exchanges": 35142,
+      "payload_bytes": 575766528
+    },
+    {
+      "mode": "stream-up",
+      "seconds": 300,
+      "workers": 12,
+      "peak": 12,
+      "exchanges": 35312,
+      "payload_bytes": 578551808
+    }
+  ],
+  "total_exchanges": 105578,
+  "total_payload_bytes": 1729789952,
+  "log_sha256": "22efacaa81ee62834b430bc56ab46db4686cce27915461270f7d9983a9c4bdfb",
+  "fixture": {
+    "target": "transport/v2rayxhttp/download_load_windows_test.go",
+    "target_sha256_lf": "bd669745855e68e1dba2df4a7f54e98431c1fdb0597b2f5b5067b1ee1112b185",
+    "fixture": "persistent-h3_test.go",
+    "fixture_sha256": "89ca451428eba534f285310b9cf43ebe6e49ccb38653175d8983d77cf4022dcc",
+    "tags": "with_xhttp,with_quic,with_utls,with_reality"
+  },
+  "assertions": [
+    "Independent directional pools and per-client usage limits",
+    "12 persistent concurrent VLESS sessions per mode",
+    "Exact worker/sequence echo, correct legs and released connection leases"
+  ],
+  "limits": [
+    "Windows native H3/H3 frontends to official H2 Xray backend",
+    "Not direct official H3 ingress endurance or Android TUN endurance",
+    "Proxy cancellation messages during teardown are present; not a zero-error-log claim"
+  ]
+}

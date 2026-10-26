@@ -1,0 +1,59 @@
+name: Android completion checks
+on:
+  push:
+    branches: ['codex/android-completion-20261025']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: android-completion-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  schedule:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
+          log-accepted-android-sdk-licenses: false
+      - name: Compile and run unit checks
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p work/completion
+          bash gradlew --no-daemon '-Dorg.gradle.jvmargs=-Xmx4g -Dfile.encoding=UTF-8' :app:testOptimizedUnitTest :app:assembleRealitypreview :app:assembleRealitypreviewAndroidTest -PnovaRealitySmoke -PnovaUsbTest -PnovaRealityAbi=x86_64 2>&1 | tee work/completion/build.log
+      - name: Cache isolated Android system image
+        uses: actions/cache@v4
+        with:
+          path: /usr/local/lib/android/sdk/system-images/android-35/default/x86_64
+          key: nova-android35-default-x86_64-v1
+      - name: Enable KVM in isolated runner
+        run: sudo chmod 666 /dev/kvm
+      - name: Android WorkManager race and failure checks
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: default
+          arch: x86_64
+          profile: pixel_2
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none -memory 2048
+          disable-animations: true
+          script: bash tools/Run-ScheduleChecksCi.sh
+      - name: Save verification evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-completion-schedule-evidence
+          path: |
+            work/completion/
+            app/build/test-results/testOptimizedUnitTest/
+          if-no-files-found: warn
+          retention-days: 14

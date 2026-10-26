@@ -1,0 +1,50 @@
+{
+  "date": "2026-10-26",
+  "result": "PASS",
+  "native_revision": "2b08fc5cb739f569e56fe27d0c641a0d606e1d88",
+  "native_version": "1.14.3-lx.23-nova-downlink.4",
+  "official_xray": "26.10.21",
+  "scope": "Windows native loopback interop; distinct H2 upload/download frontend paths; official H2 Xray backend; persistent VLESS echo; 12 concurrent sessions per mode",
+  "log_sha256": "431977d13cef9bb22f279ee0b161d687240b1bf19471b7076ea9400148a54569",
+  "runs": [
+    {
+      "mode": "auto",
+      "duration_seconds": 300,
+      "workers": 12,
+      "peak": 12,
+      "exchanges": 34237,
+      "payload_bytes": 560939008
+    },
+    {
+      "mode": "packet-up",
+      "duration_seconds": 300,
+      "workers": 12,
+      "peak": 12,
+      "exchanges": 35068,
+      "payload_bytes": 574554112
+    },
+    {
+      "mode": "stream-up",
+      "duration_seconds": 300,
+      "workers": 12,
+      "peak": 12,
+      "exchanges": 35109,
+      "payload_bytes": 575225856
+    }
+  ],
+  "total_exchanges": 104414,
+  "total_payload_bytes": 1710718976,
+  "assertions": [
+    "Exact worker/sequence payload echo, no cross-session corruption",
+    "Independent upload/download XMUX pools",
+    "Per-client concurrent usage within configured limits",
+    "All 12 sessions actually concurrent",
+    "Expected upload and download leg counts, no wrong legs",
+    "No remaining download leases after connections close"
+  ],
+  "limits": [
+    "Native Windows test, not Android TUN endurance",
+    "H2/H2, not H3 or Reality soak",
+    "No physical network transitions or battery assessment"
+  ]
+}

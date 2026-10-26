@@ -1,0 +1,88 @@
+{
+  "date": "2026-10-26",
+  "result": "Candidate inventory verified; full linked NOTICE remains open",
+  "inventory_sha256": "097f2b6a924c4b6897ab786f5ef6c5337df6e7c5d36cb06f17acd7fc13e304c6",
+  "source_commit": "72a06c9fca0e2d228588c7f3074bf7efff3ff686",
+  "source_archive_sha256": "396d4ad6f5bf8ff812f915f0e21281748d7009773fa1bf182cd765f130fd9b19",
+  "published_library_commit": "c10c03c318db6d47bec8705c8290bad34bc32b64",
+  "source_notice_documents": 37,
+  "chromium_metadata_documents": 36,
+  "supplemental_notice_documents": 2,
+  "object_mapping": {
+    "unique-basename": 2145,
+    "ambiguous": 160,
+    "unmatched/generated": 377
+  },
+  "declared_missing_license_paths": [],
+  "supplemental_components": [
+    {
+      "component_id": "perfetto",
+      "upstream_repository": "google/perfetto",
+      "revision": "9ede949f025303868fa0c42418f122ac47312539",
+      "license_file": "LICENSE",
+      "license_sha256": "9a682a56cffc9524dfa9b0b1c0dca9cb81a19e96d5bd0793aaf02c08a95ee7ca",
+      "source_url": "https://raw.githubusercontent.com/google/perfetto/9ede949f025303868fa0c42418f122ac47312539/LICENSE",
+      "correspondence": {
+        "deps_commit_match": true,
+        "source_sample": {
+          "equal_bytes": true,
+          "equal_lf": true,
+          "source_sha256": "86e682930a3a40e2aabfb4a4f14d17e5c76d028d85dd0bb74ab9cf0ac137b85f",
+          "upstream_sha256": "86e682930a3a40e2aabfb4a4f14d17e5c76d028d85dd0bb74ab9cf0ac137b85f"
+        },
+        "license_git_blob": "681d40008ee32ddb7e4e1413d6bf82c4f68c5b5b"
+      }
+    },
+    {
+      "component_id": "protobuf",
+      "upstream_repository": "protocolbuffers/protobuf",
+      "revision": "a79f2d2e9fadd75e94f3fe40a0399bf0a5d90551",
+      "license_file": "LICENSE",
+      "license_sha256": "6e5e117324afd944dcf67f36cf329843bc1a92229a8cd9bb573d7a83130fea7d",
+      "source_url": "https://raw.githubusercontent.com/protocolbuffers/protobuf/a79f2d2e9fadd75e94f3fe40a0399bf0a5d90551/LICENSE",
+      "correspondence": {
+        "tag": "v33.0",
+        "version_header_exact_match": {
+          "equal_bytes": true,
+          "equal_lf": true,
+          "source_sha256": "3a1d329c0e929a13c6085c33034a507459af6a1a31f232fe040c77addab67370",
+          "upstream_sha256": "3a1d329c0e929a13c6085c33034a507459af6a1a31f232fe040c77addab67370"
+        },
+        "source_sample_differs": {
+          "equal_bytes": false,
+          "equal_lf": false,
+          "source_sha256": "b00f48875d464d5280a8a04370e1310700ffda768442142e0c10570e62e8026d",
+          "upstream_sha256": "392fbc2170f091da93edccd73562d8738ba141eb99c94f4c6292cb3d7f7fd3c8"
+        },
+        "source_license_header_unchanged": true,
+        "observed_local_patch": "message_lite.cc removes an internal Abseil include and uses output->resize instead of STLStringResizeUninitializedAmortized",
+        "limit": "Version-matched upstream license with documented local source patch; full component revision equivalence not established"
+      }
+    }
+  ],
+  "limits": [
+    "No GN target graph or build argument equivalence was established",
+    "Object member names are flattened; basename matches do not prove the actual compiled source path",
+    "Generated/ambiguous objects and inline headers cannot be closed by this inventory",
+    "Source documents include host tools and platform-specific dependencies; this is not a final shipped-component selection",
+    "No independent Cronet C++ rebuild or complete linked NOTICE is claimed"
+  ],
+  "archive_update": {
+    "file": "NOVA-XHTTP-source-1.14.3-lx.23-nova-downlink.4-candidate10-r3.zip",
+    "sha256": "18e41cb45fdae03860551f8d0c21336bc71e92e1f92dc238482c806a00b4905e",
+    "unchanged_members": 405,
+    "changed_members": [
+      "provenance/README.md",
+      "README-NOVA.md",
+      "manifest.json"
+    ],
+    "added_members": [
+      "build/Collect-CronetNotices.py",
+      "provenance/cronet-supplemental-notices.json"
+    ],
+    "removed_members": [],
+    "runtime_source_module_binding_and_existing_build_helper_payloads_identical_to_reproduced_r2": true,
+    "new_provenance_checksums_verified": true,
+    "limit": "r3 metadata additions inspected; a new full r3 restoration was not run"
+  }
+}

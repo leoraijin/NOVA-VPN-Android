@@ -1,0 +1,1779 @@
+diff --git a/option/v2ray_xhttp.go b/option/v2ray_xhttp.go
+index fa772ae1..e11adf09 100644
+--- a/option/v2ray_xhttp.go
++++ b/option/v2ray_xhttp.go
+@@ -20,6 +20,8 @@ import "github.com/sagernet/sing/common/json/badoption"
+ // selects the documented default. This mirrors x_padding_bytes and avoids adding a
+ // range type to the option layer.
+ type V2RayXHTTPOptions struct {
++	// lx: independent XHTTP download endpoint; absent preserves the single-pool transport.
++	DownloadSettings *V2RayXHTTPDownloadOptions `json:"download_settings,omitempty"`
+ 	// ---- v1 fields (unchanged, preserved verbatim) --------------------------
+ 
+ 	// Host overrides the HTTP Host header (defaults to the TLS SNI or the
+diff --git a/option/v2ray_xhttp_download_lx.go b/option/v2ray_xhttp_download_lx.go
+new file mode 100644
+index 00000000..83c9d3da
+--- /dev/null
++++ b/option/v2ray_xhttp_download_lx.go
+@@ -0,0 +1,11 @@
++package option
++
++// V2RayXHTTPDownloadOptions describes an independent download-only XHTTP leg.
++// TLS is independent: omitted TLS means cleartext, never inherited uplink TLS.
++// A nil dialer inherits the parent dialer; an explicit object builds its own.
++type V2RayXHTTPDownloadOptions struct {
++	ServerOptions
++	Dialer *DialerOptions `json:"dialer,omitempty"`
++	OutboundTLSOptionsContainer
++	XHTTP V2RayXHTTPOptions `json:"xhttp"`
++}
+diff --git a/transport/v2rayxhttp/client.go b/transport/v2rayxhttp/client.go
+index 16f5d930..1a7962ab 100644
+--- a/transport/v2rayxhttp/client.go
++++ b/transport/v2rayxhttp/client.go
+@@ -54,6 +54,7 @@ const (
+ var _ adapter.V2RayClientTransport = (*Client)(nil)
+ 
+ type Client struct {
++	download   *Client // lx: separate download-only transport, nil for the legacy path
+ 	ctx        context.Context
+ 	dialer     N.Dialer
+ 	serverAddr M.Socksaddr
+@@ -233,7 +234,7 @@ func NewClient(ctx context.Context, dialer N.Dialer, serverAddr M.Socksaddr, opt
+ 		}
+ 	}
+ 
+-	return &Client{
++	client := &Client{
+ 		ctx:            ctx,
+ 		dialer:         dialer,
+ 		serverAddr:     serverAddr,
+@@ -249,7 +250,12 @@ func NewClient(ctx context.Context, dialer N.Dialer, serverAddr M.Socksaddr, opt
+ 		realityEnabled: realityEnabled,
+ 		httpVersion:    version,
+ 		noGRPCHeader:   options.NoGRPCHeader,
+-	}, nil
++	}
++	if err := client.configureDownload(ctx, dialer, options.DownloadSettings); err != nil {
++		client.Close()
++		return nil, err
++	}
++	return client, nil
+ }
+ 
+ func (c *Client) DialContext(ctx context.Context) (net.Conn, error) {
+@@ -268,6 +274,15 @@ func (c *Client) DialContext(ctx context.Context) (net.Conn, error) {
+ 	// (fail already released the slot before the error surfaced here) cannot
+ 	// release twice and drive openUsage negative.
+ 	release := newXmuxRelease(xmuxClient)
++	if c.download != nil && c.mode != modeStreamOne {
++		down, err := c.download.xmux.getContext(ctx)
++		if err != nil {
++			release.release()
++			return nil, err
++		}
++		down.addOpenUsage(1)
++		release.peer = newXmuxRelease(down)
++	}
+ 	conn, err := c.dialMode(ctx, sessionID, xmuxClient, release)
+ 	if err != nil {
+ 		release.release()
+@@ -281,9 +296,12 @@ func (c *Client) dialMode(ctx context.Context, sessionID string, xmuxClient *xmu
+ 	case modeAuto:
+ 		// Match Xray's auto resolution (transport/internet/splithttp/dialer.go):
+ 		// Reality → stream-one; otherwise → packet-up (the most broadly compatible
+-		// mode, live-validated against Xray 3x-ui). Xray also picks stream-up when
+-		// downloadSettings is present, but we don't support asymmetric transport.
++		// mode, live-validated against Xray 3x-ui). Reality with a separate download
++		// leg uses stream-up, preserving Xray's asymmetric auto-mode contract.
+ 		if c.realityEnabled {
++			if c.download != nil {
++				return c.dialStreamUp(ctx, sessionID, xmuxClient, release)
++			}
+ 			return c.dialStreamOne(ctx, sessionID, xmuxClient, release)
+ 		}
+ 		return c.dialPacketUp(ctx, sessionID, xmuxClient, release)
+@@ -299,6 +317,9 @@ func (c *Client) dialMode(ctx context.Context, sessionID string, xmuxClient *xmu
+ }
+ 
+ func (c *Client) Close() error {
++	if c.download != nil {
++		c.download.Close()
++	}
+ 	c.xmux.Close()
+ 	return nil
+ }
+diff --git a/transport/v2rayxhttp/conn.go b/transport/v2rayxhttp/conn.go
+index 3bc5a0ec..9d8a0b51 100644
+--- a/transport/v2rayxhttp/conn.go
++++ b/transport/v2rayxhttp/conn.go
+@@ -2,6 +2,7 @@ package v2rayxhttp
+ 
+ import (
+ 	"context"
++	"errors"
+ 	"io"
+ 	"net"
+ 	"net/http"
+@@ -90,20 +91,32 @@ func (b *adoptedBody) Read(p []byte) (int, error) {
+ // A raise that lands together with the cancel still wins: the conn is usable,
+ // and failing it would only make the caller redial the same node.
+ func awaitRaise(ctx context.Context, adopted, created <-chan struct{}, uploadFailed <-chan error, raiseErr func() error) error {
+-	select {
+-	case <-adopted:
+-		return nil
+-	case <-created:
+-		return raiseErr()
+-	case err := <-uploadFailed:
+-		return err
+-	case <-ctx.Done():
++	// lx: SPEC 077: download headers may arrive before an independent upload.
++	// Only upload adoption completes a successful raise; download failure still aborts it.
++	for {
+ 		select {
+ 		case <-adopted:
+ 			return nil
+ 		case <-created:
+-			return raiseErr()
+-		default:
++			if err := raiseErr(); err != nil {
++				return err
++			}
++			created = nil
++		case err := <-uploadFailed:
++			return err
++		case <-ctx.Done():
++			select {
++			case <-adopted:
++				return nil
++			default:
++			}
++			select {
++			case <-created:
++				if err := raiseErr(); err != nil {
++					return err
++				}
++			default:
++			}
+ 			return ctx.Err()
+ 		}
+ 	}
+@@ -184,10 +197,12 @@ func (c *Client) dialStreamOne(ctx context.Context, sessionID string, xmuxClient
+ // delivered bytes, so blocking on it here deadlocks the dial and the fronting
+ // proxy answers 504. See the note on dialPacketUp. lx: SPEC 002.
+ func (c *Client) dialStreamUp(ctx context.Context, sessionID string, xmuxClient *xmuxClient, release *xmuxRelease) (net.Conn, error) {
++	downClient := c.downloadClient()
++	downPool := release.readSide().client
+ 	// lx: SPEC 072 — conn-scoped request context; see dialStreamOne.
+ 	connCtx, connCancel := context.WithCancel(c.transportContext())
+ 	// Download: GET response body (no seq — stream mode).
+-	downReq, err := c.newRequest(connCtx, http.MethodGet, sessionID, "", nil)
++	downReq, err := downClient.newRequest(connCtx, http.MethodGet, sessionID, "", nil)
+ 	if err != nil {
+ 		connCancel()
+ 		return nil, err
+@@ -205,7 +220,7 @@ func (c *Client) dialStreamUp(ctx context.Context, sessionID string, xmuxClient
+ 	conn := newSplitConn(pipeReader, pipeWriter, c.serverAddr, release)
+ 	conn.cancel = connCancel
+ 	go func() {
+-		downResp, err := xmuxClient.roundTrip(downReq)
++		downResp, err := downPool.roundTrip(downReq)
+ 		if err != nil {
+ 			conn.fail(E.Cause(err, "open download"))
+ 			return
+@@ -254,6 +269,8 @@ func (c *Client) dialStreamUp(ctx context.Context, sessionID string, xmuxClient
+ // the connection is established (httptrace GotConn) and processes the response
+ // asynchronously. lx: SPEC 002.
+ func (c *Client) dialPacketUp(ctx context.Context, sessionID string, xmuxClient *xmuxClient, release *xmuxRelease) (net.Conn, error) {
++	downClient := c.downloadClient()
++	downPool := release.readSide().client
+ 	// lx: SPEC 072 — conn-scoped request context (see dialStreamOne); the
+ 	// download GET and every upload POST ride it, and Close/fail cancel it. The
+ 	// dial context is deliberately NOT waited on here (lx: SPEC 077 applies to
+@@ -265,7 +282,7 @@ func (c *Client) dialPacketUp(ctx context.Context, sessionID string, xmuxClient
+ 	_ = ctx
+ 	connCtx, connCancel := context.WithCancel(c.transportContext())
+ 	// Download stream: GET with the session id but no seq (downlink).
+-	downReq, err := c.newRequest(connCtx, http.MethodGet, sessionID, "", nil)
++	downReq, err := downClient.newRequest(connCtx, http.MethodGet, sessionID, "", nil)
+ 	if err != nil {
+ 		connCancel()
+ 		return nil, err
+@@ -273,7 +290,7 @@ func (c *Client) dialPacketUp(ctx context.Context, sessionID string, xmuxClient
+ 	conn := newPacketConn(connCtx, c, sessionID, c.serverAddr, release)
+ 	conn.cancel = connCancel
+ 	go func() {
+-		downResp, err := xmuxClient.roundTrip(downReq)
++		downResp, err := downPool.roundTrip(downReq)
+ 		if err != nil {
+ 			conn.fail(E.Cause(err, "open download"))
+ 			return
+@@ -514,7 +531,7 @@ type streamConn struct {
+ func newStreamConn(reader *io.PipeReader, writer *io.PipeWriter, serverAddr M.Socksaddr, xmux *xmuxRelease) *streamConn {
+ 	conn := &streamConn{
+ 		xmux:       xmux,
+-		breaker:    connBreaker{xmux: xmux},
++		breaker:    connBreaker{xmux: xmux.readSide()},
+ 		writer:     writer,
+ 		created:    make(chan struct{}),
+ 		serverAddr: serverAddr,
+@@ -661,7 +678,7 @@ type splitConn struct {
+ func newSplitConn(uploadReader *io.PipeReader, writer *io.PipeWriter, serverAddr M.Socksaddr, xmux *xmuxRelease) *splitConn {
+ 	conn := &splitConn{
+ 		xmux:       xmux,
+-		breaker:    connBreaker{xmux: xmux},
++		breaker:    connBreaker{xmux: xmux.readSide()},
+ 		created:    make(chan struct{}),
+ 		writer:     writer,
+ 		serverAddr: serverAddr,
+@@ -704,7 +721,10 @@ func (c *splitConn) fail(err error) {
+ // the writer a bare ErrClosedPipe (io.Pipe's writeCloseError prefers rerr and
+ // suppresses werr; see the writeDeadline note). lx: SPEC 072.
+ func (c *splitConn) uploadFailed(err error) {
+-	c.writeDeadline.reader.CloseWithError(err)
++	// A split session cannot survive without its upload stream. Close both
++	// leases and cancel the download request even if the caller never closes
++	// the failed connection. Close marks the download teardown as local.
++	c.closeWithUploadError(err)
+ }
+ 
+ func (c *splitConn) Read(b []byte) (int, error) {
+@@ -724,12 +744,20 @@ func (c *splitConn) Read(b []byte) (int, error) {
+ func (c *splitConn) Write(b []byte) (int, error) { return c.writer.Write(b) }
+ 
+ func (c *splitConn) Close() error {
++	return c.closeWithUploadError(nil)
++}
++
++func (c *splitConn) closeWithUploadError(uploadErr error) error {
+ 	c.closeOnce.Do(func() {
+ 		c.breaker.localClosed.Store(true) // lx: SPEC 076 — before closing the reader
+ 		// lx: 050 — drop armed timers before closing, as in streamConn.
+ 		c.writeDeadline.stop()
+ 		c.readDeadline.stop()
+-		c.writer.Close()
++		if uploadErr != nil {
++			c.writeDeadline.reader.CloseWithError(uploadErr)
++		} else {
++			c.writer.Close()
++		}
+ 		// The reader may not be bound yet (see dialStreamUp); a pending
+ 		// RoundTrip is torn down by the conn-context cancel below.
+ 		select {
+@@ -805,7 +833,7 @@ func newPacketConn(ctx context.Context, client *Client, sessionID string, server
+ 		ctx:        ctx,
+ 		client:     client,
+ 		xmux:       xmux,
+-		breaker:    connBreaker{xmux: xmux},
++		breaker:    connBreaker{xmux: xmux.readSide()},
+ 		sessionID:  sessionID,
+ 		created:    make(chan struct{}),
+ 		serverAddr: serverAddr,
+@@ -877,6 +905,17 @@ func (c *packetConn) Write(b []byte) (int, error) {
+ 			end = len(b)
+ 		}
+ 		if err := c.sendPacket(b[written:end]); err != nil {
++			// lx: download failure cancels the POST; keep its primary cause.
++			// Other upload errors and caller cancellation retain their identity.
++			if errors.Is(err, context.Canceled) {
++				select {
++				case <-c.created:
++					if c.readerErr != nil {
++						return written, c.readerErr
++					}
++				default:
++				}
++			}
+ 			return written, err
+ 		}
+ 		written = end
+diff --git a/transport/v2rayxhttp/download_dns_lx_test.go b/transport/v2rayxhttp/download_dns_lx_test.go
+new file mode 100644
+index 00000000..e054a0f5
+--- /dev/null
++++ b/transport/v2rayxhttp/download_dns_lx_test.go
+@@ -0,0 +1,127 @@
++package v2rayxhttp
++
++import (
++	"context"
++	"fmt"
++	"io"
++	"net/http"
++	"net/netip"
++	"sync"
++	"testing"
++	"time"
++
++	"github.com/sagernet/sing-box/adapter"
++	D "github.com/sagernet/sing-box/common/dialer"
++	"github.com/sagernet/sing-box/option"
++	M "github.com/sagernet/sing/common/metadata"
++	N "github.com/sagernet/sing/common/network"
++	"github.com/sagernet/sing/service"
++)
++
++type downloadBootstrapNetwork struct{ adapter.NetworkManager }
++
++func (downloadBootstrapNetwork) DefaultOptions() adapter.NetworkOptions {
++	return adapter.NetworkOptions{DomainResolver: "bootstrap-fixture"}
++}
++
++type downloadBootstrapTransport struct{ adapter.DNSTransport }
++type downloadBootstrapManager struct {
++	adapter.DNSTransportManager
++	fixture adapter.DNSTransport
++}
++
++func (m downloadBootstrapManager) Transport(tag string) (adapter.DNSTransport, bool) {
++	return m.fixture, tag == "bootstrap-fixture"
++}
++
++type downloadBootstrapRouter struct {
++	adapter.DNSRouter
++	fixture adapter.DNSTransport
++	access  sync.Mutex
++	seen    map[string]int
++}
++
++func (r *downloadBootstrapRouter) Lookup(_ context.Context, domain string, options adapter.DNSQueryOptions) ([]netip.Addr, error) {
++	if options.Transport != r.fixture {
++		return nil, fmt.Errorf("wrong bootstrap transport")
++	}
++	if domain != "uplink.invalid" && domain != "downlink.invalid" {
++		return nil, fmt.Errorf("unexpected DNS name")
++	}
++	r.access.Lock()
++	r.seen[domain]++
++	r.access.Unlock()
++	return []netip.Addr{netip.MustParseAddr("127.0.0.1")}, nil
++}
++
++// A direct dialer created for an IP uplink cannot resolve a domain download leg.
++// Both names must use the core bootstrap path, not the OS or tunnel resolver.
++func TestIndependentDownloadBootstrapDNS(t *testing.T) {
++	for _, uploadDomain := range []bool{false, true} {
++		t.Run(fmt.Sprintf("domain-upload-%t", uploadDomain), func(t *testing.T) {
++			fixture := &downloadBootstrapTransport{}
++			router := &downloadBootstrapRouter{fixture: fixture, seen: make(map[string]int)}
++			ctx := service.ContextWith[adapter.DNSRouter](context.Background(), router)
++			ctx = service.ContextWith[adapter.DNSTransportManager](ctx, downloadBootstrapManager{fixture: fixture})
++			ctx = service.ContextWith[adapter.NetworkManager](ctx, downloadBootstrapNetwork{})
++			payloads := make(chan []byte, 1)
++			up, _ := downloadTestServer(t, false, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
++				body, err := io.ReadAll(r.Body)
++				if err != nil {
++					return
++				}
++				payloads <- body
++				w.WriteHeader(http.StatusOK)
++			}))
++			down, _ := downloadTestServer(t, false, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
++				select {
++				case payload := <-payloads:
++					w.Write(payload)
++					w.(http.Flusher).Flush()
++					<-r.Context().Done()
++				case <-r.Context().Done():
++				}
++			}))
++			direct, err := D.NewDefault(context.Background(), option.DialerOptions{})
++			if err != nil {
++				t.Fatal(err)
++			}
++			var inherited N.Dialer = direct
++			upAddress := M.SocksaddrFromNet(up.Listener.Addr())
++			if uploadDomain {
++				upAddress = M.Socksaddr{Fqdn: "uplink.invalid", Port: upAddress.Port}
++				inherited = D.NewResolveDialer(ctx, direct, true, "bootstrap-fixture", adapter.DNSQueryOptions{Transport: fixture}, 0)
++			}
++			transport, err := NewClient(ctx, inherited, upAddress, option.V2RayXHTTPOptions{Mode: modePacketUp,
++				DownloadSettings: &option.V2RayXHTTPDownloadOptions{ServerOptions: option.ServerOptions{
++					Server: "downlink.invalid", ServerPort: M.SocksaddrFromNet(down.Listener.Addr()).Port}}}, nil)
++			if err != nil {
++				t.Fatal(err)
++			}
++			client := transport.(*Client)
++			defer client.Close()
++			dialCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
++			defer cancel()
++			conn, err := client.DialContext(dialCtx)
++			if err != nil {
++				t.Fatal(err)
++			}
++			defer conn.Close()
++			conn.SetDeadline(time.Now().Add(3 * time.Second))
++			if _, err = conn.Write([]byte("hello")); err != nil {
++				t.Fatal(err)
++			}
++			body := make([]byte, 5)
++			if _, err = io.ReadFull(conn, body); err != nil || string(body) != "hello" {
++				t.Fatalf("bootstrap echo %q: %v", body, err)
++			}
++			conn.Close()
++			assertNoDownloadLeases(t, client)
++			router.access.Lock()
++			defer router.access.Unlock()
++			if router.seen["downlink.invalid"] == 0 || uploadDomain && router.seen["uplink.invalid"] == 0 {
++				t.Fatalf("missing core bootstrap lookup: %v", router.seen)
++			}
++		})
++	}
++}
+diff --git a/transport/v2rayxhttp/download_load_windows_test.go b/transport/v2rayxhttp/download_load_windows_test.go
+new file mode 100644
+index 00000000..10546ec3
+--- /dev/null
++++ b/transport/v2rayxhttp/download_load_windows_test.go
+@@ -0,0 +1,219 @@
++//go:build windows && with_xhttp
++
++package v2rayxhttp
++
++import (
++	"bytes"
++	"context"
++	"encoding/binary"
++	"encoding/hex"
++	"fmt"
++	"io"
++	"net/http"
++	"net/http/httputil"
++	"net/url"
++	"os"
++	"strconv"
++	"strings"
++	"sync"
++	"sync/atomic"
++	"testing"
++	"time"
++
++	"github.com/sagernet/sing-box/common/tls"
++	"github.com/sagernet/sing-box/log"
++	"github.com/sagernet/sing-box/option"
++	N "github.com/sagernet/sing/common/network"
++	"golang.org/x/net/http2"
++)
++
++func downloadPoolLimitError(client *Client) error {
++	for index, manager := range []*xmuxManager{client.xmux, client.download.xmux} {
++		manager.access.Lock()
++		for _, pooled := range manager.clients {
++			usage := pooled.getOpenUsage()
++			if usage < 0 || manager.concurrency > 0 && usage > manager.concurrency {
++				manager.access.Unlock()
++				return fmt.Errorf("direction %d XMUX usage=%d limit=%d", index, usage, manager.concurrency)
++			}
++		}
++		manager.access.Unlock()
++	}
++	return nil
++}
++
++// This is a real persistent VLESS exchange, not repeated HTTP status checks.
++// Extended runs use NOVA_XHTTP_SOAK_SECONDS=300 (per mode) and go test -timeout=30m.
++func TestIndependentDownloadOfficialXrayConcurrent(t *testing.T) {
++	executable := os.Getenv("NOVA_XRAY_BINARY")
++	if executable == "" {
++		t.Skip("set NOVA_XRAY_BINARY to the pinned official Windows fixture")
++	}
++	duration := 5 * time.Second
++	if raw := os.Getenv("NOVA_XHTTP_SOAK_SECONDS"); raw != "" {
++		seconds, err := strconv.Atoi(raw)
++		if err != nil || seconds < 1 || seconds > 1800 {
++			t.Fatal("invalid NOVA_XHTTP_SOAK_SECONDS")
++		}
++		duration = time.Duration(seconds) * time.Second
++	}
++	for _, mode := range []string{modeAuto, modePacketUp, modeStreamUp} {
++		t.Run(mode, func(t *testing.T) {
++			backend, backendTLS := officialXrayBackendLifetime(t, executable, duration+30*time.Second)
++			target, _ := url.Parse("https://" + backend)
++			var upRequests, downGets, wrongLeg atomic.Int32
++			front := func(prefix string, up bool) http.Handler {
++				proxy := httputil.NewSingleHostReverseProxy(target)
++				original := proxy.Director
++				proxy.Director = func(r *http.Request) {
++					original(r)
++					r.URL.Path = "/shared/" + strings.TrimPrefix(r.URL.Path, prefix)
++					r.URL.RawPath = ""
++				}
++				proxy.FlushInterval = -1
++				transport := &http2.Transport{TLSClientConfig: backendTLS.Clone(), DisableCompression: true}
++				proxy.Transport = transport
++				t.Cleanup(transport.CloseIdleConnections)
++				return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
++					if !strings.HasPrefix(r.URL.Path, prefix) {
++						wrongLeg.Add(1)
++						http.Error(w, "wrong path", 400)
++						return
++					}
++					if up {
++						upRequests.Add(1)
++						if r.Method == http.MethodGet {
++							wrongLeg.Add(1)
++						}
++					} else {
++						downGets.Add(1)
++						if r.Method != http.MethodGet {
++							wrongLeg.Add(1)
++						}
++					}
++					proxy.ServeHTTP(w, r)
++				})
++			}
++			up, upTLS := downloadTestEndpoint(t, 2, front("/load-up/", true))
++			down, downTLS := downloadTestEndpoint(t, 2, front("/load-down/", false))
++			config, err := tls.NewClient(context.Background(), log.NewNOPFactory().Logger(), "localhost", *upTLS)
++			if err != nil {
++				t.Fatal(err)
++			}
++			transport, err := NewClient(context.Background(), N.SystemDialer, up, option.V2RayXHTTPOptions{
++				Mode: mode, Path: "/load-up/", Xmux: &option.V2RayXHTTPXmuxOptions{MaxConcurrency: "3"},
++				DownloadSettings: &option.V2RayXHTTPDownloadOptions{
++					ServerOptions:               option.ServerOptions{Server: down.AddrString(), ServerPort: down.Port},
++					OutboundTLSOptionsContainer: option.OutboundTLSOptionsContainer{TLS: downTLS},
++					XHTTP:                       option.V2RayXHTTPOptions{Path: "/load-down/", Xmux: &option.V2RayXHTTPXmuxOptions{MaxConcurrency: "2"}},
++				},
++			}, config)
++			if err != nil {
++				t.Fatal(err)
++			}
++			client := transport.(*Client)
++			defer client.Close()
++			if client.xmux == client.download.xmux {
++				t.Fatal("shared directional XMUX pool")
++			}
++			ctx, cancel := context.WithTimeout(context.Background(), duration+20*time.Second)
++			defer cancel()
++			const workers = 12
++			start := make(chan struct{})
++			errors := make(chan error, workers)
++			var wg sync.WaitGroup
++			var active, peak atomic.Int32
++			var exchanges atomic.Int64
++			finish := time.Now().Add(duration)
++			for worker := 0; worker < workers; worker++ {
++				wg.Add(1)
++				go func(worker int) {
++					defer wg.Done()
++					<-start
++					err := func() error {
++						conn, err := client.DialContext(ctx)
++						if err != nil {
++							return err
++						}
++						defer conn.Close()
++						now := active.Add(1)
++						defer active.Add(-1)
++						for old := peak.Load(); now > old; old = peak.Load() {
++							if peak.CompareAndSwap(old, now) {
++								break
++							}
++						}
++						payload := bytes.Repeat([]byte{byte(worker + 1)}, 16*1024)
++						received := make([]byte, len(payload))
++						for sequence := uint64(0); ; sequence++ {
++							if err := downloadPoolLimitError(client); err != nil {
++								return err
++							}
++							binary.BigEndian.PutUint64(payload, uint64(worker))
++							binary.BigEndian.PutUint64(payload[8:], sequence)
++							request := payload
++							if sequence == 0 {
++								uuid, _ := hex.DecodeString("11111111111141118111111111111111")
++								prefix := append([]byte{0}, uuid...)
++								prefix = append(prefix, 0, 1, 0, 80, 1, 127, 0, 0, 1)
++								request = append(prefix, payload...)
++							}
++							conn.SetDeadline(time.Now().Add(10 * time.Second))
++							if _, err = io.Copy(conn, bytes.NewReader(request)); err != nil {
++								return err
++							}
++							if sequence == 0 {
++								header := make([]byte, 2)
++								if _, err = io.ReadFull(conn, header); err != nil {
++									return err
++								}
++								if header[0] != 0 {
++									return fmt.Errorf("invalid VLESS response version")
++								}
++								if _, err = io.CopyN(io.Discard, conn, int64(header[1])); err != nil {
++									return err
++								}
++							}
++							if _, err = io.ReadFull(conn, received); err != nil {
++								return err
++							}
++							if !bytes.Equal(payload, received) {
++								return fmt.Errorf("cross-session/corrupt echo worker=%d sequence=%d", worker, sequence)
++							}
++							exchanges.Add(1)
++							if time.Now().After(finish) {
++								return nil
++							}
++							select {
++							case <-ctx.Done():
++								return ctx.Err()
++							case <-time.After(100 * time.Millisecond):
++							}
++						}
++					}()
++					if err != nil {
++						errors <- fmt.Errorf("worker %d: %w", worker, err)
++						cancel()
++					}
++				}(worker)
++			}
++			close(start)
++			wg.Wait()
++			close(errors)
++			for err := range errors {
++				t.Error(err)
++			}
++			if t.Failed() {
++				return
++			}
++			if peak.Load() != workers || exchanges.Load() < workers*2 {
++				t.Fatalf("insufficient concurrent exchange: peak=%d exchanges=%d", peak.Load(), exchanges.Load())
++			}
++			if upRequests.Load() == 0 || downGets.Load() != workers || wrongLeg.Load() != 0 {
++				t.Fatalf("wrong legs up=%d down=%d wrong=%d", upRequests.Load(), downGets.Load(), wrongLeg.Load())
++			}
++			assertNoDownloadLeases(t, client)
++			t.Logf("persistent H2/H2 VLESS echo: duration=%s workers=%d peak=%d exchanges=%d bytes=%d", duration, workers, peak.Load(), exchanges.Load(), exchanges.Load()*16*1024)
++		})
++	}
++}
+diff --git a/transport/v2rayxhttp/download_lx.go b/transport/v2rayxhttp/download_lx.go
+new file mode 100644
+index 00000000..29c143c5
+--- /dev/null
++++ b/transport/v2rayxhttp/download_lx.go
+@@ -0,0 +1,80 @@
++package v2rayxhttp
++
++import (
++	"context"
++
++	D "github.com/sagernet/sing-box/common/dialer"
++	"github.com/sagernet/sing-box/common/tls"
++	"github.com/sagernet/sing-box/log"
++	"github.com/sagernet/sing-box/option"
++	E "github.com/sagernet/sing/common/exceptions"
++	N "github.com/sagernet/sing/common/network"
++)
++
++// configureDownload builds a distinct pool even when the two endpoints happen
++// to share an address: credentials, HTTP version and lifetime remain independent.
++func (c *Client) configureDownload(ctx context.Context, inherited N.Dialer, settings *option.V2RayXHTTPDownloadOptions) error {
++	if settings == nil {
++		return nil
++	}
++	if c.mode == modeStreamOne {
++		return E.New("v2ray-xhttp: download_settings is incompatible with stream-one mode")
++	}
++	if settings.Server == "" || settings.ServerPort == 0 {
++		return E.New("v2ray-xhttp: download_settings requires server and server_port")
++	}
++	if settings.XHTTP.DownloadSettings != nil {
++		return E.New("v2ray-xhttp: nested download_settings is not supported")
++	}
++	address := settings.ServerOptions.Build()
++	dialer := inherited
++	if settings.Dialer != nil {
++		var err error
++		dialer, err = D.New(ctx, *settings.Dialer, address.IsFqdn())
++		if err != nil {
++			return E.Cause(err, "create XHTTP download dialer")
++		}
++	}
++	// A dialer built for an IP uplink has no resolver wrapper. Preserve its
++	// physical-network/protect options, but resolve a domain download endpoint
++	// through the core default bootstrap path instead of passing it unresolved.
++	if settings.Dialer == nil && address.IsFqdn() {
++		if _, plainDirect := inherited.(*D.DefaultDialer); plainDirect {
++			queryOptions, err := D.NewDNSQueryOptions(ctx, nil, false)
++			if err != nil {
++				return E.Cause(err, "create XHTTP download resolver")
++			}
++			dialer = D.NewResolveDialer(ctx, inherited, true, "", queryOptions, 0)
++		}
++	}
++	var tlsConfig tls.Config
++	if settings.TLS != nil {
++		var err error
++		tlsConfig, err = tls.NewClient(ctx, log.NewNOPFactory().Logger(), settings.Server, *settings.TLS)
++		if err != nil {
++			return E.Cause(err, "create XHTTP download TLS")
++		}
++	}
++	transport, err := NewClient(ctx, dialer, address, settings.XHTTP, tlsConfig)
++	if err != nil {
++		return E.Cause(err, "create XHTTP download transport")
++	}
++	c.download = transport.(*Client)
++	return nil
++}
++
++func (c *Client) downloadClient() *Client {
++	if c.download != nil {
++		return c.download
++	}
++	return c
++}
++
++// readSide keeps body-read health accounting on the download pool, while upload
++// requests and their failures continue to be charged to the upload pool.
++func (r *xmuxRelease) readSide() *xmuxRelease {
++	if r != nil && r.peer != nil {
++		return r.peer
++	}
++	return r
++}
+diff --git a/transport/v2rayxhttp/download_lx_test.go b/transport/v2rayxhttp/download_lx_test.go
+new file mode 100644
+index 00000000..e08055e0
+--- /dev/null
++++ b/transport/v2rayxhttp/download_lx_test.go
+@@ -0,0 +1,401 @@
++package v2rayxhttp
++
++import (
++	"context"
++	stdTLS "crypto/tls"
++	"encoding/pem"
++	"errors"
++	"fmt"
++	"io"
++	"net/http"
++	"net/http/httptest"
++	"strings"
++	"sync/atomic"
++	"testing"
++	"time"
++
++	"github.com/sagernet/sing-box/common/tls"
++	"github.com/sagernet/sing-box/log"
++	"github.com/sagernet/sing-box/option"
++	"github.com/sagernet/sing/common/json/badoption"
++	M "github.com/sagernet/sing/common/metadata"
++	N "github.com/sagernet/sing/common/network"
++)
++
++type downloadSeen struct {
++	method, host, path, query, marker string
++	proto                             int
++}
++
++// Supplied by the QUIC-tagged test file; absent builds exercise H1/H2 only.
++var newHTTP3DownloadServer func(*testing.T, http.Handler) (M.Socksaddr, *option.OutboundTLSOptions)
++var newRealityDownloadServer func(*testing.T, http.Handler) (M.Socksaddr, *option.OutboundTLSOptions)
++
++func downloadEndpointLabel(version int) string {
++	if version == 0 {
++		return "reality-h2"
++	}
++	return fmt.Sprintf("h%d", version)
++}
++
++func downloadEndpointHTTPVersion(version int) int {
++	if version == 0 {
++		return 2
++	}
++	return version
++}
++
++func downloadTestEndpoint(t *testing.T, version int, handler http.Handler) (M.Socksaddr, *option.OutboundTLSOptions) {
++	if version == 0 {
++		return newRealityDownloadServer(t, handler)
++	}
++	if version == 3 {
++		return newHTTP3DownloadServer(t, handler)
++	}
++	server, config := downloadTestServer(t, version == 2, handler)
++	return M.SocksaddrFromNet(server.Listener.Addr()), config
++}
++
++func downloadTestServer(t *testing.T, h2 bool, handler http.Handler) (*httptest.Server, *option.OutboundTLSOptions) {
++	t.Helper()
++	server := httptest.NewUnstartedServer(handler)
++	if !h2 {
++		server.Start()
++		t.Cleanup(server.Close)
++		return server, nil
++	}
++	certificate, err := tls.GenerateKeyPair(nil, nil, time.Now, "localhost")
++	if err != nil {
++		t.Fatal(err)
++	}
++	server.EnableHTTP2 = true
++	server.TLS = &stdTLS.Config{Certificates: []stdTLS.Certificate{*certificate}}
++	server.StartTLS()
++	t.Cleanup(server.Close)
++	roots := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certificate.Certificate[0]})
++	return server, &option.OutboundTLSOptions{Enabled: true, ServerName: "localhost", Certificate: []string{string(roots)}, ALPN: []string{"h2"}}
++}
++
++func assertNoDownloadLeases(t *testing.T, client *Client) {
++	t.Helper()
++	for _, manager := range []*xmuxManager{client.xmux, client.download.xmux} {
++		manager.access.Lock()
++		for _, pooled := range manager.clients {
++			pooled.access.Lock()
++			usage := pooled.openUsage
++			pooled.access.Unlock()
++			if usage != 0 {
++				manager.access.Unlock()
++				t.Fatalf("retained XMUX usage after close: %d", usage)
++			}
++		}
++		manager.access.Unlock()
++	}
++}
++
++func independentDownloadTestPairs() [][2]int {
++	pairs := [][2]int{{1, 1}, {1, 2}, {2, 1}, {2, 2}}
++	if newHTTP3DownloadServer != nil {
++		pairs = append(pairs, [2]int{1, 3}, [2]int{2, 3}, [2]int{3, 1}, [2]int{3, 2}, [2]int{3, 3})
++	}
++	if newRealityDownloadServer != nil {
++		pairs = append(pairs, [2]int{0, 1}, [2]int{1, 0}, [2]int{0, 2}, [2]int{2, 0}, [2]int{0, 0})
++		if newHTTP3DownloadServer != nil {
++			pairs = append(pairs, [2]int{0, 3}, [2]int{3, 0})
++		}
++	}
++	return pairs
++}
++
++func TestIndependentDownloadEndpoints(t *testing.T) {
++	pairs := independentDownloadTestPairs()
++	for _, mode := range []string{modeAuto, modePacketUp, modeStreamUp} {
++		for _, versions := range pairs {
++			name := fmt.Sprintf("%s/%s-%s", mode, downloadEndpointLabel(versions[0]), downloadEndpointLabel(versions[1]))
++			t.Run(name, func(t *testing.T) {
++				data := make(chan []byte, 1)
++				seenUp, seenDown := make(chan downloadSeen, 1), make(chan downloadSeen, 1)
++				record := func(r *http.Request) downloadSeen {
++					return downloadSeen{r.Method, r.Host, r.URL.Path, r.URL.RawQuery, r.Header.Get("X-Leg"), r.ProtoMajor}
++				}
++				upAddr, upTLS := downloadTestEndpoint(t, versions[0], http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
++					seenUp <- record(r)
++					http.NewResponseController(w).EnableFullDuplex()
++					buffer := make([]byte, 5)
++					if _, err := io.ReadFull(r.Body, buffer); err != nil {
++						return
++					}
++					data <- buffer
++					w.WriteHeader(http.StatusOK)
++					w.(http.Flusher).Flush()
++					io.Copy(io.Discard, r.Body)
++				}))
++				downAddr, downTLS := downloadTestEndpoint(t, versions[1], http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
++					seenDown <- record(r)
++					select {
++					case payload := <-data:
++						w.Write(payload)
++						w.(http.Flusher).Flush()
++						<-r.Context().Done()
++					case <-r.Context().Done():
++					}
++				}))
++				var upConfig tls.Config
++				if upTLS != nil {
++					var err error
++					upConfig, err = tls.NewClient(context.Background(), log.NewNOPFactory().Logger(), "localhost", *upTLS)
++					if err != nil {
++						t.Fatal(err)
++					}
++				}
++				options := option.V2RayXHTTPOptions{Mode: mode, Host: "upload.example", Path: "/up/?u=1"}
++				options.Headers = badoption.HTTPHeader{"X-Leg": {"up"}}
++				options.DownloadSettings = &option.V2RayXHTTPDownloadOptions{
++					ServerOptions:               option.ServerOptions{Server: downAddr.AddrString(), ServerPort: downAddr.Port},
++					OutboundTLSOptionsContainer: option.OutboundTLSOptionsContainer{TLS: downTLS},
++					XHTTP:                       option.V2RayXHTTPOptions{Host: "download.example", Path: "/down/?d=2", Headers: badoption.HTTPHeader{"X-Leg": {"down"}}},
++				}
++				transport, err := NewClient(context.Background(), N.SystemDialer, upAddr, options, upConfig)
++				if err != nil {
++					t.Fatal(err)
++				}
++				client := transport.(*Client)
++				defer client.Close()
++				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
++				defer cancel()
++				conn, err := client.DialContext(ctx)
++				if err != nil {
++					t.Fatal(err)
++				}
++				defer conn.Close()
++				conn.SetDeadline(time.Now().Add(5 * time.Second))
++				if _, err = conn.Write([]byte("hello")); err != nil {
++					t.Fatal(err)
++				}
++				buffer := make([]byte, 5)
++				if _, err = io.ReadFull(conn, buffer); err != nil || string(buffer) != "hello" {
++					t.Fatalf("echo %q: %v", buffer, err)
++				}
++				u, d := <-seenUp, <-seenDown
++				if u.method == http.MethodGet || d.method != http.MethodGet || u.host != "upload.example" || d.host != "download.example" || u.marker != "up" || d.marker != "down" {
++					t.Fatalf("legs crossed: up=%+v down=%+v", u, d)
++				}
++				upSession := strings.Split(strings.Trim(u.path, "/"), "/")[1]
++				downSession := strings.Split(strings.Trim(d.path, "/"), "/")[1]
++				if upSession != downSession || !strings.HasPrefix(u.path, "/up/") || !strings.HasPrefix(d.path, "/down/") || !strings.Contains(u.query, "u=1") || !strings.Contains(d.query, "d=2") {
++					t.Fatalf("different session or request metadata: up=%+v down=%+v", u, d)
++				}
++				if u.proto != downloadEndpointHTTPVersion(versions[0]) || d.proto != downloadEndpointHTTPVersion(versions[1]) {
++					t.Fatal("HTTP version leaked between legs")
++				}
++				conn.Close()
++				conn.Close()
++				assertNoDownloadLeases(t, client)
++			})
++		}
++	}
++}
++
++func TestDownloadOptionsRejectIncompleteOrRecursiveEndpoints(t *testing.T) {
++	for _, settings := range []*option.V2RayXHTTPDownloadOptions{
++		{}, {ServerOptions: option.ServerOptions{Server: "localhost"}},
++		{ServerOptions: option.ServerOptions{Server: "localhost", ServerPort: 443}, XHTTP: option.V2RayXHTTPOptions{DownloadSettings: &option.V2RayXHTTPDownloadOptions{}}},
++		{ServerOptions: option.ServerOptions{Server: "localhost", ServerPort: 443}, Dialer: &option.DialerOptions{Detour: "missing-manager"}},
++	} {
++		if client, err := NewClient(context.Background(), N.SystemDialer, M.ParseSocksaddr("localhost:443"), option.V2RayXHTTPOptions{DownloadSettings: settings}, nil); err == nil {
++			client.Close()
++			t.Fatal("invalid download settings accepted")
++		}
++	}
++}
++
++func TestDownloadOptionsRejectStreamOne(t *testing.T) {
++	client, err := NewClient(context.Background(), N.SystemDialer, M.ParseSocksaddr("localhost:443"), option.V2RayXHTTPOptions{
++		Mode: modeStreamOne,
++		DownloadSettings: &option.V2RayXHTTPDownloadOptions{
++			ServerOptions: option.ServerOptions{Server: "localhost", ServerPort: 443},
++		},
++	}, nil)
++	if err == nil {
++		client.Close()
++		t.Fatal("stream-one accepted separate download settings")
++	}
++	if !strings.Contains(err.Error(), "incompatible with stream-one") {
++		t.Fatalf("unexpected validation error: %v", err)
++	}
++}
++
++func TestDownloadTLSFailureDoesNotFallBackToUpload(t *testing.T) {
++	var upGets atomic.Int32
++	up, upTLS := downloadTestServer(t, true, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
++		if r.Method == http.MethodGet {
++			upGets.Add(1)
++		}
++		io.Copy(io.Discard, r.Body)
++		w.WriteHeader(http.StatusOK)
++	}))
++	down, _ := downloadTestServer(t, true, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("unsafe")) }))
++	upAddress := M.ParseSocksaddr(strings.TrimPrefix(up.URL, "https://"))
++	downAddress := M.ParseSocksaddr(strings.TrimPrefix(down.URL, "https://"))
++	upConfig, err := tls.NewClient(context.Background(), log.NewNOPFactory().Logger(), "localhost", *upTLS)
++	if err != nil {
++		t.Fatal(err)
++	}
++	// Trust only the upload certificate on the download leg: the other server
++	// must fail certificate verification rather than reusing the healthy leg.
++	transport, err := NewClient(context.Background(), N.SystemDialer, upAddress, option.V2RayXHTTPOptions{Mode: modePacketUp,
++		DownloadSettings: &option.V2RayXHTTPDownloadOptions{ServerOptions: option.ServerOptions{Server: downAddress.AddrString(), ServerPort: downAddress.Port},
++			OutboundTLSOptionsContainer: option.OutboundTLSOptionsContainer{TLS: upTLS}}}, upConfig)
++	if err != nil {
++		t.Fatal(err)
++	}
++	client := transport.(*Client)
++	defer client.Close()
++	conn, err := client.DialContext(context.Background())
++	if err != nil {
++		t.Fatal(err)
++	}
++	defer conn.Close()
++	conn.SetReadDeadline(time.Now().Add(5 * time.Second))
++	if _, err = conn.Read(make([]byte, 6)); err == nil {
++		t.Fatal("untrusted download certificate accepted")
++	}
++	conn.Close()
++	if upGets.Load() != 0 {
++		t.Fatal("download silently fell back to upload endpoint")
++	}
++	assertNoDownloadLeases(t, client)
++}
++
++func TestCancelledDownloadAcquisitionReleasesUpload(t *testing.T) {
++	transport, err := NewClient(context.Background(), N.SystemDialer, M.ParseSocksaddr("127.0.0.1:1"), option.V2RayXHTTPOptions{Mode: modeStreamUp,
++		DownloadSettings: &option.V2RayXHTTPDownloadOptions{ServerOptions: option.ServerOptions{Server: "127.0.0.1", ServerPort: 2}}}, nil)
++	if err != nil {
++		t.Fatal(err)
++	}
++	client := transport.(*Client)
++	defer client.Close()
++	client.download.xmux.blockedUntil = time.Now().Add(time.Hour)
++	client.download.xmux.backoffDelay = time.Hour
++	client.download.xmux.backoffArmed.Store(true)
++	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
++	defer cancel()
++	if conn, err := client.DialContext(ctx); !errors.Is(err, context.DeadlineExceeded) {
++		if conn != nil {
++			conn.Close()
++		}
++		t.Fatalf("blocked download acquisition = %v", err)
++	}
++	assertNoDownloadLeases(t, client)
++}
++
++func TestDownloadReadHealthUsesSeparatePool(t *testing.T) {
++	up, down := &xmuxClient{}, &xmuxClient{}
++	up.addOpenUsage(1)
++	down.addOpenUsage(1)
++	lease := newXmuxRelease(up)
++	lease.peer = newXmuxRelease(down)
++	if lease.readSide().client != down {
++		t.Fatal("read health charged to upload")
++	}
++	lease.release()
++	lease.release()
++	lease.peer.release()
++	up.access.Lock()
++	upUsage := up.openUsage
++	up.access.Unlock()
++	down.access.Lock()
++	downUsage := down.openUsage
++	down.access.Unlock()
++	if upUsage != 0 || downUsage != 0 {
++		t.Fatalf("double/missing release: %d/%d", upUsage, downUsage)
++	}
++}
++
++func TestDownloadUploadFailureReleasesBothPools(t *testing.T) {
++	up, down := &xmuxClient{}, &xmuxClient{}
++	up.addOpenUsage(1)
++	down.addOpenUsage(1)
++	lease := newXmuxRelease(up)
++	lease.peer = newXmuxRelease(down)
++	r, w := io.Pipe()
++	conn := newSplitConn(r, w, M.ParseSocksaddr("localhost:443"), lease)
++	ctx, cancel := context.WithCancel(context.Background())
++	conn.cancel = cancel
++	cause := errors.New("upload failed")
++	conn.uploadFailed(cause)
++	select {
++	case <-ctx.Done():
++	default:
++		t.Fatal("failed upload left download request alive")
++	}
++	if _, err := conn.Write([]byte("orphan")); !errors.Is(err, cause) {
++		t.Fatalf("upload cause lost: %v", err)
++	}
++	if !conn.breaker.localClosed.Load() {
++		t.Fatal("upload failure charged teardown to download health")
++	}
++	conn.Close()
++	up.access.Lock()
++	upUsage := up.openUsage
++	up.access.Unlock()
++	down.access.Lock()
++	downUsage := down.openUsage
++	down.access.Unlock()
++	if upUsage != 0 || downUsage != 0 {
++		t.Fatalf("upload failure retained leases: %d/%d", upUsage, downUsage)
++	}
++}
++
++type downloadFailureRoundTripper func(*http.Request) (*http.Response, error)
++
++func (f downloadFailureRoundTripper) RoundTrip(request *http.Request) (*http.Response, error) {
++	return f(request)
++}
++
++func TestPacketWritePreservesDownloadFailure(t *testing.T) {
++	for _, testCase := range []struct {
++		name           string
++		failedDownload bool
++		postError      error
++	}{
++		{"caller-cancel", false, context.Canceled}, {"download-cancels-upload", true, context.Canceled}, {"upload-error", false, errors.New("upload refused")}, {"independent-upload-error", true, errors.New("upload refused")},
++	} {
++		t.Run(testCase.name, func(t *testing.T) {
++			failedDownload := testCase.failedDownload
++			ctx, cancel := context.WithCancel(context.Background())
++			defer cancel()
++			cause := errors.New("download TLS authentication refused")
++			var conn *packetConn
++			transport := downloadFailureRoundTripper(func(request *http.Request) (*http.Response, error) {
++				if failedDownload {
++					conn.fail(cause)
++				} else {
++					cancel()
++				}
++				return nil, testCase.postError
++			})
++			client := streamOneClient(t, transport)
++			client.download = streamOneClient(t, transport)
++			defer client.Close()
++			up, _ := client.xmux.get()
++			down, _ := client.download.xmux.get()
++			up.addOpenUsage(1)
++			down.addOpenUsage(1)
++			release := newXmuxRelease(up)
++			release.peer = newXmuxRelease(down)
++			conn = newPacketConn(ctx, client, "synthetic-session", M.ParseSocksaddr("127.0.0.1:1"), release)
++			conn.cancel = cancel
++			_, err := conn.Write([]byte("hello"))
++			expected := testCase.postError
++			if failedDownload && errors.Is(testCase.postError, context.Canceled) {
++				expected = cause
++			}
++			if !errors.Is(err, expected) {
++				t.Errorf("Write returned %v instead of primary cause %v", err, expected)
++			}
++			conn.Close()
++			assertNoDownloadLeases(t, client)
++		})
++	}
++}
+diff --git a/transport/v2rayxhttp/download_quic_lx_test.go b/transport/v2rayxhttp/download_quic_lx_test.go
+new file mode 100644
+index 00000000..d800d76c
+--- /dev/null
++++ b/transport/v2rayxhttp/download_quic_lx_test.go
+@@ -0,0 +1,29 @@
++//go:build with_xhttp && with_quic
++
++package v2rayxhttp
++
++import (
++	stdTLS "crypto/tls"
++	"net"
++	"net/http"
++	"testing"
++
++	"github.com/sagernet/quic-go/http3"
++	"github.com/sagernet/sing-box/option"
++	M "github.com/sagernet/sing/common/metadata"
++)
++
++func init() {
++	newHTTP3DownloadServer = func(t *testing.T, handler http.Handler) (M.Socksaddr, *option.OutboundTLSOptions) {
++		t.Helper()
++		certificate, hash := testCertificate(t)
++		socket, err := net.ListenPacket("udp", "127.0.0.1:0")
++		if err != nil {
++			t.Fatal(err)
++		}
++		server := &http3.Server{TLSConfig: http3.ConfigureTLSConfig(&stdTLS.Config{Certificates: []stdTLS.Certificate{*certificate}}), Handler: handler}
++		go server.Serve(socket)
++		t.Cleanup(func() { server.Close(); socket.Close() })
++		return M.SocksaddrFromNet(socket.LocalAddr()), &option.OutboundTLSOptions{Enabled: true, ServerName: "localhost", ALPN: []string{"h3"}, CertificatePublicKeySHA256: [][]byte{hash}}
++	}
++}
+diff --git a/transport/v2rayxhttp/download_reality_lx_test.go b/transport/v2rayxhttp/download_reality_lx_test.go
+new file mode 100644
+index 00000000..a7471715
+--- /dev/null
++++ b/transport/v2rayxhttp/download_reality_lx_test.go
+@@ -0,0 +1,259 @@
++//go:build with_xhttp && with_utls
++
++package v2rayxhttp
++
++import (
++	"context"
++	"crypto/ecdh"
++	"crypto/rand"
++	stdTLS "crypto/tls"
++	"encoding/base64"
++	"fmt"
++	"io"
++	"net"
++	"net/http"
++	"net/http/httptest"
++	"strings"
++	"sync"
++	"sync/atomic"
++	"testing"
++	"time"
++
++	"github.com/sagernet/sing-box/common/tls"
++	"github.com/sagernet/sing-box/log"
++	"github.com/sagernet/sing-box/option"
++	M "github.com/sagernet/sing/common/metadata"
++	N "github.com/sagernet/sing/common/network"
++	"golang.org/x/net/http2"
++)
++
++var downloadRealityNames atomic.Uint64
++
++func init() { newRealityDownloadServer = downloadRealityEndpoint }
++
++// Each leg has its own ephemeral key, short ID, SNI and loopback camouflage
++// target. These native REALITY frontends do not claim direct Xray REALITY ingress.
++func downloadRealityEndpoint(t *testing.T, handler http.Handler) (M.Socksaddr, *option.OutboundTLSOptions) {
++	t.Helper()
++	number := downloadRealityNames.Add(1)
++	name := fmt.Sprintf("leg-%d.fixture.invalid", number)
++	shortID := fmt.Sprintf("%016x", number)
++	key, err := ecdh.X25519().GenerateKey(rand.Reader)
++	if err != nil {
++		t.Fatal(err)
++	}
++	certificate, err := tls.GenerateKeyPair(nil, nil, time.Now, name)
++	if err != nil {
++		t.Fatal(err)
++	}
++	camouflage := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("local camouflage")) }))
++	camouflage.EnableHTTP2 = true
++	camouflage.TLS = &stdTLS.Config{MinVersion: stdTLS.VersionTLS13, MaxVersion: stdTLS.VersionTLS13, Certificates: []stdTLS.Certificate{*certificate}}
++	camouflage.StartTLS()
++	t.Cleanup(camouflage.Close)
++	target := M.SocksaddrFromNet(camouflage.Listener.Addr())
++	ctx, cancel := context.WithCancel(context.Background())
++	config, err := tls.NewRealityServer(ctx, log.NewNOPFactory().Logger(), option.InboundTLSOptions{
++		Enabled: true, ServerName: name, ALPN: []string{"h2"},
++		Reality: &option.InboundRealityOptions{Enabled: true,
++			PrivateKey: base64.RawURLEncoding.EncodeToString(key.Bytes()), ShortID: []string{shortID},
++			Handshake: option.InboundRealityHandshakeOptions{ServerOptions: option.ServerOptions{Server: target.AddrString(), ServerPort: target.Port}},
++		},
++	})
++	if err != nil {
++		cancel()
++		t.Fatal(err)
++	}
++	config.SetHandshakeTimeout(5 * time.Second)
++	listener, err := net.Listen("tcp", "127.0.0.1:0")
++	if err != nil {
++		cancel()
++		t.Fatal(err)
++	}
++	var connections sync.Map
++	var workers sync.WaitGroup
++	accepted := make(chan struct{})
++	go func() {
++		defer close(accepted)
++		for {
++			raw, err := listener.Accept()
++			if err != nil {
++				return
++			}
++			connections.Store(raw, true)
++			workers.Add(1)
++			go func() {
++				defer workers.Done()
++				defer connections.Delete(raw)
++				defer raw.Close()
++				raw.SetDeadline(time.Now().Add(10 * time.Second))
++				secure, err := tls.ServerHandshake(ctx, raw, config)
++				if err != nil {
++					return
++				}
++				defer secure.Close()
++				state := secure.ConnectionState()
++				if !state.HandshakeComplete || state.ServerName != name || state.NegotiatedProtocol != "" && state.NegotiatedProtocol != "h2" {
++					t.Errorf("REALITY handshake identity/ALPN mismatch: %q %q", state.ServerName, state.NegotiatedProtocol)
++					return
++				}
++				server := &http2.Server{}
++				// The pinned uTLS REALITY server leaves clientProtocol empty.
++				// Verify HTTP/2 on parsed requests rather than inventing ALPN metadata.
++				checked := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
++					if r.ProtoMajor != 2 {
++						t.Error("REALITY request was not HTTP/2")
++						http.Error(w, "wrong protocol", 400)
++						return
++					}
++					handler.ServeHTTP(w, r)
++				})
++				server.ServeConn(secure, &http2.ServeConnOpts{Context: ctx, Handler: checked})
++			}()
++		}
++	}()
++	t.Cleanup(func() {
++		listener.Close()
++		<-accepted
++		cancel()
++		connections.Range(func(key, value any) bool { key.(net.Conn).Close(); return true })
++		finished := make(chan struct{})
++		go func() { workers.Wait(); close(finished) }()
++		select {
++		case <-finished:
++		case <-time.After(5 * time.Second):
++			t.Error("REALITY frontend connections did not close")
++		}
++		config.Close()
++	})
++	return M.SocksaddrFromNet(listener.Addr()), &option.OutboundTLSOptions{
++		Enabled: true, ServerName: name, ALPN: []string{"h2"},
++		UTLS: &option.OutboundUTLSOptions{Enabled: true, Fingerprint: "chrome"},
++		Reality: &option.OutboundRealityOptions{Enabled: true,
++			PublicKey: base64.RawURLEncoding.EncodeToString(key.PublicKey().Bytes()), ShortID: shortID, KeyShare: "classical"},
++	}
++}
++
++func TestDownloadRealityKeyShareExchange(t *testing.T) {
++	for _, share := range []string{"classical", "", "hybrid"} {
++		label := share
++		if label == "" {
++			label = "fingerprint-default"
++		}
++		t.Run(label, func(t *testing.T) {
++			address, options := downloadRealityEndpoint(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("hello")) }))
++			options.Reality.KeyShare = share
++			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
++			defer cancel()
++			config, err := tls.NewClient(ctx, log.NewNOPFactory().Logger(), options.ServerName, *options)
++			if err != nil {
++				t.Fatal(err)
++			}
++			dialer := net.Dialer{}
++			raw, err := dialer.DialContext(ctx, "tcp", address.String())
++			if err != nil {
++				t.Fatal(err)
++			}
++			defer raw.Close()
++			secure, err := tls.ClientHandshake(ctx, raw, config)
++			if err != nil {
++				t.Fatal(err)
++			}
++			defer secure.Close()
++			state := secure.ConnectionState()
++			// REALITY forces H2 independently of ALPN (SPEC 104); verify parsed HTTP/2 below.
++			if !state.HandshakeComplete || state.ServerName != options.ServerName {
++				t.Fatalf("REALITY client handshake identity mismatch: complete=%v sni=%q alpn=%q", state.HandshakeComplete, state.ServerName, state.NegotiatedProtocol)
++			}
++			transport := &http2.Transport{}
++			connection, err := transport.NewClientConn(secure)
++			if err != nil {
++				t.Fatal(err)
++			}
++			defer connection.Close()
++			request, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://"+options.ServerName+"/probe", nil)
++			if err != nil {
++				t.Fatal(err)
++			}
++			response, err := connection.RoundTrip(request)
++			if err != nil {
++				t.Fatal(err)
++			}
++			defer response.Body.Close()
++			payload, err := io.ReadAll(response.Body)
++			if err != nil || response.StatusCode != 200 || response.ProtoMajor != 2 || string(payload) != "hello" {
++				t.Fatalf("REALITY HTTP/2 exchange failed: %v", err)
++			}
++		})
++	}
++}
++
++func TestDownloadRealityRejectsOtherLegIdentity(t *testing.T) {
++	for _, mutation := range []string{"public-key", "short-id", "sni", "upload-key"} {
++		t.Run(mutation, func(t *testing.T) {
++			var upGets, downRequests atomic.Int32
++			up, upTLS := downloadRealityEndpoint(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
++				if r.Method == http.MethodGet {
++					upGets.Add(1)
++					w.Write([]byte("unsafe"))
++					return
++				}
++				io.Copy(io.Discard, r.Body)
++				w.WriteHeader(http.StatusOK)
++			}))
++			down, downTLS := downloadRealityEndpoint(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { downRequests.Add(1); w.Write([]byte("unsafe")) }))
++			switch mutation {
++			case "public-key":
++				key, err := ecdh.X25519().GenerateKey(rand.Reader)
++				if err != nil {
++					t.Fatal(err)
++				}
++				downTLS.Reality.PublicKey = base64.RawURLEncoding.EncodeToString(key.PublicKey().Bytes())
++			case "short-id":
++				downTLS.Reality.ShortID = "ffffffffffffffff"
++			case "sni":
++				downTLS.ServerName = "wrong.fixture.invalid"
++			case "upload-key":
++				downTLS.Reality.PublicKey = upTLS.Reality.PublicKey
++			}
++			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
++			defer cancel()
++			config, err := tls.NewClient(ctx, log.NewNOPFactory().Logger(), upTLS.ServerName, *upTLS)
++			if err != nil {
++				t.Fatal(err)
++			}
++			transport, err := NewClient(ctx, N.SystemDialer, up, option.V2RayXHTTPOptions{Mode: modePacketUp,
++				DownloadSettings: &option.V2RayXHTTPDownloadOptions{
++					ServerOptions:               option.ServerOptions{Server: down.AddrString(), ServerPort: down.Port},
++					OutboundTLSOptionsContainer: option.OutboundTLSOptionsContainer{TLS: downTLS},
++				},
++			}, config)
++			if err != nil {
++				t.Fatal(err)
++			}
++			client := transport.(*Client)
++			defer client.Close()
++			conn, exchangeError := client.DialContext(ctx)
++			if exchangeError == nil {
++				conn.SetDeadline(time.Now().Add(5 * time.Second))
++				_, exchangeError = conn.Write([]byte("hello"))
++				if exchangeError == nil {
++					_, exchangeError = io.ReadFull(conn, make([]byte, 5))
++				}
++				conn.Close()
++			}
++			if exchangeError == nil {
++				t.Fatal("incorrect download identity authenticated")
++			}
++			message := strings.ToLower(exchangeError.Error())
++			if !strings.Contains(message, "certificate") && !strings.Contains(message, "reality") && !strings.Contains(message, "tls") {
++				t.Fatalf("expected authentication error, got: %v", exchangeError)
++			}
++			if upGets.Load() != 0 || downRequests.Load() != 0 {
++				t.Fatalf("wrong identity used upload fallback or reached download handler: up=%d down=%d", upGets.Load(), downRequests.Load())
++			}
++			assertNoDownloadLeases(t, client)
++			t.Logf("incorrect %s rejected without fallback: %v", mutation, exchangeError)
++		})
++	}
++}
+diff --git a/transport/v2rayxhttp/download_xray_windows_test.go b/transport/v2rayxhttp/download_xray_windows_test.go
+new file mode 100644
+index 00000000..2c8f9868
+--- /dev/null
++++ b/transport/v2rayxhttp/download_xray_windows_test.go
+@@ -0,0 +1,264 @@
++//go:build windows && with_xhttp
++
++package v2rayxhttp
++
++import (
++	"context"
++	"crypto/sha256"
++	stdTLS "crypto/tls"
++	"crypto/x509"
++	"encoding/binary"
++	"encoding/hex"
++	"encoding/json"
++	"encoding/pem"
++	"fmt"
++	"io"
++	"net"
++	"net/http"
++	"net/http/httputil"
++	"net/url"
++	"os"
++	"os/exec"
++	"path/filepath"
++	"strings"
++	"sync/atomic"
++	"syscall"
++	"testing"
++	"time"
++
++	"github.com/sagernet/sing-box/common/tls"
++	"github.com/sagernet/sing-box/log"
++	"github.com/sagernet/sing-box/option"
++	N "github.com/sagernet/sing/common/network"
++	"golang.org/x/net/http2"
++)
++
++func officialXrayBackend(t *testing.T, executable string) (string, *stdTLS.Config) {
++	return officialXrayBackendLifetime(t, executable, 10*time.Second)
++}
++
++func officialXrayBackendLifetime(t *testing.T, executable string, lifetime time.Duration) (string, *stdTLS.Config) {
++	t.Helper()
++	file, err := os.Open(executable)
++	if err != nil {
++		t.Fatal(err)
++	}
++	hash := sha256.New()
++	_, err = io.Copy(hash, file)
++	file.Close()
++	if err != nil || hex.EncodeToString(hash.Sum(nil)) != "c77a00eb84fb93ae044c2d771a1cabcc033b81e487253fbc35b12df6879c1e15" {
++		t.Fatal("official Xray 26.10.21 fixture checksum mismatch")
++	}
++	echo, err := net.Listen("tcp", "127.0.0.1:0")
++	if err != nil {
++		t.Fatal(err)
++	}
++	t.Cleanup(func() { echo.Close() })
++	go func() {
++		for {
++			conn, err := echo.Accept()
++			if err != nil {
++				return
++			}
++			go func() { defer conn.Close(); conn.SetDeadline(time.Now().Add(lifetime)); io.Copy(conn, conn) }()
++		}
++	}()
++	reserve, err := net.Listen("tcp", "127.0.0.1:0")
++	if err != nil {
++		t.Fatal(err)
++	}
++	backend := reserve.Addr().String()
++	port := reserve.Addr().(*net.TCPAddr).Port
++	reserve.Close()
++	echoPort := echo.Addr().(*net.TCPAddr).Port
++	certificate, err := tls.GenerateKeyPair(nil, nil, time.Now, "localhost")
++	if err != nil {
++		t.Fatal(err)
++	}
++	material := t.TempDir()
++	certPath, keyPath := filepath.Join(material, "server.pem"), filepath.Join(material, "server.key")
++	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certificate.Certificate[0]})
++	keyDER, err := x509.MarshalPKCS8PrivateKey(certificate.PrivateKey)
++	if err != nil {
++		t.Fatal(err)
++	}
++	if err = os.WriteFile(certPath, certPEM, 0600); err != nil {
++		t.Fatal(err)
++	}
++	if err = os.WriteFile(keyPath, pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: keyDER}), 0600); err != nil {
++		t.Fatal(err)
++	}
++	roots := x509.NewCertPool()
++	if !roots.AppendCertsFromPEM(certPEM) {
++		t.Fatal("fixture certificate invalid")
++	}
++	proxyTLS := &stdTLS.Config{ServerName: "localhost", RootCAs: roots, NextProtos: []string{"h2"}}
++	config := map[string]any{
++		"log": map[string]any{"loglevel": "warning"},
++		"inbounds": []any{map[string]any{"listen": "127.0.0.1", "port": port, "protocol": "vless",
++			"settings":       map[string]any{"clients": []any{map[string]any{"id": "11111111-1111-4111-8111-111111111111"}}, "decryption": "none"},
++			"streamSettings": map[string]any{"network": "xhttp", "security": "tls", "tlsSettings": map[string]any{"alpn": []string{"h2"}, "certificates": []any{map[string]any{"certificateFile": certPath, "keyFile": keyPath}}}, "xhttpSettings": map[string]any{"path": "/shared/", "mode": "auto"}}}},
++		"outbounds": []any{map[string]any{"protocol": "freedom", "settings": map[string]any{"redirect": echo.Addr().String(),
++			"finalRules": []any{map[string]any{"action": "allow", "network": "tcp", "ip": []string{"127.0.0.1/32"}, "port": echoPort}}}}},
++	}
++	encoded, err := json.Marshal(config)
++	if err != nil {
++		t.Fatal(err)
++	}
++	configPath := filepath.Join(t.TempDir(), "xray.json")
++	if err = os.WriteFile(configPath, encoded, 0600); err != nil {
++		t.Fatal(err)
++	}
++	ctx, cancel := context.WithCancel(context.Background())
++	command := exec.CommandContext(ctx, executable, "run", "-c", configPath)
++	command.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
++	logs, err := os.Create(filepath.Join(t.TempDir(), "xray.log"))
++	if err != nil {
++		t.Fatal(err)
++	}
++	command.Stdout = logs
++	command.Stderr = logs
++	if err = command.Start(); err != nil {
++		logs.Close()
++		cancel()
++		t.Fatal(err)
++	}
++	done := make(chan error, 1)
++	go func() { done <- command.Wait() }()
++	t.Cleanup(func() {
++		cancel()
++		select {
++		case <-done:
++		case <-time.After(5 * time.Second):
++			t.Error("Xray fixture did not exit")
++		}
++		logs.Close()
++	})
++	deadline := time.Now().Add(5 * time.Second)
++	for time.Now().Before(deadline) {
++		select {
++		case err := <-done:
++			done <- err
++			t.Fatalf("Xray fixture exited: %v", err)
++		default:
++		}
++		conn, err := net.DialTimeout("tcp", backend, 100*time.Millisecond)
++		if err == nil {
++			conn.Close()
++			return backend, proxyTLS
++		}
++		time.Sleep(20 * time.Millisecond)
++	}
++	t.Fatal("Xray fixture did not listen")
++	return "", nil
++}
++
++// Two independently authenticated frontends converge on ONE official Xray
++// backend. Its VLESS handshake and TCP echo prove pairing beyond HTTP status200.
++func TestIndependentDownloadOfficialXray(t *testing.T) {
++	executable := os.Getenv("NOVA_XRAY_BINARY")
++	if executable == "" {
++		t.Skip("set NOVA_XRAY_BINARY to the pinned official Windows fixture")
++	}
++	backend, backendTLS := officialXrayBackend(t, executable)
++	target, _ := url.Parse("https://" + backend)
++	pairs := independentDownloadTestPairs()
++	for _, mode := range []string{modeAuto, modePacketUp, modeStreamUp} {
++		for _, pair := range pairs {
++			t.Run(fmt.Sprintf("%s/%s-%s", mode, downloadEndpointLabel(pair[0]), downloadEndpointLabel(pair[1])), func(t *testing.T) {
++				var upRequests, downGets, wrongLeg atomic.Int32
++				front := func(prefix string, up bool) http.Handler {
++					proxy := httputil.NewSingleHostReverseProxy(target)
++					original := proxy.Director
++					proxy.Director = func(r *http.Request) {
++						original(r)
++						r.URL.Path = "/shared/" + strings.TrimPrefix(r.URL.Path, prefix)
++						r.URL.RawPath = ""
++					}
++					proxy.FlushInterval = -1
++					transport := &http2.Transport{TLSClientConfig: backendTLS.Clone(), DisableCompression: true}
++					proxy.Transport = transport
++					t.Cleanup(transport.CloseIdleConnections)
++					return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
++						if !strings.HasPrefix(r.URL.Path, prefix) {
++							wrongLeg.Add(1)
++							http.Error(w, "wrong path", 400)
++							return
++						}
++						if up {
++							upRequests.Add(1)
++							if r.Method == http.MethodGet {
++								wrongLeg.Add(1)
++							}
++						} else {
++							if r.Method != http.MethodGet {
++								wrongLeg.Add(1)
++							}
++							downGets.Add(1)
++						}
++						proxy.ServeHTTP(w, r)
++					})
++				}
++				up, upTLS := downloadTestEndpoint(t, pair[0], front("/up/", true))
++				down, downTLS := downloadTestEndpoint(t, pair[1], front("/down/", false))
++				var tlsConfig tls.Config
++				var err error
++				if upTLS != nil {
++					tlsConfig, err = tls.NewClient(context.Background(), log.NewNOPFactory().Logger(), "localhost", *upTLS)
++					if err != nil {
++						t.Fatal(err)
++					}
++				}
++				transport, err := NewClient(context.Background(), N.SystemDialer, up, option.V2RayXHTTPOptions{Mode: mode, Path: "/up/",
++					DownloadSettings: &option.V2RayXHTTPDownloadOptions{ServerOptions: option.ServerOptions{Server: down.AddrString(), ServerPort: down.Port},
++						OutboundTLSOptionsContainer: option.OutboundTLSOptionsContainer{TLS: downTLS}, XHTTP: option.V2RayXHTTPOptions{Path: "/down/"}}}, tlsConfig)
++				if err != nil {
++					t.Fatal(err)
++				}
++				client := transport.(*Client)
++				defer client.Close()
++				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
++				defer cancel()
++				conn, err := client.DialContext(ctx)
++				if err != nil {
++					t.Fatal(err)
++				}
++				defer conn.Close()
++				conn.SetDeadline(time.Now().Add(10 * time.Second))
++				uuid, _ := hex.DecodeString("11111111111141118111111111111111")
++				request := append([]byte{0}, uuid...)
++				request = append(request, 0, 1)
++				// Freedom is forced to the local echo fixture, including a final allow rule.
++				port := make([]byte, 2)
++				binary.BigEndian.PutUint16(port, 80)
++				request = append(request, port...)
++				request = append(request, 1, 127, 0, 0, 1)
++				request = append(request, []byte("hello")...)
++				if _, err = conn.Write(request); err != nil {
++					t.Fatal(err)
++				}
++				header := make([]byte, 2)
++				if _, err = io.ReadFull(conn, header); err != nil {
++					t.Fatal(err)
++				}
++				if header[0] != 0 {
++					t.Fatal("invalid VLESS response version")
++				}
++				if header[1] > 0 {
++					if _, err = io.CopyN(io.Discard, conn, int64(header[1])); err != nil {
++						t.Fatal(err)
++					}
++				}
++				payload := make([]byte, 5)
++				if _, err = io.ReadFull(conn, payload); err != nil || string(payload) != "hello" {
++					t.Fatalf("official Xray echo %q: %v", payload, err)
++				}
++				if upRequests.Load() == 0 || downGets.Load() == 0 || wrongLeg.Load() != 0 {
++					t.Fatal("official traffic did not use both intended legs")
++				}
++				conn.Close()
++				assertNoDownloadLeases(t, client)
++			})
++		}
++	}
++}
+diff --git a/transport/v2rayxhttp/upload_readiness_lx_test.go b/transport/v2rayxhttp/upload_readiness_lx_test.go
+new file mode 100644
+index 00000000..e9a0f1b0
+--- /dev/null
++++ b/transport/v2rayxhttp/upload_readiness_lx_test.go
+@@ -0,0 +1,42 @@
++package v2rayxhttp
++
++import (
++	"context"
++	"errors"
++	"testing"
++	"time"
++)
++
++// lx: SPEC 077: a successful download header cannot substitute upload adoption.
++func TestDownloadReadyDoesNotCompleteUploadRaise(t *testing.T) {
++	ctx, cancel := context.WithCancel(context.Background())
++	defer cancel()
++	adopted, created := make(chan struct{}), make(chan struct{})
++	close(created)
++	result := make(chan error, 1)
++	go func() { result <- awaitRaise(ctx, adopted, created, nil, func() error { return nil }) }()
++	select {
++	case err := <-result:
++		t.Fatalf("dial completed before upload adoption: %v", err)
++	case <-time.After(30 * time.Millisecond):
++	}
++	close(adopted)
++	select {
++	case err := <-result:
++		if err != nil {
++			t.Fatal(err)
++		}
++	case <-time.After(time.Second):
++		t.Fatal("upload adoption did not complete dial")
++	}
++}
++
++func TestDownloadReadyCannotHideCancelledUploadRaise(t *testing.T) {
++	ctx, cancel := context.WithCancel(context.Background())
++	cancel()
++	adopted, created := make(chan struct{}), make(chan struct{})
++	close(created)
++	if err := awaitRaise(ctx, adopted, created, nil, func() error { return nil }); !errors.Is(err, context.Canceled) {
++		t.Fatalf("unraised upload must respect dial cancellation: %v", err)
++	}
++}
+diff --git a/transport/v2rayxhttp/xmux.go b/transport/v2rayxhttp/xmux.go
+index ab27da80..9ed567e2 100644
+--- a/transport/v2rayxhttp/xmux.go
++++ b/transport/v2rayxhttp/xmux.go
+@@ -202,6 +202,7 @@ func (c *xmuxClient) roundTrip(request *http.Request) (*http.Response, error) {
+ // connection would then never be torn down after retirement.
+ type xmuxRelease struct {
+ 	client *xmuxClient
++	peer   *xmuxRelease // lx: optional download acquisition, released with the session
+ 	once   sync.Once
+ }
+ 
+@@ -215,6 +216,7 @@ func (r *xmuxRelease) release() {
+ 	}
+ 	r.once.Do(func() {
+ 		r.client.addOpenUsage(-1)
++		r.peer.release()
+ 	})
+ }
+ 

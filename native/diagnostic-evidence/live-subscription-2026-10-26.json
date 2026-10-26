@@ -1,0 +1,60 @@
+{
+  "date": "2026-10-26",
+  "device": "TECNO KM4",
+  "android_api": 35,
+  "package": "com.nova.vpn.android.usbtest.completionpreview",
+  "app_sha256": "fbb1d28bf71e725a620963f3d219b654cf68abc4ad6e3364895d942d23a882b3",
+  "test_sha256": "32069cf643594d416dd5f46177f7f4a68558bee394744da6e7d89e7a4aeaed79",
+  "subscription": {
+    "http_status_from_host": 200,
+    "android_imported_nodes": 19,
+    "android_parse_warnings": 0,
+    "protocol": "vless",
+    "transport": "tcp",
+    "security": "reality",
+    "encrypted_vault_roundtrip": true,
+    "hwid_sent": false,
+    "identity_headers_sent": false
+  },
+  "direct_baseline": {
+    "cloudflare": true,
+    "google": true,
+    "test_uid_vpn": false
+  },
+  "tested_node_ordinals": [
+    1
+  ],
+  "engines": {
+    "sing_box": {
+      "cloudflare_https": true,
+      "google_https": true,
+      "test_uid_vpn": true
+    },
+    "reality_core": {
+      "cloudflare_https": true,
+      "google_https": true,
+      "test_uid_vpn": true
+    }
+  },
+  "cleanup": {
+    "test_vpn_stopped": true,
+    "original_test_vault_restored": true,
+    "original_engine_restored": true,
+    "ephemeral_subscription_input_deleted": true,
+    "laptop_vpn_changed": false
+  },
+  "raw_log_sha256": "1d32eb291e0db9e77da33e4c12ce700c58ab61fea5f7ecef19b8b686b79b95f3",
+  "limits": [
+    "Only first subscription node tested for actual VPN traffic; the other 18 were parsed, not connected.",
+    "HTTPS wall-clock durations include connection and TLS setup; not ping or gaming latency.",
+    "No real Wi-Fi/cellular handover, Doze, battery endurance or 16KB runtime claim.",
+    "Provider subscription URL, credentials, server names and IP addresses excluded."
+  ],
+  "final_apk_repeat": {
+    "app_sha256": "7c5d65b4489eedfcf2dacff95789b1dfa50193508f16826b0156b2db6b557669",
+    "test_sha256": "be2e2803431c25b49dc51a8ef57b99cd5d6aed0b7022847d1fecd9668ede65e9",
+    "identity_headers": false,
+    "result": "Both cores: same first node, both HTTPS endpoints passed after compact layout changes and Wi-Fi recovery tests.",
+    "raw_log_sha256": "eb26f1ff75379d9f14493fa4d131f606ae8e42312bb59c19b4601e6876b5d02f"
+  }
+}

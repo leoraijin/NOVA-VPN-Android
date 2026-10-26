@@ -1,0 +1,31 @@
+{
+  "schema": 1,
+  "native_revision": "fe2e2f52ae0b360b95b6cd82900208f1d393f357",
+  "cases": {
+    "trusted-camouflage": {
+      "target": "transport/v2rayxhttp/download_reality_lx_test.go",
+      "target_sha256_lf": "7355bb40877619ca088b9dff7b7f69f1ca2c0d06bd4c1ac626092cf467f0480d",
+      "fixture": "trusted-camouflage_test.go",
+      "fixture_sha256": "3e0a4674444d02adde7473983dcc20e2fb50f9964ff2c3f965a9b190b3969761",
+      "tags": "with_xhttp,with_quic,with_utls,with_reality",
+      "run": "^TestDownloadRealityRejectsOtherLegIdentity$",
+      "count": 5,
+      "environment": {
+        "GODEBUG": "x509usefallbackroots=1"
+      }
+    },
+    "h3-soak": {
+      "target": "transport/v2rayxhttp/download_load_windows_test.go",
+      "target_sha256_lf": "bd669745855e68e1dba2df4a7f54e98431c1fdb0597b2f5b5067b1ee1112b185",
+      "fixture": "persistent-h3_test.go",
+      "fixture_sha256": "89ca451428eba534f285310b9cf43ebe6e49ccb38653175d8983d77cf4022dcc",
+      "tags": "with_xhttp,with_quic,with_utls,with_reality",
+      "run": "^TestIndependentDownloadOfficialXrayConcurrent$",
+      "count": 1,
+      "environment": {
+        "NOVA_XHTTP_SOAK_SECONDS": "300",
+        "NOVA_XRAY_BINARY": "checksum-pinned official Xray 26.10.21 executable"
+      }
+    }
+  }
+}

@@ -1,0 +1,47 @@
+{
+  "date": "2026-10-26",
+  "result": "PASS",
+  "native_version": "1.14.3-lx.23-nova-downlink.4",
+  "android": "API36 x86_64 16KB emulator-5590",
+  "installed_product_apk_sha256": "2b4255a42d4af3a60c4ce5d54997c4b5f57f319cee4d533d95491880ab7e731e",
+  "installed_test_apk_sha256": "aaaf72815f28719869726af9a0965e4ff1f6b234a7b3bbc2827f8691198adb83",
+  "installed_apk_bytes_match_local_artifacts": true,
+  "official_xray": "26.10.21",
+  "official_fixture_control": "Xray client packet-up IPv4/IPv6 echo passed before Android test",
+  "modes": {
+    "result": "PASS",
+    "serial": "emulator-5590",
+    "http_version": 2,
+    "test": "packet-up/stream-up/auto",
+    "security": "reality",
+    "scope": "Direct official Xray ingress; Android TUN; separate-UID IPv4/IPv6; imported download_settings",
+    "android_log_sha256": "61ffe99a5a824f5c57dee32d553ebd5aad65f4bcb44c4fbeb4a7a78877ad7fba",
+    "fixture_config_sha256": "96bf37379d0d127c30da0bb3b9e63f556c3d6a11b4a3b48402569d80d3f873f2",
+    "limits": [
+      "Same endpoint/path for upload and download",
+      "Emulator only",
+      "Not network handover"
+    ]
+  },
+  "wrong_download_public_key": {
+    "result": "PASS",
+    "serial": "emulator-5590",
+    "http_version": 2,
+    "test": "Reality key control/refusal/control",
+    "security": "reality",
+    "scope": "Direct official Xray ingress; Android TUN; separate-UID IPv4/IPv6; imported download_settings",
+    "android_log_sha256": "bc7dfc38a3af59e0e70260e02f03f4cd29789c4a765c17d311f2039054b0f667",
+    "fixture_config_sha256": "96bf37379d0d127c30da0bb3b9e63f556c3d6a11b4a3b48402569d80d3f873f2",
+    "limits": [
+      "Same endpoint/path for upload and download",
+      "Emulator only",
+      "Not network handover"
+    ]
+  },
+  "configuration": "Owned loopback TLS1.3 handshake target and Reality/H2 server; correct public keys, chrome fingerprint; no insecure TLS option",
+  "limits": [
+    "Both directions use same official Xray endpoint/path",
+    "Not physical ARM64",
+    "Not network handover, sleep or long-session Android validation"
+  ]
+}

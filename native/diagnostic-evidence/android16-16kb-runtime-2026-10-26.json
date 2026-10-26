@@ -1,0 +1,48 @@
+{
+  "date": "2026-10-26",
+  "environment": "Official Android 16 API36 google_apis_ps16k x86_64 r07",
+  "page_size": 16384,
+  "image_sha1": "dd783282e84bf475a02eba6777c79fc5695e1583",
+  "apk_sha256": "f1111d42dd77f6e50ce74dc9f6b2f9e9dc2e7e5f3b7ce9fbd671bc59571f3df9",
+  "verified": [
+    "Isolated sing-box routing",
+    "Sequential Reality Core and sing-box IPv4/IPv6 TUN and application exclusion",
+    "Both engines: live reload, invalid-config rollback, rapid stop/start, automatic/diagnostic ownership, IPv4/IPv6 and idle full restore",
+    "XHTTP separate downlink packet-up/stream-up/auto: official Xray, separate UID IPv4/IPv6 TUN",
+    "Both engines: 30 seconds forced deep Doze with screen off, retained TUN, unchanged session revision, IPv4/IPv6 after wake"
+  ],
+  "not_verified": [
+    "ARM64 physical 16KB",
+    "Full release acceptance",
+    "Root cause of API35 16KB crashes",
+    "Intermittent physical network recovery failures",
+    "Physical phone Doze and battery endurance; emulator forced idle is not energy-use evidence"
+  ],
+  "observations": [
+    "Both-core run initially failed with three emulators active",
+    "Unchanged both-core routing test passed with only API36 emulator running",
+    "Minimal concurrent Go executable and c-shared controls passed on both 16KB images"
+  ],
+  "evidence": [
+    {
+      "sha256": "aa0c31723221546313674e0b9c905eea2df260ea97993bc57ed20353a2dcb8c5",
+      "file": "release-api36-16k-singbox.log"
+    },
+    {
+      "sha256": "cbfe895dc5fafe6eff7b84f05e43ed0176f481863f17fc678a719fc6244da85e",
+      "file": "release-api36-16k-single-avd-routing.log"
+    },
+    {
+      "file": "release-api36-16k-single-avd-reload.log",
+      "sha256": "e1032c07fa083da603534bc5aea1849be54f9e0fc00adfbb45c718ee627df0d7"
+    },
+    {
+      "sha256": "a79877fc2060714a2e5086facbd06104361e4270b84ef8aa856b14f7f2a0b7fb",
+      "file": "release-api36-16k-xhttp.log"
+    },
+    {
+      "file": "release-api36-16k-doze.log",
+      "sha256": "b96b07d50988f9fd578c605999d9a6c1ef07e9983cf0d0f07fd5f41c9c8a33c3"
+    }
+  ]
+}

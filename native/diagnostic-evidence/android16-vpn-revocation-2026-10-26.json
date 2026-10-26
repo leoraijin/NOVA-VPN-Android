@@ -1,0 +1,26 @@
+{
+  "date": "2026-10-26",
+  "environment": "Android 16 API36 x86_64 16KB emulator-5590",
+  "scope": "Actual ACTIVATE_VPN app-op denial while TUN traffic is active, then permission restoration and explicit restart",
+  "engines": [
+    "REALITY_CORE",
+    "SING_BOX"
+  ],
+  "verified": [
+    "IPv4 and IPv6 separate-UID traffic before revocation",
+    "VpnService.prepare requires consent after denial",
+    "Runtime disconnected and Android VPN network removed",
+    "Pre-revocation request token invalidated",
+    "Idle for 3 seconds before and 3 seconds after permission restoration",
+    "Explicit new request restores IPv4 and IPv6"
+  ],
+  "cleanup": "Test permission restored to original allow; both isolated packages force-stopped",
+  "apk_sha256": "fc9c7984f754762215a123dd238d62e601fd5cd69ea65b22182f1e2922c9e2e0",
+  "test_apk_sha256": "25f7a7e1f6a0f9ccf3a6e95234682c525e6ba2f1ab5c4400cd06fe86ff670c35",
+  "log_sha256": "53d16d97e1cae3602fd43b97e19c6d0fcceb77da3ab13cb9293808aedfe1d1a5",
+  "limitations": [
+    "Emulator only; physical phone was not connected",
+    "Bounded idle observation, not a battery/endurance result",
+    "Host VPN unchanged"
+  ]
+}

@@ -1,0 +1,15 @@
+diff --git a/cmd/gomobile/env.go b/cmd/gomobile/env.go
+index 6dae1f6b..6de065a4 100644
+--- a/cmd/gomobile/env.go
++++ b/cmd/gomobile/env.go
+@@ -194,8 +194,8 @@ func envInit() (err error) {
+ 			androidEnv[arch] = []string{
+ 				"GOOS=android",
+ 				"GOARCH=" + arch,
+-				"CC=" + clang,
+-				"CXX=" + clangpp,
++				"CC=" + androidCompilerCommand(clang),
++				"CXX=" + androidCompilerCommand(clangpp),
+ 				"CGO_ENABLED=1",
+ 			}
+ 			if arch == "arm" {

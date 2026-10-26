@@ -1,0 +1,212 @@
+{
+  "date": "2026-10-26",
+  "environment": "Android16 API36 x86_64 PAGE_SIZE=16384",
+  "native_version": "1.14.3-lx.23-nova-downlink.4",
+  "allabi_aar_sha256": "67abf3aafeff36f5b042929d74f75fbc646aa7085a3b3bb69091874a1e70559c",
+  "x86_64_sha256": "712f1f1ec0723c061b36e50a5f8adf9adfca27639f28cdc5b73aa041d34d9b51",
+  "x86_64_matches_tested_single_abi": true,
+  "pairs": [
+    {
+      "upload_http": 2,
+      "download_http": 1,
+      "counters": {
+        "download": {
+          "backend_h2": 11,
+          "errors": 0,
+          "requests": 11,
+          "wrong_leg": 0,
+          "wrong_protocol": 0
+        },
+        "upload": {
+          "backend_h2": 20,
+          "errors": 0,
+          "requests": 20,
+          "wrong_leg": 0,
+          "wrong_protocol": 0
+        }
+      }
+    },
+    {
+      "upload_http": 1,
+      "download_http": 3,
+      "counters": {
+        "download": {
+          "backend_h2": 12,
+          "errors": 0,
+          "requests": 12,
+          "wrong_leg": 0,
+          "wrong_protocol": 0
+        },
+        "upload": {
+          "backend_h2": 22,
+          "errors": 0,
+          "requests": 22,
+          "wrong_leg": 0,
+          "wrong_protocol": 0
+        }
+      }
+    },
+    {
+      "upload_http": 3,
+      "download_http": 1,
+      "counters": {
+        "download": {
+          "backend_h2": 11,
+          "errors": 0,
+          "requests": 11,
+          "wrong_leg": 0,
+          "wrong_protocol": 0
+        },
+        "upload": {
+          "backend_h2": 20,
+          "errors": 0,
+          "requests": 20,
+          "wrong_leg": 0,
+          "wrong_protocol": 0
+        }
+      }
+    },
+    {
+      "upload_http": 1,
+      "download_http": 1,
+      "counters": {
+        "download": {
+          "backend_h2": 12,
+          "errors": 0,
+          "requests": 12,
+          "wrong_leg": 0,
+          "wrong_protocol": 0
+        },
+        "upload": {
+          "backend_h2": 22,
+          "errors": 0,
+          "requests": 22,
+          "wrong_leg": 0,
+          "wrong_protocol": 0
+        }
+      }
+    },
+    {
+      "upload_http": 2,
+      "download_http": 2,
+      "counters": {
+        "download": {
+          "backend_h2": 12,
+          "errors": 0,
+          "requests": 12,
+          "wrong_leg": 0,
+          "wrong_protocol": 0
+        },
+        "upload": {
+          "backend_h2": 22,
+          "errors": 0,
+          "requests": 22,
+          "wrong_leg": 0,
+          "wrong_protocol": 0
+        }
+      }
+    },
+    {
+      "upload_http": 2,
+      "download_http": 3,
+      "counters": {
+        "download": {
+          "backend_h2": 11,
+          "errors": 0,
+          "requests": 11,
+          "wrong_leg": 0,
+          "wrong_protocol": 0
+        },
+        "upload": {
+          "backend_h2": 20,
+          "errors": 0,
+          "requests": 20,
+          "wrong_leg": 0,
+          "wrong_protocol": 0
+        }
+      }
+    },
+    {
+      "upload_http": 3,
+      "download_http": 2,
+      "counters": {
+        "download": {
+          "backend_h2": 12,
+          "errors": 0,
+          "requests": 12,
+          "wrong_leg": 0,
+          "wrong_protocol": 0
+        },
+        "upload": {
+          "backend_h2": 22,
+          "errors": 0,
+          "requests": 22,
+          "wrong_leg": 0,
+          "wrong_protocol": 0
+        }
+      }
+    },
+    {
+      "upload_http": 3,
+      "download_http": 3,
+      "counters": {
+        "download": {
+          "backend_h2": 11,
+          "errors": 0,
+          "requests": 11,
+          "wrong_leg": 0,
+          "wrong_protocol": 0
+        },
+        "upload": {
+          "backend_h2": 20,
+          "errors": 0,
+          "requests": 20,
+          "wrong_leg": 0,
+          "wrong_protocol": 0
+        }
+      }
+    }
+  ],
+  "logs": [
+    {
+      "pair": "h2-h1",
+      "sha256": "13EF1400F38A671C72AF7A38FFE28FDB2A36804A3DF9B255C3E6D0802F65664D"
+    },
+    {
+      "pair": "h1-h3",
+      "sha256": "0881573AE3430FA124C85BA2E375F4C94053A75A8789663E4003EACC125AB9CD"
+    },
+    {
+      "pair": "h3-h1",
+      "sha256": "7FF0B517F8E42CAB2AEE4467D6A4DABB56B67A06A28219044446EADFBC65F548"
+    },
+    {
+      "pair": "h1-h1",
+      "sha256": "5B231C5645AA248977F4D5568ECCEBDB0001178EF54B9B7C055EDD3A7488CCDD"
+    },
+    {
+      "pair": "h2-h2",
+      "sha256": "0EF34D7BBDF6F24DF6507A51EB29E2BBEBC588311E1E5570414C16AB4FF0E2CA"
+    },
+    {
+      "pair": "h2-h3",
+      "sha256": "AD1A4EB4509A94DB65583990EB617D58B13547FD3C47CE964EC1111C50890D22"
+    },
+    {
+      "pair": "h3-h2",
+      "sha256": "FB6257C393CDDF468EBC5F679C2B8E390DA1832AD16C3EF6BC7B3E45FEF21AA9"
+    },
+    {
+      "pair": "h3-h3",
+      "sha256": "0910507E36B6B961CD49D9CD3E1888193340C3D9D81062890CF6252D78C39B0A"
+    }
+  ],
+  "previous_h1_h2": "android16-readiness4-runtime-2026-10-26.json: six successful runs",
+  "verified": "All nine H1/H2/H3 upload/download combinations now have packet-up/stream-up/auto and separate-UID IPv4/IPv6 TUN echo evidence on .4",
+  "limitations": [
+    "Verified TLS frontends with official Xray H2 backend, not direct Xray H3 ingress",
+    "Not Reality or long-lived concurrency/network handover proof",
+    "Physical ARM64 not run; ABI build/ELF checks do not substitute device tests",
+    "Fresh source reproduction and stable release remain outstanding"
+  ]
+}

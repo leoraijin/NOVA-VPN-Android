@@ -6,6 +6,44 @@ import org.junit.Test
 import java.net.URLEncoder
 
 class XhttpImportTest {
+    private fun downlink() = JSONObject("""{"network":"xhttp","address":"download.example","port":8443,"security":"tls","tlsSettings":{"serverName":"down.front","alpn":["h2"]},"xhttpSettings":{"path":"/down","xmux":{"maxConnections":2}}}""")
+
+    @Test fun separateDownloadMapsEndpointTlsAndTransport() {
+        val settings = JSONObject().put("mode", "stream-up").put("path", "/up").put("downloadSettings", downlink())
+        val out = XhttpTransport.fromSettings(settings, true)
+        val down = out.getJSONObject("download_settings")
+        assertEquals("/up", out.getString("path"))
+        assertEquals("download.example", down.getString("server"))
+        assertEquals(8443, down.getInt("server_port"))
+        assertEquals("down.front", down.getJSONObject("tls").getString("server_name"))
+        assertEquals("h2", down.getJSONObject("tls").getJSONArray("alpn").getString(0))
+        assertEquals("/down", down.getJSONObject("xhttp").getString("path"))
+        assertEquals(2, down.getJSONObject("xhttp").getJSONObject("xmux").getInt("max_connections"))
+        assertFalse(down.getJSONObject("xhttp").has("type"))
+    }
+
+    @Test fun queryDownloadOverridesExtraAndDoesNotInheritTls() {
+        val down = downlink().put("security", "none")
+        val out = XhttpTransport.fromQuery(mapOf("extra" to """{"downloadSettings":{"bad":true}}""", "downloadsettings" to down.toString()), true)
+        assertFalse(out.getJSONObject("download_settings").has("tls"))
+    }
+
+    @Test fun rejectsUnsafeOrIncompatibleDownloadSettings() {
+        val cases = listOf(
+            JSONObject().put("mode", "stream-one").put("downloadSettings", downlink()),
+            JSONObject().put("downloadSettings", downlink().put("port", 443.5)),
+            JSONObject().put("downloadSettings", downlink().put("network", "tcp")),
+            JSONObject().put("downloadSettings", downlink().put("sockopt", JSONObject().put("mark", 7))),
+            JSONObject().put("downloadSettings", downlink().put("xhttpSettings", JSONObject().put("downloadSettings", downlink())))
+        )
+        cases.forEach { settings ->
+            try { XhttpTransport.fromSettings(settings, true); fail("Invalid download settings accepted") }
+            catch (_: IllegalArgumentException) { }
+        }
+        try { XhttpTransport.fromSettings(JSONObject().put("downloadSettings", downlink()), false); fail("Old core accepted download settings") }
+        catch (_: IllegalArgumentException) { }
+    }
+
     @Test fun malformedExtraCannotDiscardOtherServersAndNullDownloadSettingsIsAllowed() {
         val source = "$base?type=xhttp&extra=broken#Bad\n$base?type=xhttp&extra=%7B%22downloadSettings%22%3Anull%7D#Good"
         val result = ProfileLinkParser.parseReport(source)

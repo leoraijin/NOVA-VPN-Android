@@ -1,0 +1,74 @@
+{
+  "date": "2026-10-26",
+  "native_version": "1.14.3-lx.23-nova-downlink.4",
+  "android": "API36 x86_64 16KB emulator-5590",
+  "official_xray": "26.10.21",
+  "xray_sha256": "c77a00eb84fb93ae044c2d771a1cabcc033b81e487253fbc35b12df6879c1e15",
+  "positive": {
+    "result": "PASS",
+    "scope": "Direct official Xray HTTP/3 TLS ingress, Android 16 API36 x86_64 16KB TUN, independent download settings on same official Xray endpoint, packet-up/stream-up/auto, separate-UID IPv4/IPv6",
+    "log_sha256": "f1a5ca88fd8ff30b1a99d4b75d098e0c96a6d6cb27cb68ad68b6e4e5cc9eeaab",
+    "native_version": "1.14.3-lx.23-nova-downlink.4",
+    "limits": [
+      "Same Xray endpoint and path for both directions",
+      "Not Reality",
+      "Not physical ARM64",
+      "Not long session or handover"
+    ]
+  },
+  "tls_refusal": {
+    "result": "PASS",
+    "serial": "emulator-5590",
+    "http_version": 3,
+    "test": "TLS control/refusal/control",
+    "scope": "Direct official Xray TLS ingress; Android TUN; separate-UID IPv4/IPv6; imported download_settings",
+    "android_log_sha256": "f2a22572d6694f483187934c4d14e212b82012084988c7adf60294e23b697276",
+    "fixture_config_sha256": "e1eb90198e227ee230834a32f18319a28865c9e76288a6b21b856d7daf0982c8",
+    "limits": [
+      "Same endpoint/path for upload and download",
+      "Emulator only",
+      "Not Reality or network handover"
+    ]
+  },
+  "server_transport_evidence": "listening QUIC for XHTTP/3 on 127.0.0.1:38123",
+  "frontend_used": false,
+  "limitations": [
+    "Same Xray address/path for both directions",
+    "Not Reality or physical ARM64",
+    "Not long session or network handover"
+  ],
+  "latest_runner_regression": {
+    "modes": {
+      "result": "PASS",
+      "serial": "emulator-5590",
+      "http_version": 3,
+      "test": "packet-up/stream-up/auto",
+      "security": "tls",
+      "scope": "Direct official Xray ingress; Android TUN; separate-UID IPv4/IPv6; imported download_settings",
+      "android_log_sha256": "65a3c1886726fea321e8db99c091ab52f24020eac6fcfef7cc7d90bba84cca95",
+      "fixture_config_sha256": "7d88a48da7015fa036f9eabdd9a40893dfffe067f1d9a22aad8d7fd4ad66c211",
+      "limits": [
+        "Same endpoint/path for upload and download",
+        "Emulator only",
+        "Not network handover"
+      ]
+    },
+    "tls_refusal": {
+      "result": "PASS",
+      "serial": "emulator-5590",
+      "http_version": 3,
+      "test": "TLS control/refusal/control",
+      "security": "tls",
+      "scope": "Direct official Xray ingress; Android TUN; separate-UID IPv4/IPv6; imported download_settings",
+      "android_log_sha256": "0eb566cd7df0ebf12951e9056d19b4460de0fdabf0e9e35921c44629a5f6a6bb",
+      "fixture_config_sha256": "7d88a48da7015fa036f9eabdd9a40893dfffe067f1d9a22aad8d7fd4ad66c211",
+      "limits": [
+        "Same endpoint/path for upload and download",
+        "Emulator only",
+        "Not network handover"
+      ]
+    },
+    "installed_product_apk_sha256": "2b4255a42d4af3a60c4ce5d54997c4b5f57f319cee4d533d95491880ab7e731e",
+    "installed_test_apk_sha256": "aaaf72815f28719869726af9a0965e4ff1f6b234a7b3bbc2827f8691198adb83"
+  }
+}

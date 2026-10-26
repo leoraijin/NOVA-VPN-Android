@@ -1,0 +1,82 @@
+{
+  "date": "2026-10-26",
+  "source_commit": "eca41490008142bd8db3044619c7ef6472d5d90f",
+  "source_clean": true,
+  "platform": "Windows amd64",
+  "go": "1.25.5",
+  "cgo_enabled": 0,
+  "baseline": {
+    "date": "2026-10-26",
+    "source_commit": "eca41490008142bd8db3044619c7ef6472d5d90f",
+    "command": "go build -p 2 ./...",
+    "result": "passed",
+    "go": "1.25.5",
+    "platform": "windows/amd64",
+    "cgo_enabled": 0,
+    "module_policy": "-mod=readonly; proxy.golang.org; sum.golang.org",
+    "log_sha256": "8727790fc94dbd133100b7262f3304e6d6f4a23a307d2a30c04bf276268e3144",
+    "scope": "Build only. No VPN service, TUN, host routing, or laptop VPN changed."
+  },
+  "canonical_tags": "with_gvisor,with_quic,with_dhcp,with_wireguard,with_utls,with_clash_api,with_naive_outbound,with_purego,badlinkname,tfogo_checklinkname0,with_xhttp,with_awg,with_lx_command,with_lxd,with_openvpn,with_openconnect,with_lx_chain,with_tailscale,with_trusttunnel",
+  "canonical_build": "PASS: go build -p 2 -tags LX_TAGS -trimpath -ldflags \"-checklinkname=0 -buildid=\" ./cmd/sing-box",
+  "binary_sha256": "d490b6cf700224a4dcd2e27fdb8894adeb41ffa487490e252639cf627978e96b",
+  "config_checks": {
+    "scope": "construction only; no service started",
+    "binary_sha256": "d490b6cf700224a4dcd2e27fdb8894adeb41ffa487490e252639cf627978e96b",
+    "results": [
+      {
+        "name": "independent-reality-xmux",
+        "exit": 0,
+        "expected_error": null,
+        "passed": true
+      },
+      {
+        "name": "xmux-array",
+        "exit": 0,
+        "expected_error": null,
+        "passed": true
+      },
+      {
+        "name": "xmux-reversed-bounds",
+        "exit": 0,
+        "expected_error": null,
+        "passed": true
+      },
+      {
+        "name": "stream-one-downlink",
+        "exit": 1,
+        "expected_error": "download_settings is incompatible",
+        "passed": true
+      },
+      {
+        "name": "nested-downlink",
+        "exit": 1,
+        "expected_error": "nested download_settings",
+        "passed": true
+      },
+      {
+        "name": "short-reality-public-key",
+        "exit": 1,
+        "expected_error": "invalid public_key",
+        "passed": true
+      },
+      {
+        "name": "long-reality-short-id",
+        "exit": 1,
+        "expected_error": "invalid short_id",
+        "passed": true
+      },
+      {
+        "name": "boolean-xmux-range",
+        "exit": 1,
+        "expected_error": "invalid xmux range",
+        "passed": true
+      }
+    ]
+  },
+  "limitations": [
+    "Local build and config construction only; no Windows TUN or host VPN modification",
+    "Does not turn cancelled GitHub workflow into success",
+    "Does not prove Reality data exchange or physical Android acceptance"
+  ]
+}

@@ -6,6 +6,7 @@ import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
 import android.os.*
+import com.nova.vpn.android.data.VpnEngine
 import io.nekohasekai.libbox.*
 import java.net.NetworkInterface as JNetworkInterface
 import java.util.concurrent.Executors
@@ -22,38 +23,102 @@ class ServerCheckService : Service() {
                 val config = message.data.getString("config") ?: return@Handler true
                 val reply = message.replyTo ?: return@Handler true
                 val requestId = message.arg1
+                val diagnostic = message.data.getBoolean("diagnostic")
+                val selectedEngine = VpnEngine.fromId(message.data.getString("engine"))
                 if (!closing.get()) queue.execute {
                     if (closing.get()) return@execute
                     var millis = -1
+                    var assessment = ProbeAssessment(null, 0, 0)
+                    var realityHandle = 0L
+                    var unsupported = false
+                    VpnDiagnostics.attachAndroidClock()
+                    VpnDiagnostics.setEngine(selectedEngine == VpnEngine.REALITY_CORE)
+                    VpnDiagnostics.setTransportFromConfig(config)
+                    VpnDiagnostics.reset()
+                    VpnDiagnostics.record("service_start")
+                    fun progress() {
+                        if (diagnostic && !closing.get()) runCatching { reply.send(Message.obtain(null, PROGRESS, requestId, 0).apply {
+                            data = Bundle().apply { putString("diagnostic_events", VpnDiagnostics.exportEvents()) }
+                        }) }
+                    }
+                    progress()
                     try {
                         val platform = CheckPlatform(this)
-                        val engine = server ?: createServer(platform).also { server = it }
-                        val check = AndroidTrafficProbe.prepare(config) ?: error("Unsupported check")
-                        probe = check
-                        if (closing.get()) check.cancel()
-                        engine.startOrReloadService(check.config, OverrideOptions())
-                        val samples = mutableListOf<Int>()
-                        repeat(3) {
-                            if (closing.get()) error("Cancelled")
-                            if (!check.check(7_000)) error("HTTPS check failed")
-                            samples += check.responseMillis ?: error("No measured response")
+                        if (diagnostic) {
+                            VpnDiagnostics.record("dns_system_lookup_started")
+                            progress()
+                            val dns = DiagnosticDnsProbe.check(DiagnosticDnsProbe.host(config)) { host ->
+                                platform.diagnosticNetwork()?.getAllByName(host)?.isNotEmpty() == true
+                            }
+                            VpnDiagnostics.record(dns.code)
+                            progress()
                         }
-                        millis = ResponseLatency.median(samples)
-                    } catch (_: Exception) {
-                        // Only a numeric result crosses IPC; native errors can contain credentials.
+                        if (closing.get()) return@execute
+                        val check = AndroidTrafficProbe.prepare(config) ?: error("Unsupported check")
+                        if (diagnostic) check.onProgress = ::progress
+                        probe = check
+                        if (closing.get()) { check.cancel(); return@execute }
+                        VpnDiagnostics.record("config_validation")
+                        if (selectedEngine == VpnEngine.REALITY_CORE) {
+                            try { RealityCoreBridge.requireAvailable() }
+                            catch (_: IllegalStateException) { throw UnsupportedProbeEngine() }
+                            val dir = probeDirectory()
+                            if (!RealityCoreBridge.validate(check.config, dir.absolutePath)) throw UnsupportedProbeEngine()
+                            VpnDiagnostics.record("engine_reality_core")
+                            realityHandle = RealityCoreBridge.start(check.config, dir.absolutePath, -1,
+                                object : RealityCoreBridge.Callbacks {
+                                    override fun protectSocket(fd: Int): Boolean = runCatching {
+                                        platform.autoDetectInterfaceControl(fd); true
+                                    }.getOrElse { VpnDiagnostics.record("reality_protect_failed"); false }
+                                    override fun coreWarning(message: String) { VpnDiagnostics.coreMessage(message) }
+                                })
+                            check(realityHandle != 0L) { "Check core start failed" }
+                        } else {
+                            val engine = server ?: createServer(platform).also { server = it }
+                            try { Libbox.checkConfig(check.config) }
+                            catch (_: Exception) { throw UnsupportedProbeEngine() }
+                            VpnDiagnostics.record("engine_sing_box")
+                            engine.startOrReloadService(check.config, OverrideOptions())
+                        }
+                        VpnDiagnostics.record("engine_started")
+                        progress()
+                        val samples = mutableListOf<Int?>()
+                        repeat(3) {
+                          for (target in ProbeTarget.entries) {
+                            if (closing.get()) error("Cancelled")
+                            samples += if (check.check(4_000, target)) check.responseMillis else null
+                          }
+                        }
+                        assessment = ProbeAssessment.from(samples)
+                        millis = assessment.millis ?: -1
+                    } catch (_: UnsupportedProbeEngine) {
+                        unsupported = true
+                        VpnDiagnostics.record("engine_config_unsupported")
+                    } catch (_: LinkageError) {
+                        unsupported = true
+                        VpnDiagnostics.record("engine_unavailable")
+                    } catch (error: Exception) {
+                        VpnDiagnostics.coreMessage(error.message.orEmpty())
                     } finally {
                         probe?.cancel(); probe = null
+                        if (realityHandle != 0L) runCatching { RealityCoreBridge.stop(realityHandle) }
                         runCatching { server?.closeService() }
                     }
-                    if (!closing.get()) runCatching { reply.send(Message.obtain(null, RESULT, requestId, millis)) }
+                    if (!closing.get()) runCatching { reply.send(Message.obtain(null, RESULT, requestId, millis).apply {
+                        data = Bundle().apply { putInt("successes", assessment.successes); putInt("attempts", assessment.attempts)
+                            putBoolean("unsupported", unsupported)
+                            putString("diagnostic_events", VpnDiagnostics.exportEvents()) }
+                    }) }
                 }
             }
             CANCEL -> { closing.set(true); probe?.cancel() }
         }
         true
     })
+    private class UnsupportedProbeEngine : Exception()
+    private fun probeDirectory() = java.io.File(cacheDir, "manual-server-checks").apply { mkdirs() }
     private fun createServer(platform: CheckPlatform): CommandServer {
-        val dir = java.io.File(cacheDir, "manual-server-checks").apply { mkdirs() }
+        val dir = probeDirectory()
         Libbox.setup(SetupOptions().apply {
             basePath = dir.absolutePath; workingPath = dir.absolutePath; tempPath = dir.absolutePath
             fixAndroidStack = true; logMaxLines = 1
@@ -66,7 +131,7 @@ class ServerCheckService : Service() {
             override fun getSystemProxyStatus() = SystemProxyStatus().apply { available = false; enabled = false }
             override fun setSystemProxyEnabled(enabled: Boolean) = Unit
             override fun triggerNativeCrash() = Unit
-            override fun writeDebugMessage(message: String?) = Unit
+            override fun writeDebugMessage(message: String?) { message?.let(VpnDiagnostics::coreMessage) }
             override fun connectSSHAgent() = -1
         }, platform).apply { start() }
     }
@@ -87,10 +152,11 @@ class ServerCheckService : Service() {
         }
         if (processName == "$packageName:server_checks") Process.killProcess(Process.myPid())
     }
-    companion object { internal const val CHECK = 1; internal const val CANCEL = 2; internal const val RESULT = 3 }
+    companion object { internal const val CHECK = 1; internal const val CANCEL = 2; internal const val RESULT = 3; internal const val PROGRESS = 4 }
 }
 /** All sockets and DNS use the physical network; this platform cannot open a VPN interface. */
 private class CheckPlatform(context: Context) : PlatformInterface {
+    fun diagnosticNetwork(): Network? = network()
     private val connectivity = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
     private fun network(): Network? = connectivity.allNetworks.filter { network ->
         connectivity.getNetworkCapabilities(network)?.let {

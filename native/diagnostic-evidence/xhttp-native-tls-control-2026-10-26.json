@@ -1,0 +1,41 @@
+{
+  "date": "2026-10-26",
+  "native_commit": "eca41490008142bd8db3044619c7ef6472d5d90f",
+  "platform": "Windows amd64 Go1.25.5, no TUN",
+  "results": [
+    {
+      "log": "release-native-h1-h2-repeat.jsonl",
+      "passes": 20,
+      "scope": "plain H1 upload, TLS H2 download, one connection per client",
+      "sha256": "50E7367CEC2E31977AD2EC25E91632C6B14E0CAE7F81F568C51F4C3C5395A7ED"
+    },
+    {
+      "log": "release-native-h1-tls-h2-repeat.jsonl",
+      "passes": 20,
+      "scope": "TLS H1 upload, TLS H2 download, one connection per client",
+      "sha256": "0923C4F0B56F70A5B190A2D9C713AC1E547ED680BBDBE862BC53F332400A1E1F"
+    },
+    {
+      "log": "release-native-h1-tls-h2-reuse.jsonl",
+      "passes": 5,
+      "scope": "TLS H1/H2,40 consecutive connections per client, alternating IPv4/IPv6",
+      "sha256": "7EF07A8CDBCB2A289EA7ED7B76FC94E9FC46195A8168EB132867AE9A7D67DBC1"
+    }
+  ],
+  "observations": [
+    "Existing H1 helper is cleartext, so original H1/H2 test does not cover TLS on upload",
+    "TLS and reused-client controls passed with test-only Go overlays",
+    "Proxy unexpected EOF also occurs in successful runs and is not sufficient root-cause evidence"
+  ],
+  "limitations": "Does not resolve or supersede reproduced Android16 TUN failure; Android/Windows runtime and TUN differences remain",
+  "overlays": [
+    {
+      "sha256": "4F4A5E1AD2E309AE5536052839022BA6FBEB01808903BC589E4B14E0621AD59E",
+      "file": "download_tls_h1_overlay_test.go"
+    },
+    {
+      "sha256": "29FC6FE93697A69149CCB291CFDBA031C79CA9074E16AB3D04759D5AB5E949CE",
+      "file": "download_reuse_overlay_test.go"
+    }
+  ]
+}

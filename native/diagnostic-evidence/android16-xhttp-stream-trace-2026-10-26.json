@@ -1,0 +1,99 @@
+{
+  "date": "2026-10-26",
+  "scope": "Android16 API36 x86_64 16KB H1 upload/H2 download; synthetic official Xray reverse-proxy fixture",
+  "runs": [
+    {
+      "round": 1,
+      "passed": true,
+      "android_log_sha256": "8511138F7905FBB6E179DDA7FC5ED42A6AB9A80A65F7C4E603A7459010463ABD",
+      "frontend_log_sha256": "43B924C890CA8CAAB13E737947F7DD4307769A1CF719FF07A128ABA2D8F61F30",
+      "counters": {
+        "download": {
+          "backend_h2": 11,
+          "errors": 0,
+          "requests": 11,
+          "wrong_leg": 0,
+          "wrong_protocol": 0
+        },
+        "upload": {
+          "backend_h2": 21,
+          "errors": 0,
+          "requests": 21,
+          "wrong_leg": 0,
+          "wrong_protocol": 0
+        }
+      }
+    },
+    {
+      "round": 2,
+      "passed": true,
+      "android_log_sha256": "C7ABE842CE7692B3B94BC35379E3DFE973631EED88DB4BEDCF072D674821A2B9",
+      "frontend_log_sha256": "CF7179F34DA27A18A8A4DC4EC78683F0AC2C26C49260819C8DB42ED57F5E8503",
+      "counters": {
+        "download": {
+          "backend_h2": 10,
+          "errors": 0,
+          "requests": 10,
+          "wrong_leg": 0,
+          "wrong_protocol": 0
+        },
+        "upload": {
+          "backend_h2": 19,
+          "errors": 0,
+          "requests": 19,
+          "wrong_leg": 0,
+          "wrong_protocol": 0
+        }
+      }
+    },
+    {
+      "round": 3,
+      "passed": true,
+      "android_log_sha256": "886C7FCF0BE832A2E6BB23DC00F40E04907273074AEED34C70C0081C0AF17232",
+      "frontend_log_sha256": "22E436EE1F08877D4F8DA29A35E9A4357EDD366133F033C1B8B9DECC504C9978",
+      "counters": {
+        "download": {
+          "backend_h2": 12,
+          "errors": 0,
+          "requests": 12,
+          "wrong_leg": 0,
+          "wrong_protocol": 0
+        },
+        "upload": {
+          "backend_h2": 22,
+          "errors": 0,
+          "requests": 22,
+          "wrong_leg": 0,
+          "wrong_protocol": 0
+        }
+      }
+    },
+    {
+      "round": 4,
+      "passed": false,
+      "android_log_sha256": "A1B7E030D71AF61F679DBD362FECD443C0C753F74403EBC5A992F8347D5756F8",
+      "frontend_log_sha256": "AA3EE1742E89D2D3976FDCA17E5225CA12BED68709C18EFF64A5D8B90A65D543",
+      "counters": {
+        "download": {
+          "backend_h2": 8,
+          "errors": 0,
+          "requests": 8,
+          "wrong_leg": 0,
+          "wrong_protocol": 0
+        },
+        "upload": {
+          "backend_h2": 12,
+          "errors": 0,
+          "requests": 12,
+          "wrong_leg": 0,
+          "wrong_protocol": 0
+        }
+      }
+    }
+  ],
+  "observation": "Failed fourth run: final synthetic session dfecb936-a183-df72-d066-5ab3c0de3452 has download GET and backend HTTP200; no corresponding upload request observed at frontend; GET cancelled after about310ms",
+  "conclusion": "Failure persists with request tracing; upload path before frontend request handling requires investigation. Does not prove native root cause.",
+  "core_log_sha256": "AC1DF3F8C5C91F1A145AB88366699713804E728052C5443BD29A766A1FD4C6AC",
+  "frontend_sha256": "6D89E08ABA9285402DD225999EAEED4F133AA31308BD3BFF3844B8963F7A8ACE",
+  "next": "Reproduce streamed H1 upload lifecycle in focused native test; inspect transport failure before frontend accepts HTTP request"
+}

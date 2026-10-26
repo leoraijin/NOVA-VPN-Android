@@ -1,0 +1,115 @@
+{
+  "schema": 1,
+  "device": "TECNO KM4 / Android 15 / ARM64 / 4096-byte pages",
+  "scope": "Local synthetic protected bootstrap DNS, outer TLS and separate-UID VLESS/TUN echo; no provider profile or laptop tunnel changes.",
+  "runs": [
+    {
+      "run": "tecno-bootstrap-twenty",
+      "app_sha256": "c7210943c99fe8fa30b8ece3af1fe312e4b72ca4ed8f8f9579c010e66deea012",
+      "test_sha256": "951765b7d8faa186379529e0208bed387fe7c052f4227c1c8d108c76c1831811",
+      "passed_cycles": 4,
+      "requested_cycles": 20,
+      "complete_success": false,
+      "failures": [
+        {
+          "result": "SocketTimeoutException",
+          "phase": "not captured by that older fixture"
+        }
+      ],
+      "stage_samples": 5,
+      "fresh_a_and_aaaa_replies_in_all_samples": true
+    },
+    {
+      "run": "tecno-bootstrap-uid-network-trace",
+      "app_sha256": "c7210943c99fe8fa30b8ece3af1fe312e4b72ca4ed8f8f9579c010e66deea012",
+      "test_sha256": "874380c611fdf77df7bab5b29cdf6fc042c3ce31ac6085bd3012ff1361241b51",
+      "passed_cycles": 1,
+      "requested_cycles": 20,
+      "complete_success": false,
+      "failures": [
+        {
+          "result": "SocketTimeoutException",
+          "phase": "not captured by that older fixture"
+        }
+      ],
+      "stage_samples": 2,
+      "fresh_a_and_aaaa_replies_in_all_samples": true
+    },
+    {
+      "run": "tecno-bootstrap-callbacks",
+      "app_sha256": "c7210943c99fe8fa30b8ece3af1fe312e4b72ca4ed8f8f9579c010e66deea012",
+      "test_sha256": "cfe0d4bdab0b8d5ab05062aabb9d2dc06fead4acf271fc90f84542d5d0a58e6a",
+      "passed_cycles": 20,
+      "requested_cycles": 20,
+      "complete_success": true,
+      "failures": [],
+      "stage_samples": 20,
+      "fresh_a_and_aaaa_replies_in_all_samples": true
+    },
+    {
+      "run": "tecno-bootstrap-poll-control",
+      "app_sha256": "c7210943c99fe8fa30b8ece3af1fe312e4b72ca4ed8f8f9579c010e66deea012",
+      "test_sha256": "cfe0d4bdab0b8d5ab05062aabb9d2dc06fead4acf271fc90f84542d5d0a58e6a",
+      "passed_cycles": 20,
+      "requested_cycles": 20,
+      "complete_success": true,
+      "failures": [],
+      "stage_samples": 20,
+      "fresh_a_and_aaaa_replies_in_all_samples": false
+    },
+    {
+      "run": "tecno-bootstrap-pure-poll",
+      "app_sha256": "c7210943c99fe8fa30b8ece3af1fe312e4b72ca4ed8f8f9579c010e66deea012",
+      "test_sha256": "bebf1d52d14d72b683e0c6fe758f6c05d89517984cab329300f665441af84665",
+      "passed_cycles": 7,
+      "requested_cycles": 20,
+      "complete_success": false,
+      "failures": [
+        {
+          "result": "SocketTimeoutException@tcp-connect",
+          "strategy": "poll",
+          "phase": "tcp-connect"
+        }
+      ],
+      "stage_samples": 8,
+      "fresh_a_and_aaaa_replies_in_all_samples": true
+    },
+    {
+      "run": "tecno-bootstrap-callbacks-confirmed",
+      "app_sha256": "c7210943c99fe8fa30b8ece3af1fe312e4b72ca4ed8f8f9579c010e66deea012",
+      "test_sha256": "bebf1d52d14d72b683e0c6fe758f6c05d89517984cab329300f665441af84665",
+      "passed_cycles": 20,
+      "requested_cycles": 20,
+      "complete_success": true,
+      "failures": [],
+      "stage_samples": 20,
+      "fresh_a_and_aaaa_replies_in_all_samples": true
+    }
+  ],
+  "controlled_same_app_and_test_apks": true,
+  "conclusion": "Polling control timed out at TCP connect; callback-driven capabilities plus link properties passed 20/20 in the identical APK. Earlier callback fixture also passed 20/20. This supports a probe readiness race; no Rust production binary was modified.",
+  "limits": [
+    "Not 40 physical network changes.",
+    "No proof for all Android versions, provider profiles or 16 KB runtime.",
+    "An independent static global-resolver lifecycle concern remains unproven by these tests.",
+    "The .3 physical run covers the Rust bootstrap/TUN path, not the entire updated XHTTP downlink transport matrix."
+  ],
+  "latest_preview": {
+    "version": "0.2.52-reality-preview.3",
+    "app_sha256": "05a898610220a93e872c64409034a40cb034a02f0f703acedf07685ee7dd7a32",
+    "test_sha256": "90fe6ce3196ab44245a589f3768bf08ccb7a139c7b80b22f49d984a2ed65f0e0",
+    "passed_cycles": 20,
+    "requested_cycles": 20,
+    "complete_success": true
+  },
+  "full_jni_on_comparison_preview_2": {
+    "passed": true,
+    "scope": "Both cores; validation/TLS refusal, FD ownership, eight SOCKS stop cycles, VpnService, separate-UID IPv4/IPv6, app policies and basic reload. Not every recovery/routing matrix."
+  },
+  "cleanup": {
+    "screen_stay_on_restored_to_original_0": true,
+    "test_vpn_service_stopped": true,
+    "original_nova_package_metadata_unchanged": true,
+    "laptop_vpn_not_modified": true
+  }
+}
