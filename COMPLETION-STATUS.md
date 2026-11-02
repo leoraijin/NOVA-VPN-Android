@@ -746,3 +746,23 @@ was sent. Local test evidence remains valid only within its measured scope and
 cannot substitute for upstream acceptance. The tested real subscription contains
 no XHTTP; its gRPC failures do not establish this field case. Production native
 pins remain unchanged and remaining technical gates remain open.
+
+
+## Cronet ARM64 independent C++ reproduction and all-ABI object correspondence
+
+Run41518658390 onbf5699cb5444c0e572ee18d404b6486b4da6f433 completed SUCCESS.
+Artifact13180101230 SHA25635621b4d3e61695eb2c18a5f654a2323721ba7ccf7c669be9279333d7541f44a
+matched GitHub. Local hashing of the actual rebuilt ARM64 archive confirms exact
+published identity3588acd27dfa992852ffb3225c3bddb1c65eaeea785ea4e3bfb1f927b65c8733.
+Ninja log ends at4982/4982. Restored source verified34170 Git blobs and2 symlinks;
+publisher flags/builder and GN pin retained. All377 generated ARM64 compilation
+units have hashes in the1500-file generated inventory. This closes independent
+ARM64 C++ archive reproduction, not independent reproduction of the other ABIs.
+
+All four graph/archive object-name multisets now match: arm2761, arm642768,
+x642767, x862766; each has377 generated compilation units. Notice candidate
+mapping has zero unresolved compilation units in each ABI, but actual included
+headers/generator origins and final linked NOTICE remain open. Full compressed
+per-unit mappings, candidate notices and generated hashes are retained publicly;
+receipt native/diagnostic-evidence/cronet-independent-rebuild-2026-11-03.json
+contains exact artifact/source/hash scope. No production native binary changed.

@@ -1,0 +1,113 @@
+{
+  "schema": 1,
+  "run": 41518658390,
+  "runUrl": "https://github.com/leoraijin/NOVA-VPN-Android/actions/runs/41518658390",
+  "workflowCommit": "bf5699cb5444c0e572ee18d404b6486b4da6f433",
+  "artifactId": 13180101230,
+  "artifactSha256": "35621b4d3e61695eb2c18a5f654a2323721ba7ccf7c669be9279333d7541f44a",
+  "sourceCommit": "72a06c9fca0e2d228588c7f3074bf7efff3ff686",
+  "sourceArchiveSha256": "396d4ad6f5bf8ff812f915f0e21281748d7009773fa1bf182cd765f130fd9b19",
+  "verifiedSourceBlobs": 34170,
+  "preservedSymlinks": 2,
+  "publisherBuildSource": "049f2909701ca088c9569f6b303bba5376a2b2ff",
+  "publisherBuilderSha256": "f07ff6f4783115d5031c4a9633deb510260c007d0f49f6eef5c0b3eba466c4ea",
+  "arm64IndependentRebuild": {
+    "byteIdentical": true,
+    "rebuiltSha256": "3588acd27dfa992852ffb3225c3bddb1c65eaeea785ea4e3bfb1f927b65c8733",
+    "publishedSha256": "3588acd27dfa992852ffb3225c3bddb1c65eaeea785ea4e3bfb1f927b65c8733",
+    "ninjaCompletedSteps": 4982,
+    "generatedFilesInventoried": 1500,
+    "generatedCompilationUnits": 377,
+    "generatedCompilationUnitsWithoutHash": 0,
+    "generatedHashInventory": "native/xhttp/provenance/cronet-arm64-generated-file-hashes-2026-11-03.json.gz",
+    "generatedHashInventorySha256": "7065245e65271736863c752205a1b5e1b296fa6a31116ff48f68bbd1b510c8dc"
+  },
+  "abiGraphCorrespondence": [
+    {
+      "cpu": "arm",
+      "compilationUnits": 2761,
+      "generatedUnits": 377,
+      "archiveMembers": 2761,
+      "archiveSha256": "7987c5507b0f0bdf401b830ddaa4734b357f282fc1233aaa52973ffef9e9a5cc",
+      "objectNameMultisetMatches": true,
+      "noticeCandidateGroups": 25,
+      "unresolvedUnitNoticeCandidates": 0,
+      "evidence": [
+        {
+          "path": "native/xhttp/provenance/cronet-arm-units-2026-11-03.json.gz",
+          "sha256": "3693adaa70f4dce5d6c7568720f453b52958a0f3d689492c0f09789686c52b3c"
+        },
+        {
+          "path": "native/xhttp/provenance/cronet-arm-notices-2026-11-03.json.gz",
+          "sha256": "35c53ee566e01f2fa7670f9d462d99ced0f4bbb1bf739d997163d3e64a2cf6f0"
+        }
+      ]
+    },
+    {
+      "cpu": "arm64",
+      "compilationUnits": 2768,
+      "generatedUnits": 377,
+      "archiveMembers": 2768,
+      "archiveSha256": "3588acd27dfa992852ffb3225c3bddb1c65eaeea785ea4e3bfb1f927b65c8733",
+      "objectNameMultisetMatches": true,
+      "noticeCandidateGroups": 25,
+      "unresolvedUnitNoticeCandidates": 0,
+      "evidence": [
+        {
+          "path": "native/xhttp/provenance/cronet-arm64-units-2026-11-03.json.gz",
+          "sha256": "4f48cc6e25b52ad6eb28dfa0aa92cd459f486450cfcb08e640a4a606b81962ea"
+        },
+        {
+          "path": "native/xhttp/provenance/cronet-arm64-notices-2026-11-03.json.gz",
+          "sha256": "26ac9568a08a3079847630d888e80eb201013f9ed8282c7e9799311548dbb4ab"
+        }
+      ]
+    },
+    {
+      "cpu": "x64",
+      "compilationUnits": 2767,
+      "generatedUnits": 377,
+      "archiveMembers": 2767,
+      "archiveSha256": "85d39fdb4eabc04d2427bd578b69546602e727e1ee88be2232699be668bede3a",
+      "objectNameMultisetMatches": true,
+      "noticeCandidateGroups": 25,
+      "unresolvedUnitNoticeCandidates": 0,
+      "evidence": [
+        {
+          "path": "native/xhttp/provenance/cronet-x64-units-2026-11-03.json.gz",
+          "sha256": "931687279f847146da6442144fbe17b1ec182205694fb4704bf879883594d161"
+        },
+        {
+          "path": "native/xhttp/provenance/cronet-x64-notices-2026-11-03.json.gz",
+          "sha256": "75d6c5c90991965b30c207187329a059ab1c1ee5886bf14d033ed3e0ac8cc860"
+        }
+      ]
+    },
+    {
+      "cpu": "x86",
+      "compilationUnits": 2766,
+      "generatedUnits": 377,
+      "archiveMembers": 2766,
+      "archiveSha256": "2689a22a37a3774130551e16b6a89872db66d4a74f8ab7b3e0bc7faac1458af8",
+      "objectNameMultisetMatches": true,
+      "noticeCandidateGroups": 25,
+      "unresolvedUnitNoticeCandidates": 0,
+      "evidence": [
+        {
+          "path": "native/xhttp/provenance/cronet-x86-units-2026-11-03.json.gz",
+          "sha256": "e783d7f2142b218e6808d68c05884a1a3c85437f2fbb22249b99b48565b0c012"
+        },
+        {
+          "path": "native/xhttp/provenance/cronet-x86-notices-2026-11-03.json.gz",
+          "sha256": "22887e706822cc028f313c2cf45c7371ed2a2960a6891bdac808075e2d6f08f6"
+        }
+      ]
+    }
+  ],
+  "limits": [
+    "Independent C++ binary reproduction applies to ARM64 only; other ABIs currently have graph/object-name correspondence only",
+    "Compilation-unit notice candidates are not final linked notices or a legal compliance conclusion",
+    "Actual compiler header dependencies and generator/header notice closure remain open",
+    "No native Android library or production AAR changed; physical acceptance remains separate"
+  ]
+}
