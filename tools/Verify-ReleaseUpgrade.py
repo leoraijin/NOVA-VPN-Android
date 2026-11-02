@@ -228,6 +228,10 @@ try:
         pause_until('decrypted profile after update', lambda: shown(name))
         if favorite:
             show_profile_details(name)
+            for _ in range(8):
+                if shown('Убрать из избранного'):
+                    break
+                shell('input', 'swipe', '540', '1500', '540', '950', '300')
             pause_until('favorite after update', lambda: shown('Убрать из избранного'))
         check_routes()
         if preferences('profile_selection').get('selected_profile_id') != selected:
