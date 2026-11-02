@@ -1,0 +1,101 @@
+{
+  "sourceCommit": "34d3628f7e62f5a5d37f0e41e0fdd46b7126959b",
+  "verifiedFaults": [
+    "apply",
+    "rollback",
+    "recovery",
+    "corrupt-journal",
+    "journal-delete"
+  ],
+  "scope": "Synthetic isolated API35 emulator; actual process death and store rollback, not active TUN or physical power loss",
+  "run": "https://github.com/leoraijin/NOVA-VPN-Android/actions/runs/41504182927",
+  "corruptStartupUi": "FAILED: IllegalStateException Check failed; stack attribution pending run 41507264889",
+  "overallConclusion": "failure",
+  "artifactId": 13170583932,
+  "crashReceipts": [
+    {
+      "cut": 0,
+      "actual_process_death": true,
+      "journal_verified_before_process_death": true,
+      "journal_sha256": "5a146d3306d2ffe0803058cd46282c792c1f9cf6f73bd307b0f839b1bc5a3458",
+      "damaged_profile_target": false,
+      "startup_rollback_matches_original": true,
+      "recovery_idempotent": true
+    },
+    {
+      "cut": 1,
+      "actual_process_death": true,
+      "journal_verified_before_process_death": true,
+      "journal_sha256": "8a871e14ee7dae2e99579dec83aa68e7987b7c3fe9b8424124c80a139d4300e9",
+      "damaged_profile_target": false,
+      "startup_rollback_matches_original": true,
+      "recovery_idempotent": true
+    },
+    {
+      "cut": 2,
+      "actual_process_death": true,
+      "journal_verified_before_process_death": true,
+      "journal_sha256": "12dc9d8719dbf4615b53f795865fd0d9942aa7d321861388d408091204b15960",
+      "damaged_profile_target": false,
+      "startup_rollback_matches_original": true,
+      "recovery_idempotent": true
+    },
+    {
+      "cut": 3,
+      "actual_process_death": true,
+      "journal_verified_before_process_death": true,
+      "journal_sha256": "8e9ff630672ca2b0a0970393b51a93772e2c0402cc4e544ada6f01083eee89b6",
+      "damaged_profile_target": false,
+      "startup_rollback_matches_original": true,
+      "recovery_idempotent": true
+    },
+    {
+      "cut": 4,
+      "actual_process_death": true,
+      "journal_verified_before_process_death": true,
+      "journal_sha256": "6b593584673ce58dae2bf1f2f30c19c572b874562f015e642d67886893e20733",
+      "damaged_profile_target": true,
+      "startup_rollback_matches_original": true,
+      "recovery_idempotent": true
+    },
+    {
+      "cut": 5,
+      "actual_process_death": true,
+      "journal_verified_before_process_death": true,
+      "journal_sha256": "2594f248141cd641fe3ef59e13404301e155f0a04d4c283a53e237d185a8be3b",
+      "damaged_profile_target": false,
+      "startup_rollback_matches_original": true,
+      "recovery_idempotent": true
+    },
+    {
+      "cut": 6,
+      "actual_process_death": true,
+      "journal_verified_before_process_death": true,
+      "journal_sha256": "569fc988bb2334c0935c3702c23670ad906cc91c60894bc63c6b10b166117f6a",
+      "damaged_profile_target": false,
+      "startup_rollback_matches_original": true,
+      "recovery_idempotent": true
+    },
+    {
+      "cut": 7,
+      "actual_process_death": true,
+      "journal_verified_before_process_death": true,
+      "journal_sha256": "c986bb829fa2f28cf89e1ec7eebf20f8e940a1757608cedd201b25df596c30fe",
+      "damaged_profile_target": false,
+      "startup_rollback_matches_original": true,
+      "recovery_idempotent": true
+    }
+  ],
+  "artifactSha256": "8ff4f9e85cd5ab46e8c765a2c15148d11ab6f61e3c1442cf16ff907d7817a1a7",
+  "verifiedCrashCuts": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7
+  ],
+  "diagnosticUi": "NOT REACHED"
+}

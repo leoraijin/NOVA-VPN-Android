@@ -540,3 +540,19 @@ This exercises real ConnectivityManager registration on cloud Android API35,
 close-before-start, repeated start, closed restart and concurrent start/close.
 It does not claim phone handover, active TUN, cellular, Doze or battery coverage.
 Source fix is on main; published 0.2.55 predates it and remains unchanged.
+
+## Expanded recovery run — partial success, overall failure retained
+
+Run 41504182927 (34d3628) failed in corrupt-startup-ui after all eight real process
+termination boundaries and five same-process faults passed. Artifact 13170583932
+SHA256 8ff4f9e85cd5ab46e8c765a2c15148d11ab6f61e3c1442cf16ff907d7817a1a7
+matched GitHub. Each verify-0..7 and fault log was inspected for its expected PASS
+and instrumentation code -1; receipts confirmed rollback and idempotence. The
+machine-readable partial receipt is ANDROID-RECOVERY-VERIFICATION-2026-11-03.json.
+
+Corrupt-startup-ui reported only generic Check failed. Worker RETRY and clipboard
+activity appear in logcat, but these do not identify the failed assertion. Do not
+claim a product defect or test-only cause yet. Synthetic runner now includes a
+limited source stack and retains recovery screenshots. Targeted run 41507264889
+repeats recovery/diagnostics without the already-passed 2000-node library phases.
+Diagnostics was not reached in the failed run. No physical phone operation occurred.
