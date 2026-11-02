@@ -69,7 +69,7 @@
         },
         "source_license_header_unchanged": true,
         "observed_local_patch": "Vendored atomic.c comments out the pointer-size lock-free _Static_assert; original license header unchanged",
-        "local_patch_sha256": "32266f439ef48a39dc9b7537f8f3788d1f95a5edf94d3fc672a6816e285e243f",
+        "local_patch_sha256": "d7e4eed388b04cd869034c68d6153bac3592c38f9f0c5b5f1927967c40688673",
         "limit": "Version-pinned notice with documented local patch; no complete binary/source equivalence claimed"
       }
     }
