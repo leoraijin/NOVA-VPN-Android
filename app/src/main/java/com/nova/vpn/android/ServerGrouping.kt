@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+
 package com.nova.vpn.android
 
 import androidx.compose.foundation.verticalScroll
@@ -141,8 +143,8 @@ internal fun ServersPage(
        Column(Modifier.fillMaxWidth().heightIn(max = controlsHeight).verticalScroll(rememberScrollState())) {
         OutlinedTextField(value = query, onValueChange = { query = it }, singleLine = true,
             label = { Text("Поиск серверов") }, modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp))
-        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
-          Row(Modifier.weight(1f).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        FlowRow(Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             FilterChip(selected = favoritesOnly, onClick = { favoritesOnly = !favoritesOnly }, label = { Text("Избранное") })
             Box {
                 TextButton(onClick = { menu = true }) { Text("Группировка: ${mode.label}") }
@@ -162,7 +164,6 @@ internal fun ServersPage(
                 }
             }
             TextButton(onClick = { query = ""; favoritesOnly = false; chosen = null }) { Text("Сбросить") }
-          }
             TextButton(onClick = onOpenSubscriptions) { Text("Подписки") }
         }
         TextButton(onClick = onDeleteAll, enabled = profiles.isNotEmpty() || snapshot?.subscriptions?.isNotEmpty() == true,

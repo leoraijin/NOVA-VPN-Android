@@ -216,6 +216,18 @@ internal object ServerLibraryUiSmoke {
             instrumentation.waitForIdleSync()
             click("Серверы")
             waitFor("Найдено: 2000 из 2000")
+            stage = "responsive-filter-actions"
+            click("Группировка: Без группировки")
+            click("Транспорт")
+            waitFor("Группировка: Транспорт")
+            click("Сортировка")
+            click("Название")
+            click("Сбросить")
+            waitFor("Найдено: 2000 из 2000")
+            click("Группировка: Транспорт")
+            click("Без группировки")
+            waitFor("Группировка: Без группировки")
+            capture("controls")
             enter("Узел 0000")
             waitFor("Найдено: 1 из 2000")
             stage = "open-original-actions"
@@ -227,7 +239,7 @@ internal object ServerLibraryUiSmoke {
             awaitEditorClosed()
             waitFor("Мой игровой узел")
             stage = "search-personal-name"
-            // Replace the query directly; reset is in the horizontally scrollable filters.
+            // Replace the query directly to exercise saved search state.
             enter("МОЙ ИГРОВОЙ")
             waitFor("Найдено: 1 из 2000")
             stage = "reopen-personal-actions"

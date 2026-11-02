@@ -1,0 +1,49 @@
+name: Android responsive server library
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: android-library-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  library:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+      - uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
+          log-accepted-android-sdk-licenses: false
+      - name: Build isolated library preview and instrumentation
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p work/library
+          bash gradlew --no-daemon -PnovaOfficialRepositoriesOnly=true '-Dorg.gradle.jvmargs=-Xmx4g -Dfile.encoding=UTF-8' :app:assembleRealitypreview :app:assembleRealitypreviewAndroidTest -PnovaRealitySmoke -PnovaUsbTest -PnovaRealityAbi=x86_64 2>&1 | tee work/library/build.log
+      - name: Enable disposable runner KVM
+        run: sudo chmod 666 /dev/kvm
+      - name: Check library controls in all designs and themes
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: default
+          arch: x86_64
+          profile: pixel_2
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none -memory 2048
+          disable-animations: true
+          script: bash tools/Run-LibraryChecksCi.sh
+      - name: Retain library evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-library-lifecycle-evidence
+          path: work/library/
+          if-no-files-found: warn
+          retention-days: 14

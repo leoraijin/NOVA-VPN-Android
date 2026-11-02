@@ -33,7 +33,7 @@ for style in args.style or ('IOS_LIQUID_GLASS', 'MATERIAL_YOU', 'ONE_UI', 'WINDO
                 f'/sdcard/Android/data/{package}/files/server-library-failed-{style}.txt',
                 str(args.work / (label + '-failed.txt'))], capture_output=True, timeout=30)
         assert passed, output[-1800:]
-        for stage in ('portrait', 'landscape', 'recreated'):
+        for stage in ('controls', 'portrait', 'landscape', 'recreated'):
             screenshot = subprocess.run([args.adb, '-s', args.serial, 'pull',
                 f'/sdcard/Android/data/{package}/files/server-library-{label}-{stage}.png',
                 str(args.work / (label + '-' + stage + '.png'))], capture_output=True, timeout=30)
