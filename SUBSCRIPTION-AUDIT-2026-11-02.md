@@ -164,3 +164,19 @@ The rejected command did not execute. Two isolated APKs had been installed in an
 allowed command; run-as reported the app is not debuggable. No real reference process or
 private reference configs were created. Live comparison is awaiting user approval; do not
 circumvent this rejection with a different command path.
+## Pinned reference routing assets
+
+The verified official Xray 26.10.21 Android archive also contains GeoIP/GeoSite data.
+Original provider routing/DNS may need these even when the selected inbound is overridden.
+The optional AssetHashes map in Run-XrayReference.ps1 accepts only geoip.dat/geosite.dat,
+verifies their SHA-256 before ADB, copies them next to the owned binary and includes both
+exact filenames in cleanup. The checked archive produced:
+
+- geoip.dat: cbea6088e0ba9acee4b02f89365338e5f499eb51061e1a0700647da02e91b917
+- geosite.dat: ef725a08ba804effd5b5b6e747c8c28eabc54ed068d786d7366d067d2e1a3849
+
+`tools/Test-XrayReferenceRunner.ps1 -WorkPath <private-work-directory>` passed locally with
+fake ADB: successful TCP/gRPC phases, failed second probe with both process/file cleanup,
+both pinned assets, explicit device selector, asset-digest refusal and active-reservation
+refusal before any ADB call. No real device operation or provider request occurred.
+The actual provider's dependency on geodata and live gRPC result are still unverified.

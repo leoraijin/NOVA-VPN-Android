@@ -5,6 +5,7 @@ param(
     [Parameter(Mandatory=$true)][string] $XrayPath,
     [Parameter(Mandatory=$true)][ValidatePattern('^[a-fA-F0-9]{64}$')][string] $XraySha256,
     [Parameter(Mandatory=$true)][string] $LogDirectory,
+    [hashtable] $AssetHashes = @{},
     [ValidateSet('com.nova.vpn.android.usbtest.realitypreview','com.nova.vpn.android.usbtest.completionpreview')]
     [string] $Package='com.nova.vpn.android.usbtest.completionpreview',
     [ValidateRange(1024,65535)][int] $Port=18089
@@ -12,6 +13,13 @@ param(
 $ErrorActionPreference='Stop'
 & (Join-Path $PSScriptRoot 'Assert-DeviceReservation.ps1') -ReservationFile $ReservationFile -DeviceSerial $DeviceSerial
 if ((Get-FileHash -LiteralPath $XrayPath -Algorithm SHA256).Hash -ne $XraySha256) { throw 'Reference Xray digest mismatch.' }
+$assetPaths=@{}
+foreach ($name in $AssetHashes.Keys) {
+    if ($name -notin @('geoip.dat','geosite.dat') -or [string]$AssetHashes[$name] -notmatch '^[a-fA-F0-9]{64}$') { throw 'Invalid reference asset pin.' }
+    $asset=Join-Path (Split-Path ([IO.Path]::GetFullPath($XrayPath))) $name
+    if ((Get-FileHash -LiteralPath $asset -Algorithm SHA256).Hash -ne $AssetHashes[$name]) { throw 'Reference asset digest mismatch.' }
+    $assetPaths[$name]=$asset
+}
 if (Test-Path -LiteralPath $LogDirectory) { throw 'Use a fresh reference log directory.' }
 New-Item -ItemType Directory -Path $LogDirectory | Out-Null
 $remote='/data/local/tmp/nova-xray-reference-'+[guid]::NewGuid().ToString('N')
@@ -41,6 +49,7 @@ function Stop-OwnedReference {
 try {
     Invoke-ReferenceAdb -Arguments @('shell',"mkdir -m 700 $remote") | Out-Null
     Invoke-ReferenceAdb -Arguments @('push',$XrayPath,"$remote/xray") | Out-Null
+    foreach ($name in $assetPaths.Keys) { Invoke-ReferenceAdb -Arguments @('push',$assetPaths[$name],"$remote/$name") | Out-Null }
     Invoke-ReferenceAdb -Arguments @('shell',"chmod 700 $remote/xray") | Out-Null
     $prepared=$true
     Invoke-ReferencePhase prepare | Set-Content -LiteralPath (Join-Path $LogDirectory 'prepare.log') -Encoding utf8
@@ -67,7 +76,7 @@ try {
         try { if ($prepared) { Invoke-ReferencePhase cleanup | Out-Null } } finally {
         # Exact generated leaf paths only; no recursive deletion or global process cleanup.
         if ($remote -notmatch '^/data/local/tmp/nova-xray-reference-[a-f0-9]{32}$') { throw 'Invalid owned cleanup path.' }
-        Invoke-ReferenceAdb -Arguments @('shell',"rm -f $remote/config.json $remote/runtime.log $remote/xray; rmdir $remote") | Out-Null
+        Invoke-ReferenceAdb -Arguments @('shell',"rm -f $remote/config.json $remote/runtime.log $remote/xray $remote/geoip.dat $remote/geosite.dat; rmdir $remote") | Out-Null
         }
     }
 }
