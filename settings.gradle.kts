@@ -8,7 +8,9 @@ pluginManagement {
     }
     repositories {
         google()
-        maven("https://maven.aliyun.com/repository/google")
+        if (providers.gradleProperty("novaOfficialRepositoriesOnly").orNull != "true") {
+            maven("https://maven.aliyun.com/repository/google")
+        }
         mavenCentral()
         gradlePluginPortal()
     }
@@ -19,7 +21,9 @@ dependencyResolutionManagement {
     repositories {
         maven { url = uri("vendor/maven"); content { includeGroup("com.github.singbox-android") } }
         google()
-        maven("https://maven.aliyun.com/repository/google")
+        if (providers.gradleProperty("novaOfficialRepositoriesOnly").orNull != "true") {
+            maven("https://maven.aliyun.com/repository/google")
+        }
         mavenCentral()
         maven("https://jitpack.io")
     }

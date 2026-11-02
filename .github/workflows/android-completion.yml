@@ -29,7 +29,7 @@ jobs:
         run: |
           set -o pipefail
           mkdir -p work/completion
-          bash gradlew --no-daemon '-Dorg.gradle.jvmargs=-Xmx4g -Dfile.encoding=UTF-8' :app:testOptimizedUnitTest :app:assembleRealitypreview :app:assembleRealitypreviewAndroidTest -PnovaRealitySmoke -PnovaUsbTest -PnovaRealityAbi=x86_64 2>&1 | tee work/completion/build.log
+          bash gradlew --no-daemon -PnovaOfficialRepositoriesOnly=true '-Dorg.gradle.jvmargs=-Xmx4g -Dfile.encoding=UTF-8' :app:testOptimizedUnitTest :app:assembleRealitypreview :app:assembleRealitypreviewAndroidTest -PnovaRealitySmoke -PnovaUsbTest -PnovaRealityAbi=x86_64 2>&1 | tee work/completion/build.log
       - name: Cache isolated Android system image
         uses: actions/cache@v4
         with:
