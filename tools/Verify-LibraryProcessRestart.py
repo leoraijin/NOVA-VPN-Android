@@ -57,6 +57,21 @@ def servers():
     shell('input', 'tap', *point)
 
 
+def launch_from_home():
+    shell('am', 'start', '-W', '-a', 'android.intent.action.MAIN',
+          '-c', 'android.intent.category.LAUNCHER', '-f', '0x10200000', '-n', COMPONENT)
+
+
+def resumed_task(label):
+    dump = shell('dumpsys', 'activity', 'activities')
+    (args.work / (label + '-tasks.txt')).write_text(dump, encoding='utf-8')
+    for line in dump.splitlines():
+        if PACKAGE + '/' in line and ('mResumedActivity' in line or 'topResumedActivity' in line):
+            match = re.search(r'\bt(\d+)\b', line)
+            if match:
+                return match.group(1)
+    return None
+
 def search_field():
     return next((node for node in tree().iter('node')
                  if node.get('class', '').endswith('EditText') and node.get('enabled') == 'true'), None)
@@ -77,7 +92,7 @@ try:
     (args.work / 'seed.log').write_text(seed, encoding='utf-8')
     if 'PASS Android encrypted legacy migration' not in seed or 'INSTRUMENTATION_CODE: -1' not in seed:
         raise RuntimeError('Synthetic library setup failed')
-    shell('am', 'start', '-W', '-n', COMPONENT)
+    launch_from_home()
     servers()
     field = until('search field', search_field)
     box = list(map(int, re.findall(r'\d+', field.get('bounds', ''))))
@@ -86,6 +101,7 @@ try:
     shell('input', 'tap', (box[0] + box[2]) // 2, (box[1] + box[3]) // 2)
     shell('input', 'text', 'My%sfixture')
     until('entered query', has_query)
+    original_task = until('original task', lambda: resumed_task('before'))
     original_pid = until('original process', lambda: shell('pidof', PACKAGE, check=False).strip())
     shell('am', 'start', '-W', '-a', 'android.intent.action.MAIN', '-c', 'android.intent.category.HOME')
     # onStop saves the task's Activity state; am kill removes the background process,
@@ -94,8 +110,10 @@ try:
         shell('am', 'kill', PACKAGE)
         return not shell('pidof', PACKAGE, check=False).strip()
     until('background process death', kill_background)
-    shell('am', 'start', '-W', '-a', 'android.intent.action.MAIN',
-          '-c', 'android.intent.category.LAUNCHER', '-n', COMPONENT)
+    launch_from_home()
+    replacement_task = until('replacement task', lambda: resumed_task('after'))
+    if original_task != replacement_task:
+        raise RuntimeError('Launcher created another task instead of restoring the saved task')
     new_pid = until('replacement process', lambda: shell('pidof', PACKAGE, check=False).strip())
     if original_pid == new_pid:
         raise RuntimeError('Process was not replaced')
@@ -105,7 +123,7 @@ try:
                                 capture_output=True, timeout=30, check=True)
     (args.work / 'restored-search.png').write_bytes(screenshot.stdout)
     (args.work / 'verification.json').write_text(json.dumps({
-        'background_process_replaced': True, 'activity_search_query_restored': True,
+        'background_process_replaced': True, 'same_activity_task_restored': True, 'activity_search_query_restored': True,
         'synthetic_data_only': True, 'physical_device_used': False,
         'scope': 'Activity task saved-state after am kill; not force-stop/reboot/TUN',
     }, indent=2) + '\n', encoding='utf-8')
