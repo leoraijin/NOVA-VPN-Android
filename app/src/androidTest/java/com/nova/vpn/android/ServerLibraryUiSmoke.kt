@@ -159,10 +159,34 @@ internal object ServerLibraryUiSmoke {
             error("Server editor did not close after saving")
         }
         fun enter(text: String) {
-            val field = requireNotNull(find { it.isEditable })
-            check(field.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, Bundle().apply {
-                putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
-            }))
+            val deadline = SystemClock.elapsedRealtime() + 20_000
+            var attempts = 0
+            while (SystemClock.elapsedRealtime() < deadline) {
+                find { it.isEditable }?.performAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_SHOW_ON_SCREEN.id)
+                instrumentation.waitForIdleSync()
+                val field = find { it.isEditable && it.isVisibleToUser }
+                if (field != null && field.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, Bundle().apply {
+                        putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
+                    })) return
+                // At large font sizes the independently scrolling filter panel may
+                // have moved its search field outside Compose's accessibility tree.
+                // Reach it by normal scrolling; never modify saved state directly.
+                val scrolls = mutableListOf<AccessibilityNodeInfo>()
+                fun collect(node: AccessibilityNodeInfo?) {
+                    if (node == null) return
+                    if (node.isScrollable && node.actionList.any {
+                            it.id == AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_DOWN.id ||
+                                it.id == AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_UP.id
+                        }) scrolls += node
+                    for (index in 0 until node.childCount) collect(node.getChild(index))
+                }
+                collect(ui.rootInActiveWindow)
+                val backward = attempts++ / 8 % 2 == 0
+                val action = if (backward) AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD else AccessibilityNodeInfo.ACTION_SCROLL_FORWARD
+                for (scroll in scrolls) if (scroll.performAction(action)) break
+                SystemClock.sleep(150)
+            }
+            error("Editable library field was not reachable")
         }
         val latest = AtomicReference<MainActivity?>()
         val application = context.applicationContext as Application
