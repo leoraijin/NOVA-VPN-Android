@@ -47,3 +47,10 @@ def profile_disclosure(tree, name):
                 return False
             parent = parents.get(parent)
     return None
+
+def tab_selected(tree, label):
+    if label not in NAV_LABELS:
+        return False
+    description = 'Маршрутизация' if label == 'Маршруты' else label
+    return any(node.get('content-desc') == description and node.get('selected') == 'true'
+               for node in tree.iter('node'))

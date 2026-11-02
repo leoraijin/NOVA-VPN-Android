@@ -9,7 +9,7 @@ import shlex
 import subprocess
 import time
 import xml.etree.ElementTree as ET
-from release_upgrade_ui import find_label, profile_disclosure
+from release_upgrade_ui import find_label, profile_disclosure, tab_selected
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--adb', required=True)
@@ -55,6 +55,8 @@ def hierarchy():
 
 
 def click(label):
+    if tab_selected(hierarchy(), label):
+        return
     point = pause_until('click ' + label, lambda: find_label(hierarchy(), label))
     shell('input', 'tap', *point)
 

@@ -449,3 +449,10 @@ The helper now expands only the specific profile row, avoids taps through the na
 dock, expands again after update if needed and retains partial completed-case reports.
 Three selector regressions use the actual captured synthetic UI XML and independent tap
 coordinates. Favorite preservation is still required, not skipped. APK bytes are unchanged.
+Run 41499902260 stopped in selector preflight before APK downloads/emulator work. Two
+capture-based selectors passed; the navigation assertion incorrectly required the selected
+Servers tab to be clickable. Actual XML has selected=true and clickable=false on that tab,
+while Home is a real clickable target. The regression now checks Home's actual point and
+separately confirms selected Servers without forcing a click. Navigation treats a positively
+identified already-selected tab as a no-op. No favorite/update assertion was removed and
+the production APK did not change. Four selector regressions are required before retry.
