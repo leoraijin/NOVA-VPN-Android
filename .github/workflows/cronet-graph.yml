@@ -9,7 +9,7 @@ concurrency:
 jobs:
   graph:
     runs-on: ubuntu-24.04
-    timeout-minutes: 40
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
       - name: Verify and restore pinned source identity and modes
@@ -21,8 +21,15 @@ jobs:
           python3 native/xhttp/build/Restore-CronetTree.py --input work/cronet-inputs --output work/cronet-tree 2>&1 | tee work/cronet-evidence/restore.log
           cp work/restoration.json work/cronet-evidence/restoration.json
           cp work/cronet-inputs/verification.json work/cronet-evidence/input-verification.json
-      - name: Generate publisher-argument Android ARM64 graph
-        run: python3 native/xhttp/build/Generate-CronetGraph.py --source work/cronet-tree --work work/cronet-evidence/graph
+      - name: Generate all Android ABI graphs and rebuild ARM64
+        shell: bash
+        run: |
+          set -euo pipefail
+          command -v ninja
+          for cpu in arm x64 x86; do
+            python3 native/xhttp/build/Generate-CronetGraph.py --source work/cronet-tree --work "work/cronet-evidence/graph-$cpu" --cpu "$cpu"
+          done
+          python3 native/xhttp/build/Generate-CronetGraph.py --source work/cronet-tree --work work/cronet-evidence/graph-arm64 --cpu arm64 --rebuild
       - name: Retain graph attempt evidence
         if: always()
         uses: actions/upload-artifact@v4
