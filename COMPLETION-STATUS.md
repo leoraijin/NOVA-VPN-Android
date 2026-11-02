@@ -590,3 +590,31 @@ Overall run remains FAILED because the new diagnostics wrapper supplied LIGHT,
 whereas the runner accepts light/dark. Logcat attributes process exit to that
 unsupported instrumentation input, not a product runtime defect. The wrapper was
 corrected and run41510436433 is pending. Diagnostics is not marked passed yet.
+
+## Long H1/Reality host load acceptance — completed
+
+The local process exited zero after1801.674s on compiled test commit
+9b2b764a1273316ee05ed888d870b562038df3bb. Its completion receipt observed later
+HEAD a6a9924 (documentation only); transport/option/module inputs were independently
+diffed and identical to the compiled commit. Log SHA256
+9a05bfa123f67e9b6269592a90abbae3e2f881c35c0976ed0cf377bdb30ca751 matched the
+completion receipt. All six 300-second cases passed with workers=peak=12:
+plain H1/H1 and native REALITY/REALITY frontends, each auto/packet-up/stream-up.
+Total214412 validated exchanges /3512926208 payload bytes. Tests assert exact
+worker/sequence echo, HTTP versions, direction ownership, independent XMUX limits
+and released download leases. The machine-readable per-case receipt is
+native/diagnostic-evidence/xhttp-h1-reality-soak-2026-11-03.json.
+This closes this host-soak subset only: official Xray H2 is behind the two
+frontends; no direct Xray H1/REALITY ingress, Android TUN/network migration,
+battery or production AAR/license acceptance is inferred.
+
+## Diagnostic export cancellation — fixture readiness issue found
+
+Run41510436433 repeated successful recovery and passed actual JSON and TXT SAF
+exports (exact preview bytes) and IOS/MATERIAL light diagnostic flows, then failed
+at a later missing Close control. Artifact13173655417 SHA256
+9af35f8600c9adb6e25d9c833f4ed61013b02061ef5f8986576fcc6309bc9054 matched GitHub.
+Logcat shows DocumentsUI starts took1.263/1.382s, while cancellation used a fixed
+500ms sleep. Fixture now waits for actual DocumentsUI foreground ownership before
+Back, retaining all export/close/state assertions. Local instrumentation build
+passed. Runtime recheck is pending; full diagnostics is not yet accepted.

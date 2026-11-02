@@ -1,0 +1,72 @@
+{
+  "date": "2026-11-03",
+  "result": "PASS",
+  "compiledTestCommit": "9b2b764a1273316ee05ed888d870b562038df3bb",
+  "documentationHeadWhenFinished": "a6a9924c1ca4c29d7aae1200fd36a50c00e62ef6",
+  "baseNativeCommit": "fe2e2f52ae0b360b95b6cd82900208f1d393f357",
+  "logSha256": "9a05bfa123f67e9b6269592a90abbae3e2f881c35c0976ed0cf377bdb30ca751",
+  "runs": [
+    {
+      "transport": "h1",
+      "mode": "auto",
+      "seconds": 300,
+      "workers": 12,
+      "peak": 12,
+      "exchanges": 35679,
+      "payloadBytes": 584564736
+    },
+    {
+      "transport": "h1",
+      "mode": "packet-up",
+      "seconds": 300,
+      "workers": 12,
+      "peak": 12,
+      "exchanges": 35756,
+      "payloadBytes": 585826304
+    },
+    {
+      "transport": "h1",
+      "mode": "stream-up",
+      "seconds": 300,
+      "workers": 12,
+      "peak": 12,
+      "exchanges": 35825,
+      "payloadBytes": 586956800
+    },
+    {
+      "transport": "reality-h2",
+      "mode": "auto",
+      "seconds": 300,
+      "workers": 12,
+      "peak": 12,
+      "exchanges": 35756,
+      "payloadBytes": 585826304
+    },
+    {
+      "transport": "reality-h2",
+      "mode": "packet-up",
+      "seconds": 300,
+      "workers": 12,
+      "peak": 12,
+      "exchanges": 35640,
+      "payloadBytes": 583925760
+    },
+    {
+      "transport": "reality-h2",
+      "mode": "stream-up",
+      "seconds": 300,
+      "workers": 12,
+      "peak": 12,
+      "exchanges": 35756,
+      "payloadBytes": 585826304
+    }
+  ],
+  "totalExchanges": 214412,
+  "totalPayloadBytes": 3512926208,
+  "scope": "Windows loopback, plaintext H1 or native independent Reality frontends to pinned official Xray26.10.21 H2 VLESS backend",
+  "limits": [
+    "No direct official Xray H1/Reality ingress claim",
+    "No Android TUN or physical network/battery acceptance",
+    "No production AAR replacement or source/license closure claim"
+  ]
+}
