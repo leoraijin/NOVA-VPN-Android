@@ -1,0 +1,39 @@
+{
+  "compilerAbi": "x86_64",
+  "compilerRun": 41526506768,
+  "ndkVersion": "r24",
+  "officialArchiveUrl": "https://dl.google.com/android/repository/android-ndk-r24-linux.zip",
+  "officialArchiveBytes": 667731974,
+  "rangeBytesDownloaded": 3614024,
+  "measuredHeaders": 251,
+  "matchedHeaders": 251,
+  "mismatchingHeaders": 0,
+  "missingMembers": 0,
+  "noticeDocuments": [
+    {
+      "name": "NOTICE",
+      "bytes": 548553,
+      "sha256": "aa0f71f73ee996ed6084bf67a980b7014babda4c697f8f2dc9472d210b735921",
+      "archiveEntryCrc32": "4510e4f6"
+    },
+    {
+      "name": "NOTICE.toolchain",
+      "bytes": 818288,
+      "sha256": "99fc40a5455f92f4223fc71265dc30f568fec6b81401707ce37447fefb20ed0c",
+      "archiveEntryCrc32": "d20bedb4"
+    },
+    {
+      "name": "source.properties",
+      "bytes": 51,
+      "sha256": "a7bde1d10a7ee7c5dc9b01ebdb952d42954dd010aa64324acd99997ced99c785",
+      "archiveEntryCrc32": "fce428a5"
+    }
+  ],
+  "evidence": "native/xhttp/provenance/cronet-ndk-r24-inputs-and-notices-2026-11-03.json.gz",
+  "evidenceSha256": "128a13707daf67a7b37d9181c8503f2411b294b93efec839e2dfe5f690f837ca",
+  "limits": [
+    "Selected ZIP entries verified with CRC and measured compiler SHA256; whole ZIP SHA256 not measured",
+    "NOTICE and NOTICE.toolchain preserved verbatim for complete NDK distribution, not narrowed to linked components",
+    "Clang23 headers, generated files, other ABI header inventories and final NOTICE remain separate"
+  ]
+}
