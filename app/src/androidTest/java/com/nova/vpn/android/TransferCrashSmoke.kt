@@ -35,6 +35,15 @@ internal object TransferCrashSmoke {
             }
             phase == "prepare" -> {
                 check(ProfileVault(context).load().isNotEmpty()) { "Run synthetic subscription setup first" }
+                // Establish the same post-migration baseline a launched app uses.
+                // UI startup legitimately writes missing legacy appearance defaults;
+                // preserve explicit non-default appearance values across recovery instead.
+                AppPreferencesStore(context).apply {
+                    appearance(systemDark = false)
+                    setAppearance(Appearance(DesignStyle.IOS_LIQUID_GLASS, ThemeMode.DARK,
+                        materialHue = 197f, glassFrost = .37f))
+                    markNotificationPermissionRequested()
+                }
                 val exported = FullTransfer.export(context, PASSWORD)
                 original.writeText(exported)
                 repeat(8) { File(context.getExternalFilesDir(null), "restore-crash-$it.json").delete() }
