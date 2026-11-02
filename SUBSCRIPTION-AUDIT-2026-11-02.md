@@ -124,3 +124,28 @@ Synthetic verification passed for exact outbound preservation including gRPC aut
 serviceName, multiMode, finalmask and chained dependency, DNS aliases, loopback-only inbound,
 selection rule and disabled logging. This is preparation, not proof of live gRPC connectivity.
 The live reference comparison remains outstanding until the shared TECNO is explicitly released.
+## On-device original-Xray comparison harness
+
+`LiveXrayReferenceSmoke` is opt-in instrumentation only, available in the isolated USB test
+package. `xrayReferencePhase=prepare` consumes/deletes the usual one-use subscription input,
+uses the existing per-origin test identity, and finds the exact first imported TCP/gRPC endpoint
+in the original Xray response. It writes two temporary files in the test application's private
+files directory: `xray-reference-tcp.json` and `xray-reference-grpc.json`. No real profiles,
+routing preferences or subscription catalog are changed. Preparation fails and cleans up partial
+outputs when the source endpoint cannot be matched unambiguously. Original outbounds and
+DNS/policy/transport are preserved, with a loopback-only SOCKS inbound and disabled Xray logging.
+
+After explicit shared-device handoff, an owned shell runner can copy one config through `run-as`
+entirely on-device into its private shell-owned temporary directory, start the digest-verified
+reference Xray there, and call `xrayReferencePhase=probe`. The probe uses only the loopback SOCKS
+port (default 18089), normal TLS verification, literal-IP HTTPS plus hostname HTTPS, and reports
+status categories without endpoints, credentials or public IPs. Each probe outcome must be read;
+a completed instrumentation phase does not imply both network requests succeeded.
+
+Stop the exact owned Xray process between TCP and gRPC, remove its temporary files in a finally
+block, then run `xrayReferencePhase=cleanup` to delete both app-private original configs. Never
+pull these configs onto the host or print their content. Xray's raw startup output is private
+and must not be published without redaction. No reference process has been started yet.
+
+Both isolated ARM64 app/test APKs compiled successfully after adding these phases (83 tasks,
+BUILD SUCCESSFUL). This is build evidence only; real reference comparison remains outstanding.

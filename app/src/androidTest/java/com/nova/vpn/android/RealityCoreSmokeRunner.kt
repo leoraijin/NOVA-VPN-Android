@@ -16,6 +16,8 @@ import kotlin.concurrent.thread
 class RealityCoreSmokeRunner : Instrumentation() {
     private var deleteAllStoreOnly = false
     private var deleteAllOnly = false
+    private var xrayReferencePhase: String? = null
+    private var xrayReferencePort = 18089
     private var liveSubscriptionAudit = false
     private var liveSubscription = false
     private var probeUseNetworkCallbacks = true
@@ -57,6 +59,9 @@ class RealityCoreSmokeRunner : Instrumentation() {
     override fun onCreate(arguments: Bundle?) {
         deleteAllStoreOnly = arguments?.getString("deleteAllStoreOnly") == "true"
         deleteAllOnly = arguments?.getString("deleteAllOnly") == "true"
+        xrayReferencePhase = arguments?.getString("xrayReferencePhase")
+        xrayReferencePort = arguments?.getString("xrayReferencePort")?.toInt() ?: 18089
+        check(xrayReferencePhase == null || xrayReferencePhase in setOf("prepare", "probe", "cleanup"))
         liveSubscriptionAudit = arguments?.getString("liveSubscriptionAudit") == "true"
         liveSubscription = arguments?.getString("liveSubscription") == "true"
         transferCrashPhase = arguments?.getString("transferCrashPhase")
@@ -116,6 +121,18 @@ class RealityCoreSmokeRunner : Instrumentation() {
         super.onCreate(arguments); start()
     }
     override fun onStart() {
+        xrayReferencePhase?.let { phase ->
+            val result = Bundle()
+            try {
+                LiveXrayReferenceSmoke.run(this, phase, xrayReferencePort)
+                result.putString("stream", "PASS reference phase completed; inspect individual outcomes\n")
+                finish(Activity.RESULT_OK, result)
+            } catch (error: Throwable) {
+                result.putString("stream", "FAIL reference phase: ${error.javaClass.simpleName}\n")
+                finish(Activity.RESULT_CANCELED, result)
+            }
+            return
+        }
         if (deleteAllOnly || deleteAllStoreOnly) {
             val result = Bundle()
             try {
