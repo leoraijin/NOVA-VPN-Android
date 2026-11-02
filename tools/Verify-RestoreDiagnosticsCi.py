@@ -11,6 +11,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--adb', required=True)
 parser.add_argument('--serial', required=True)
 parser.add_argument('--work', required=True, type=Path)
+parser.add_argument('--monitor-only', action='store_true')
 args = parser.parse_args()
 if os.environ.get('GITHUB_ACTIONS') != 'true' or not re.fullmatch(r'emulator-\d+', args.serial):
     raise RuntimeError('Only a disposable GitHub Actions emulator is allowed')
@@ -41,6 +42,12 @@ def instrument(name, flags, expected):
 try:
     instrument('physical-monitor', ['-e', 'physicalNetworkMonitorOnly', 'true'],
                'PASS physical monitor lifecycle:')
+    if args.monitor_only:
+        (args.work / 'verification.json').write_text(json.dumps({
+            'physical_monitor_lifecycle': True, 'registration_races': 40,
+            'synthetic_data_only': True, 'physical_device_used': False,
+        }, indent=2) + '\n', encoding='utf-8')
+        sys.exit(0)
     instrument('synthetic-store', ['-e', 'subscriptionsOnly', 'true'],
                'PASS Android encrypted legacy migration')
     subprocess.run([sys.executable, str(Path(__file__).with_name('Verify-TransferCrash.py')),
