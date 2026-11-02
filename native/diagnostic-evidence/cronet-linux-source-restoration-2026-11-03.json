@@ -1,0 +1,49 @@
+{
+  "artifactId": 13175023782,
+  "verified": {
+    "sourceCommit": "72a06c9fca0e2d228588c7f3074bf7efff3ff686",
+    "verifiedBlobs": 34170,
+    "symbolicLinks": 2,
+    "restoredGitLineEndings": [
+      "src/third_party/zstd/src/build/VS2008/fullbench/fullbench.vcproj",
+      "src/third_party/zstd/src/build/VS2008/zstd.sln",
+      "src/third_party/zstd/src/build/VS2008/zstd/zstd.vcproj",
+      "src/third_party/zstd/src/build/VS2008/zstdlib/zstdlib.vcproj",
+      "src/third_party/zstd/src/build/VS2010/datagen/datagen.vcxproj",
+      "src/third_party/zstd/src/build/VS2010/fullbench/fullbench.vcxproj",
+      "src/third_party/zstd/src/build/VS2010/libzstd-dll/libzstd-dll.rc",
+      "src/third_party/zstd/src/build/VS2010/libzstd-dll/libzstd-dll.vcxproj",
+      "src/third_party/zstd/src/build/VS2010/libzstd/libzstd.vcxproj",
+      "src/third_party/zstd/src/build/VS2010/zstd.sln",
+      "src/third_party/zstd/src/build/VS2010/zstd/zstd.rc",
+      "src/third_party/zstd/src/build/VS2010/zstd/zstd.vcxproj",
+      "src/third_party/zstd/src/build/VS_scripts/build.VS2010.cmd",
+      "src/third_party/zstd/src/build/VS_scripts/build.VS2012.cmd",
+      "src/third_party/zstd/src/build/VS_scripts/build.VS2013.cmd",
+      "src/third_party/zstd/src/build/VS_scripts/build.VS2015.cmd",
+      "src/third_party/zstd/src/build/VS_scripts/build.VS2017.cmd",
+      "src/third_party/zstd/src/build/VS_scripts/build.VS2017Community.cmd",
+      "src/third_party/zstd/src/build/VS_scripts/build.VS2017Enterprise.cmd",
+      "src/third_party/zstd/src/build/VS_scripts/build.VS2017Professional.cmd",
+      "src/third_party/zstd/src/build/VS_scripts/build.VSPreview.cmd",
+      "src/third_party/zstd/src/build/VS_scripts/build.generic.cmd",
+      "src/third_party/zstd/src/contrib/VS2005/fullbench/fullbench.vcproj",
+      "src/third_party/zstd/src/contrib/VS2005/zstd.sln",
+      "src/third_party/zstd/src/contrib/VS2005/zstd/zstd.vcproj",
+      "src/third_party/zstd/src/contrib/VS2005/zstdlib/zstdlib.vcproj",
+      "src/third_party/zstd/src/lib/dll/example/build_package.bat",
+      "src/third_party/zstd/src/lib/dll/example/fullbench-dll.sln",
+      "src/third_party/zstd/src/lib/dll/example/fullbench-dll.vcxproj",
+      "src/third_party/zstd/src/programs/windres/zstd.rc"
+    ],
+    "scope": "Source identity/modes only; no graph or binary equivalence claim"
+  },
+  "artifactSha256": "b83087459db12eeac2cc3d1cd3c32b1acd8412947eb6c5892a74baa1b21206b9",
+  "overallConclusion": "cancelled after source restoration; wrong GN label corrected in next run",
+  "run": "https://github.com/leoraijin/NOVA-VPN-Android/actions/runs/41516970023",
+  "limitations": [
+    "Faithful pinned Git files, modes and symlinks only",
+    "No GN target graph or compiler-output equivalence accepted yet",
+    "Next graph run41517394168 remains pending"
+  ]
+}

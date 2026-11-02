@@ -654,3 +654,21 @@ assertion. No product code change was required. Scope is one synthetic profile,
 real background process death and task saved-state; not force-stop/reboot, 2000-node
 process-death performance, physical TUN or battery acceptance. Earlier independent
 2000-node lifecycle and 8-appearance diagnostics results retain their own scopes.
+
+## Cronet source tree faithfully restored on Linux
+
+Run41516970023 was deliberately cancelled after discovery of an incorrect GN
+label in the new graph collector. Its source restoration completed beforehand.
+Artifact13175023782 SHA256 b83087459db12eeac2cc3d1cd3c32b1acd8412947eb6c5892a74baa1b21206b9
+matched GitHub. restoration.json and restore.log independently confirm all34170
+pinned Git blobs, executable modes and both contained symbolic links; archive
+CRLF exports were restored only when exact Git hashes required it. This closes
+faithful Linux extraction, not generated graph or binary/license equivalence.
+Windows partial restoration remains unsuccessful and is not overwritten.
+
+The publisher builder was verified against Git blob4f34d22a0aada7361f71679c2cdf371ca72da9ac
+at049f2909701ca088c9569f6b303bba5376a2b2ff; SHA256
+f07ff6f4783115d5031c4a9633deb510260c007d0f49f6eef5c0b3eba466c4ea.
+Graph flags are parsed from those exact bytes and original Android additions.
+Correct target label is //components/cronet:cronet_static. Run41517394168 on
+c3649f0 is live; no graph result is accepted yet. Native app binaries are unchanged.
