@@ -8,7 +8,6 @@ import shlex
 import subprocess
 import time
 import xml.etree.ElementTree as ET
-from release_upgrade_ui import find_label, tab_selected
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--adb', required=True)
@@ -17,6 +16,8 @@ parser.add_argument('--work', required=True, type=Path)
 args = parser.parse_args()
 if os.environ.get('GITHUB_ACTIONS') != 'true' or not re.fullmatch(r'emulator-\d+', args.serial):
     raise RuntimeError('Only a disposable GitHub Actions emulator is allowed')
+# Refuse before importing UI helpers or issuing any device command.
+from release_upgrade_ui import find_label, tab_selected
 PACKAGE = 'com.nova.vpn.android.usbtest.realitypreview'
 COMPONENT = PACKAGE + '/com.nova.vpn.android.MainActivity'
 QUERY = 'My fixture'
