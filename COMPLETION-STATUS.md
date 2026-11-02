@@ -711,3 +711,24 @@ on the earlier workflow and remains unchanged; no duplicate was dispatched.
 The new collector has not run in Linux CI yet. Ninja records can include host and
 generator objects; intersection with archive members, header origin mapping and
 final linked NOTICE remain open. No production binaries were changed.
+
+
+## Android 0.2.56 published after exact APK acceptance
+
+Release v0.2.56 points to code2da55b6bdfa3283ddb9d4c5e2ca8f21f2f087904.
+CI41522276309 SUCCESS; artifact13178805911 SHA256
+4df636d6461ace429aa2d33f9442af805b949d3b9f001e3351c27c8a1e2ad203 matched GitHub.
+Reports were inspected: updates from0.2.52/0.2.54/0.2.55 preserved UID, exact encrypted
+private bytes before launch, decryptable catalog, selection and saved routing.
+Favorites were seeded/preserved for0.2.54 and0.2.55; false for0.2.52 means unseeded,
+not loss. Clean install empty catalog passed. Current-stable upgrade screenshot
+was visually reviewed. Exact ARM64 APK used API35 Google APIs x86_64 native bridge;
+VPN was never started. This does not replace physical/TUN/handover acceptance.
+
+Published APK SHA256 baa2ad88a7db34f7e0b18ffc470adfca0e1017bf28d29dfc207787ca3b3ccec0,
+original signer retained; all four native libraries byte-identical to0.2.55.
+The lifecycle fix verified in monitor CI41505540172 is now included in this release.
+All six release assets, tag target and latest-release state verified at publication.
+Original seven Android sections and Windows5+15 goal remain incomplete; physical
+network/sleep/endurance, unresolved subscription gRPC and native provenance/notice
+acceptance are not closed by this incremental release.

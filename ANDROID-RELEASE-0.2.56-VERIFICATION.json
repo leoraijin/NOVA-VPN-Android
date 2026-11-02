@@ -1,0 +1,42 @@
+{
+  "version": "0.2.56",
+  "versionCode": 58,
+  "codeCommit": "2da55b6bdfa3283ddb9d4c5e2ca8f21f2f087904",
+  "apkSha256": "baa2ad88a7db34f7e0b18ffc470adfca0e1017bf28d29dfc207787ca3b3ccec0",
+  "signerSha256": "7abeb400a6f16c0adf6c127027f2bdd205ce79f558c53f631d41083ecca24626",
+  "release": "https://github.com/leoraijin/NOVA-VPN-Android/releases/tag/v0.2.56",
+  "acceptanceRun": 41522276309,
+  "artifactId": 13178805911,
+  "artifactSha256": "4df636d6461ace429aa2d33f9442af805b949d3b9f001e3351c27c8a1e2ad203",
+  "baselines": [
+    "0.2.52",
+    "0.2.54",
+    "0.2.55"
+  ],
+  "preserved": [
+    "UID",
+    "exact encrypted private file bytes before launch",
+    "decryptable profile",
+    "selected profile",
+    "saved routing"
+  ],
+  "favoritesVerified": [
+    "0.2.54",
+    "0.2.55"
+  ],
+  "favoritesNotSeeded": [
+    "0.2.52"
+  ],
+  "cleanInstallEmptyCatalog": true,
+  "scope": "Exact signed ARM64 APK installed unchanged on API35 x86_64 Google APIs ARM64 native bridge. No VPN started. Not physical ARM64 or network handover acceptance.",
+  "monitorLifecycleRun": 41505540172,
+  "unitTests": {
+    "total": 344,
+    "passed": 343,
+    "skipped": 1,
+    "failures": 0,
+    "errors": 0
+  },
+  "originalPlanComplete": false,
+  "publicRedownloadSha256AndSignerVerified": true
+}
