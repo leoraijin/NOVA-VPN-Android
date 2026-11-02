@@ -55,7 +55,7 @@ try:
                    check=True, timeout=1200)
     for theme in ('LIGHT', 'DARK'):
         instrument('diagnostics-' + theme, ['-e', 'diagnosticsUiOnly', 'true',
-                   '-e', 'diagnosticsTheme', theme],
+                   '-e', 'diagnosticsTheme', theme.lower()],
                    'PASS Android diagnostic preview in all available designs: ' + theme)
         for style in ('ios_liquid_glass', 'material_you', 'one_ui', 'windows_11'):
             name = 'diagnostics-' + theme.lower() + '-' + style + '.png'
