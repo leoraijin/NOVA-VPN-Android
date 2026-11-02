@@ -40,6 +40,7 @@ jobs:
           [[ "$CANDIDATE_SHA" =~ ^[a-f0-9]{64}$ ]]
           mkdir -p work/apks work/acceptance
           python3 -m py_compile tools/Verify-ReleaseUpgrade.py
+          python3 -m unittest discover -s tools -p test_release_upgrade_ui.py
           python3 - <<'PY'
           import json, os, pathlib, shutil, urllib.parse, urllib.request
           url = json.loads(pathlib.Path(os.environ['GITHUB_EVENT_PATH']).read_text())['inputs']['candidate_url']

@@ -439,3 +439,13 @@ was verified; the screenshot shows the Android launcher, not an application cras
 The fixture now reads cmd package list packages -U --user 0 and independently checks the
 private data-directory owner; missing UID/version saves diagnostics and fails explicitly.
 Candidate APK remains byte-identical. No full update/clean-install PASS is claimed yet.
+Exact-APK run 41498330827 passed the entire 0.2.52 -> exact 0.2.55 scenario: same UID,
+private bytes unchanged before launch, decrypted imported profile, selected id and stored
+routes retained. It failed before updating 0.2.54 because the default iOS profile card was
+collapsed and the fixture tried to locate its hidden favorite action without expanding it.
+Verified artifact 13168600452 SHA-256 38fd1be8d0a4320f29e2ffd37eabd08591d31335238e3eadb26762e215007a95;
+reviewed the successful update screenshot and failure screenshot/XML. No crash is shown.
+The helper now expands only the specific profile row, avoids taps through the navigation
+dock, expands again after update if needed and retains partial completed-case reports.
+Three selector regressions use the actual captured synthetic UI XML and independent tap
+coordinates. Favorite preservation is still required, not skipped. APK bytes are unchanged.

@@ -9,6 +9,7 @@ import shlex
 import subprocess
 import time
 import xml.etree.ElementTree as ET
+from release_upgrade_ui import find_label, profile_disclosure
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--adb', required=True)
@@ -53,23 +54,6 @@ def hierarchy():
     return ET.fromstring(shell('cat', '/sdcard/nova-upgrade-ui.xml'))
 
 
-def find_label(tree, label):
-    parents = {child: parent for parent in tree.iter() for child in parent}
-    for node in tree.iter('node'):
-        if node.get('text') != label or node.get('enabled') != 'true':
-            continue
-        while node is not None and node.get('clickable') != 'true':
-            node = parents.get(node)
-        if node is None:
-            continue
-        bounds = list(map(int, re.findall(r'-?\d+', node.get('bounds', ''))))
-        if len(bounds) == 4 and bounds[2] > bounds[0] and bounds[3] > bounds[1]:
-            x, y = (bounds[0] + bounds[2]) // 2, (bounds[1] + bounds[3]) // 2
-            if x >= 0 and y >= 0:
-                return x, y
-    return None
-
-
 def click(label):
     point = pause_until('click ' + label, lambda: find_label(hierarchy(), label))
     shell('input', 'tap', *point)
@@ -78,6 +62,22 @@ def click(label):
 def shown(label):
     return any(label in node.get('text', '') for node in hierarchy().iter('node'))
 
+
+def show_profile_details(name):
+    for _ in range(8):
+        tree = hierarchy()
+        labels = [node.get('text', '') for node in tree.iter('node')]
+        if any('В избранное' in value or 'Убрать из избранного' in value for value in labels):
+            return
+        state = profile_disclosure(tree, name)
+        point = find_label(tree, name)
+        if state is True:
+            return
+        if state is False and point is not None:
+            shell('input', 'tap', *point)
+            return
+        shell('input', 'swipe', '540', '1500', '540', '950', '300')
+    raise RuntimeError('Cannot safely expand the specific profile card')
 
 def screenshot(label):
     result = subprocess.run([args.adb, '-s', args.serial, 'exec-out', 'screencap', '-p'],
@@ -199,11 +199,12 @@ try:
         pause_until('imported profile', lambda: shown(name))
         favorite = False
         if version == '0.2.54':
+            show_profile_details(name)
             for _ in range(6):
                 tree = hierarchy()
                 labels = [node.get('text', '') for node in tree.iter('node')]
                 label = next((value for value in labels if 'В избранное' in value), None)
-                if label:
+                if label and find_label(tree, label) is not None:
                     click(label)
                     favorite = True
                     break
@@ -224,6 +225,7 @@ try:
         click('Серверы')
         pause_until('decrypted profile after update', lambda: shown(name))
         if favorite:
+            show_profile_details(name)
             pause_until('favorite after update', lambda: shown('Убрать из избранного'))
         check_routes()
         if preferences('profile_selection').get('selected_profile_id') != selected:
@@ -233,6 +235,7 @@ try:
                         'encrypted_data_preserved_before_launch': True, 'decrypted_profile_visible': True,
                         'selected_profile_preserved': True, 'routes_preserved': True,
                         'favorite_preserved': favorite, 'vpn_started': False})
+        (args.work / 'verification-partial.json').write_text(json.dumps(reports, indent=2) + '\n')
         print('PASS exact signed APK update ' + version + ' -> 0.2.55', flush=True)
     adb('uninstall', PACKAGE)
     install(args.apks / 'candidate.apk')
