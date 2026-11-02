@@ -672,3 +672,25 @@ f07ff6f4783115d5031c4a9633deb510260c007d0f49f6eef5c0b3eba466c4ea.
 Graph flags are parsed from those exact bytes and original Android additions.
 Correct target label is //components/cronet:cronet_static. Run41517394168 on
 c3649f0 is live; no graph result is accepted yet. Native app binaries are unchanged.
+
+## Publisher-argument ARM64 Cronet GN graph — generated and inspected
+
+Run41517394168 (c3649f0) completed SUCCESS. Artifact13176350839 SHA256
+72309a6210d53fa3327bb4622ba1f250a9f185fa00aa2f6fe929c7a9a165ace7 matched GitHub.
+Both target JSON files parsed. The complete graph has1889 targets; the static root
+and1157 transitive dependency labels are all present. Root uses
+//build/toolchain/android:android_clang_arm64, with606 Android and552 Linux host
+nodes in its closure. Host tools are distinguished from target compilation.
+
+365 Android source_set/static_library nodes contain2768 compilation units,
+including377 generated sources. The exact object-name multiset, including repeated
+names, matches every member of the pinned published ARM64 libcronet.a:2768 members,
+zero missing/extra. Published archive SHA256
+3588acd27dfa992852ffb3225c3bddb1c65eaeea785ea4e3bfb1f927b65c8733 matched the
+existing reviewed input inventory. Full per-unit paths/targets and limitations are
+in native/xhttp/provenance/cronet-arm64-gn-object-correspondence.json.
+
+This is stronger than earlier unique-basename guessing, but remains object-name
+correspondence, not cryptographic binary/source equivalence or a build attestation.
+Generated source contents, all other ABIs, final linked NOTICE, and independent
+Cronet C++ rebuild comparison remain open. Production native pins are unchanged.
