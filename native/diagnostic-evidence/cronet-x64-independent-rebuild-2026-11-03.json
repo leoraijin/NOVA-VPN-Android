@@ -1,0 +1,29 @@
+{
+  "run": 41526506768,
+  "abi": "x86_64",
+  "byteIdentical": true,
+  "rebuiltSha256": "85d39fdb4eabc04d2427bd578b69546602e727e1ee88be2232699be668bede3a",
+  "allNinjaRecords": 4591,
+  "allDependencyPaths": 8505,
+  "targetObjectRecords": 2767,
+  "targetObjectMultisetMatchesPublished": true,
+  "missingObjects": [],
+  "extraObjects": [],
+  "uniqueTargetDependencyPaths": 7419,
+  "targetDependencyPathsWithoutHash": 0,
+  "missingHashSample": [],
+  "allStaleRecords": 0,
+  "targetStaleRecords": 0,
+  "rawDepsSha256": "1856e44748c27dddeddcd65910f587db5f104a7fb39e4d70c3a43a81bbdee91e",
+  "artifactId": 13182032655,
+  "artifactSha256": "43155dfe6913436630c370d25bafd688bc3052840b93d9e4919b4e3b47f6b017",
+  "workflowCommit": "6aeb9942f2ef43a89be79cf8c96ac7018ce1ba9d",
+  "targetDependencyInventory": "native/xhttp/provenance/cronet-x64-target-dependencies-2026-11-03.json.gz",
+  "targetDependencyInventorySha256": "570929d929333f0926bbad1ea3a0c28eadfe8d11617008af63a2dbf4f277650f",
+  "sourceCommit": "72a06c9fca0e2d228588c7f3074bf7efff3ff686",
+  "limits": [
+    "x86_64 only; other ABI header dependencies remain separate",
+    "Header hash inventory is not a final NOTICE; origin/license associations still require review",
+    "No production native replacement or physical Android acceptance"
+  ]
+}
