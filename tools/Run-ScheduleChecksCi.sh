@@ -16,3 +16,5 @@ trap '"$adb_path" -s "$serial" logcat -d > work/completion/logcat.txt 2>&1 || tr
 python3 tools/Verify-SubscriptionSchedule.py --adb "$adb_path" --serial "$serial" --work work/completion/schedule
 
 python3 tools/Verify-ServerLibrary.py --adb "$adb_path" --serial "$serial" --work work/completion/library
+
+python3 tools/Verify-DeleteAll.py --adb "$adb_path" --serial "$serial" --work work/completion/delete-all
