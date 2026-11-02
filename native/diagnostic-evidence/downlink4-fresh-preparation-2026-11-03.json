@@ -1,0 +1,52 @@
+{
+  "baselineArchiveSha256": "f89b28751b37ca8be69c365f7a2ddc1f521f44464432cc37189354a6ca8a4b23",
+  "baselineRestoredModules": 114,
+  "targetVersion": "1.14.3-lx.23-nova-downlink.4",
+  "baseCommit": "20f89c2f4cb3f77acaf3daa063bd857a055a5259",
+  "exactPatchSha256": "cc2ed1a5cb930c8342c28eb4809e70f84df8990b8631f2fa963c61d50e0fa1e3",
+  "submodules": [
+    {
+      "clean": true,
+      "commit": "117243aa02fa2915cb53d1d4549bfca3a3ebf238",
+      "module": "gvisor",
+      "fsck": "PASS"
+    },
+    {
+      "clean": true,
+      "commit": "f236400f3d29bc434f568db93602ef031f0b34cd",
+      "module": "sing-tun",
+      "fsck": "PASS"
+    },
+    {
+      "clean": true,
+      "commit": "ad69b191e2f83367ec0ac5f3a1a61310732c43b9",
+      "module": "utls",
+      "fsck": "PASS"
+    },
+    {
+      "clean": true,
+      "commit": "8a53421edf7edd2f60dbeab3bd6e49256eab4d04",
+      "module": "wireguard-go",
+      "fsck": "PASS"
+    }
+  ],
+  "bindingToolsBuiltOffline": true,
+  "graphsCollectedOffline": {
+    "android-386": 1128,
+    "android-amd64": 1131,
+    "android-arm": 1128,
+    "android-arm64": 1129,
+    "binding-tools": 213,
+    "host-tests": 427
+  },
+  "distinctModuleVersions": 117,
+  "additionalTestDependenciesVerifiedAgainstPinnedGoSum": [
+    "github.com/stretchr/testify@v1.12.0",
+    "github.com/go-ole/go-ole@v1.3.0",
+    "gopkg.in/yaml.v3@v3.0.1"
+  ],
+  "allAbiBuildStatus": "RUNNING; not accepted yet",
+  "newArchiveStatus": "NOT CREATED",
+  "productionNativeChanged": false,
+  "scope": "Fresh core/submodules and separate restored module cache. Archive5 is a dependency seed, not a .4 source/build proof. Full AAR/source archive and restored-source reproduction remain open."
+}
