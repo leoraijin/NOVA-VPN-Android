@@ -1,0 +1,31 @@
+{
+  "compilerAbi": "x86_64",
+  "compilerRun": 41526506768,
+  "sourceCommit": "20b6ec66967ac2a8f932863c1abf251e5b17a843",
+  "sourceUrl": "https://github.com/llvm/llvm-project/commit/20b6ec66967ac2a8f932863c1abf251e5b17a843",
+  "publisherPackage": "llvmorg-23-init-10931-g20b6ec66-11",
+  "compilerDependencyPaths": 155,
+  "uniqueHeaders": 154,
+  "matchedUniqueHeaders": 154,
+  "mismatches": 0,
+  "pathAlias": "cet.h has two compiler dependency paths",
+  "licenseDocuments": [
+    {
+      "path": "clang/LICENSE.TXT",
+      "savedName": "clang-LICENSE.TXT",
+      "gitBlob": "24806ab4c9eb291db4d28e159901f7a0901b9fd1",
+      "sha256": "ebcd9bbf783a73d05c53ba4d586b8d5813dcdf3bbec50265860ccc885e606f47",
+      "bytes": 15140
+    },
+    {
+      "path": "llvm/LICENSE.TXT",
+      "savedName": "llvm-LICENSE.TXT",
+      "gitBlob": "fa6ac540007032cbd0ec772a1c72e6cb5527a4fe",
+      "sha256": "8d85c1057d742e597985c7d4e6320b015a9139385cff4cbae06ffc0ebe89afee",
+      "bytes": 15141
+    }
+  ],
+  "evidence": "native/xhttp/provenance/cronet-clang23-inputs-and-notices-2026-11-03.json.gz",
+  "evidenceSha256": "2e5be3f3e89a8c47ace59d68fdc3b7b94a118740370ec1cc4f5cd27d4c93f2af",
+  "scope": "Actual Clang builtin header identity for x86_64. Together with pinned Git and NDK evidence, all6865 non-generated dependency paths have matching source bytes.554 generated paths, notice association and other ABI inventories remain separate; no final compliance or compiler-bootstrap claim."
+}

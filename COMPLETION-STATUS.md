@@ -811,3 +811,24 @@ passed. Source artifact/manifest/checksum copied to outputs/native-source withou
 overwriting historical candidates. This closes this new source archive round trip,
 not final Cronet header/notice closure, independent C++ reproduction for remaining
 ABIs, physical ARM64/TUN/handover/battery acceptance or the original overall goal.
+
+
+## x86_64 external compiler headers — official source bytes matched
+
+All251 NDK r24 compiler headers match corresponding official ZIP entries; NOTICE
+and NOTICE.toolchain retained verbatim. HTTP ranges fetched3614024bytes of the
+667731974-byte official ZIP; entry CRCs and measured header SHA256s verified,
+whole ZIP SHA256 not measured. NDK source.properties identifies24.0.8215888.
+All155 Clang dependency paths map to154 unique headers (cet.h has two aliases),
+matching exact LLVM Git blobs at20b6ec66967ac2a8f932863c1abf251e5b17a843 and actual
+compiler SHA256. clang/LICENSE.TXT and llvm/LICENSE.TXT preserved from that commit.
+
+Combined with6459 pinned-Git dependency paths, all6865 non-generated x86_64 paths
+have matching source bytes.554 generated paths and exact notice associations
+remain open; this is no final license/compliance assertion or proof for other ABIs.
+Compressed full notice texts and source/hash mappings are in provenance; receipts
+cronet-ndk-r24-inputs-2026-11-03.json and cronet-clang23-inputs-2026-11-03.json
+record scope. Production native binaries unchanged. Large-font UI run41533032017
+passed both IOS themes then failed Material search because the test assumed an
+onscreen editable node; bounded normal scrolling was added, compiled, and retry
+41535584379 is running. No product bypass or weaker persistence assertion added.
