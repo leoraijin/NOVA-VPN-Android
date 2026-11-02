@@ -71,10 +71,10 @@ if args.supplemental_notices:
         identifier = item['component_id']
         assert re.fullmatch('[a-z0-9-]+', identifier) and identifier not in identifiers
         identifiers.add(identifier)
-        assert re.fullmatch('[a-f0-9]{40}', item['revision']) and item['license_file'] == 'LICENSE'
+        assert re.fullmatch('[a-f0-9]{40}', item['revision']) and item['license_file'] in ('LICENSE', 'LICENSE.TXT')
         data = item['license_text'].encode('utf-8')
         assert len(data) < 2 * 1024 * 1024 and hashlib.sha256(data).hexdigest() == item['license_sha256']
-        target = output / 'supplemental-notices' / identifier / 'LICENSE'
+        target = output / 'supplemental-notices' / identifier / item['license_file']
         target.parent.mkdir(parents=True)
         target.write_bytes(data)
         report['supplemental_notices'].append({k: v for k, v in item.items() if k != 'license_text'})
