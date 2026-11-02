@@ -1,0 +1,25 @@
+{
+  "limitations": [
+    "Synthetic single-profile library and API35 cloud emulator",
+    "Activity task saved-state only, not force-stop/reboot/TUN",
+    "Earlier mismatched launcher-intent run is preserved as failed evidence"
+  ],
+  "conclusion": "success",
+  "artifactSha256": "ee4cd280a97e29752d427edf29271fa1a56aa7f53b260974743f3933ed82f1fe",
+  "independentObservation": {
+    "oldPid": 2312,
+    "taskId": 8,
+    "newPid": 2486
+  },
+  "verified": {
+    "background_process_replaced": true,
+    "same_activity_task_restored": true,
+    "activity_search_query_restored": true,
+    "synthetic_data_only": true,
+    "physical_device_used": false,
+    "scope": "Activity task saved-state after am kill; not force-stop/reboot/TUN"
+  },
+  "sourceCommit": "072ca713ca50a2baaa7b926e0a8208e12223cefd",
+  "run": "https://github.com/leoraijin/NOVA-VPN-Android/actions/runs/41514965663",
+  "artifactId": 13174424052
+}

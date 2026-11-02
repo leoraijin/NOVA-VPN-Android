@@ -637,3 +637,20 @@ search text. Its pre-ADB non-cloud refusal and syntax were checked locally. It
 uses only the disposable cloud emulator and fixed isolated package, never TECNO.
 It was added after the successful run; run41513271511 is pending, so no saved-state
 runtime success is claimed yet. Production APK0.2.55 remains unchanged.
+
+## Library search after actual process replacement — verified
+
+Run41514965663 (072ca71) completed SUCCESS, library_only=true. Artifact13174424052
+SHA256 ee4cd280a97e29752d427edf29271fa1a56aa7f53b260974743f3933ed82f1fe matched
+GitHub. verification.json was inspected; task dumps independently show t8 before
+and after, while logcat confirms PID2312 killed in background and PID2486 created.
+The same search text was restored after relaunch. Receipt is
+ANDROID-LIBRARY-RESTART-VERIFICATION-2026-11-03.json.
+
+Earlier run41513271511 failed with an empty search, but used different initial
+and resumed Intents without task-ID evidence. The new fixture uses identical
+launcher semantics and checks task identity rather than weakening the query
+assertion. No product code change was required. Scope is one synthetic profile,
+real background process death and task saved-state; not force-stop/reboot, 2000-node
+process-death performance, physical TUN or battery acceptance. Earlier independent
+2000-node lifecycle and 8-appearance diagnostics results retain their own scopes.
