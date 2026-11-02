@@ -135,7 +135,7 @@ routing preferences or subscription catalog are changed. Preparation fails and c
 outputs when the source endpoint cannot be matched unambiguously. Original outbounds and
 DNS/policy/transport are preserved, with a loopback-only SOCKS inbound and disabled Xray logging.
 
-After explicit shared-device handoff, an owned shell runner can copy one config through `run-as`
+After explicit shared-device handoff, an owned shell runner can stage one config through UiAutomation stdin
 entirely on-device into its private shell-owned temporary directory, start the digest-verified
 reference Xray there, and call `xrayReferencePhase=probe`. The probe uses only the loopback SOCKS
 port (default 18089), normal TLS verification, literal-IP HTTPS plus hostname HTTPS, and reports
@@ -149,3 +149,18 @@ and must not be published without redaction. No reference process has been start
 
 Both isolated ARM64 app/test APKs compiled successfully after adding these phases (83 tasks,
 BUILD SUCCESSFUL). This is build evidence only; real reference comparison remains outstanding.
+The reference runner is tools/Run-XrayReference.ps1. Its shared-device reservation guard
+runs before ADB, input access or output creation. A full mocked-ADB lifecycle passed for
+explicit serial selection, safe status extraction, owned-process stop and exact file cleanup.
+The app remains non-debuggable: stage-tcp/stage-grpc transfer app-private bytes through
+UiAutomation.executeShellCommandRw stdin into a shell-owned 0700 directory, then compare
+SHA-256 on-device. No original configs cross host stdout. Cleanup is allowed after VPN state
+changes. The isolated ARM64 instrumentation APK compiled successfully (51 tasks).
+
+Color Pour explicitly released the phone and recorded releasedUtc, but automatic approval
+review rejected the subsequent command to deliver the one-use subscription and run the live
+comparison: it requires trusted explicit user handoff rather than another thread's release.
+The rejected command did not execute. Two isolated APKs had been installed in an earlier
+allowed command; run-as reported the app is not debuggable. No real reference process or
+private reference configs were created. Live comparison is awaiting user approval; do not
+circumvent this rejection with a different command path.

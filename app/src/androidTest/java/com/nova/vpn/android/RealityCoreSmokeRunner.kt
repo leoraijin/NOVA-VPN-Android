@@ -18,6 +18,7 @@ class RealityCoreSmokeRunner : Instrumentation() {
     private var deleteAllOnly = false
     private var xrayReferencePhase: String? = null
     private var xrayReferencePort = 18089
+    private var xrayReferenceDirectory: String? = null
     private var liveSubscriptionAudit = false
     private var liveSubscription = false
     private var probeUseNetworkCallbacks = true
@@ -60,8 +61,9 @@ class RealityCoreSmokeRunner : Instrumentation() {
         deleteAllStoreOnly = arguments?.getString("deleteAllStoreOnly") == "true"
         deleteAllOnly = arguments?.getString("deleteAllOnly") == "true"
         xrayReferencePhase = arguments?.getString("xrayReferencePhase")
+        xrayReferenceDirectory = arguments?.getString("xrayReferenceDirectory")
         xrayReferencePort = arguments?.getString("xrayReferencePort")?.toInt() ?: 18089
-        check(xrayReferencePhase == null || xrayReferencePhase in setOf("prepare", "probe", "cleanup"))
+        check(xrayReferencePhase == null || xrayReferencePhase in setOf("prepare", "probe", "cleanup", "stage-tcp", "stage-grpc"))
         liveSubscriptionAudit = arguments?.getString("liveSubscriptionAudit") == "true"
         liveSubscription = arguments?.getString("liveSubscription") == "true"
         transferCrashPhase = arguments?.getString("transferCrashPhase")
@@ -124,7 +126,7 @@ class RealityCoreSmokeRunner : Instrumentation() {
         xrayReferencePhase?.let { phase ->
             val result = Bundle()
             try {
-                LiveXrayReferenceSmoke.run(this, phase, xrayReferencePort)
+                LiveXrayReferenceSmoke.run(this, phase, xrayReferencePort, xrayReferenceDirectory)
                 result.putString("stream", "PASS reference phase completed; inspect individual outcomes\n")
                 finish(Activity.RESULT_OK, result)
             } catch (error: Throwable) {

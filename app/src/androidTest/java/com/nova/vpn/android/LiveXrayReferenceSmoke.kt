@@ -13,7 +13,7 @@ import javax.net.ssl.HttpsURLConnection
 
 /** Explicit disposable-device reference; private one-use configs, no catalog changes. */
 internal object LiveXrayReferenceSmoke {
-    fun run(instrumentation: Instrumentation, phase: String, port: Int) {
+    fun run(instrumentation: Instrumentation, phase: String, port: Int, directory: String?) {
         val context = instrumentation.targetContext
         check(isIsolatedUsbTestPackage(context.packageName))
         if (phase != "cleanup") check(!VpnRuntime.state.value.connected && !VpnRuntime.state.value.connecting)
@@ -21,6 +21,25 @@ internal object LiveXrayReferenceSmoke {
         fun report(value: String) = instrumentation.sendStatus(0, Bundle().apply { putString("stream", "$value\n") })
         fun output(kind: String) = File(context.filesDir, "xray-reference-$kind.json")
         when (phase) {
+            "stage-tcp", "stage-grpc" -> {
+                check(android.os.Build.VERSION.SDK_INT >= 31)
+                check(directory != null && directory.matches(Regex("/data/local/tmp/nova-xray-reference-[a-f0-9]{32}")))
+                val source = output(phase.removePrefix("stage-"))
+                check(source.isFile)
+                // App-private file -> shell stdin pipe, entirely on-device. No run-as/debuggable requirement.
+                val pipes = instrumentation.uiAutomation.executeShellCommandRw("dd of=$directory/config.json")
+                try {
+                    android.os.ParcelFileDescriptor.AutoCloseOutputStream(pipes[1]).use { sink -> source.inputStream().use { it.copyTo(sink) } }
+                    android.os.ParcelFileDescriptor.AutoCloseInputStream(pipes[0]).use { check(it.read() == -1) }
+                    val digest = java.security.MessageDigest.getInstance("SHA-256").digest(source.readBytes())
+                        .joinToString("") { "%02x".format(it) }
+                    val checksum = android.os.ParcelFileDescriptor.AutoCloseInputStream(
+                        instrumentation.uiAutomation.executeShellCommand("sha256sum $directory/config.json")
+                    ).bufferedReader().use { it.readText().trim().substringBefore(' ') }
+                    check(checksum == digest)
+                } finally { pipes.forEach { runCatching { it.close() } } }
+                report("REFERENCE private config staged through device-only pipe")
+            }
             "cleanup" -> {
                 for (kind in listOf("tcp", "grpc")) output(kind).let { check(!it.exists() || it.delete()) }
                 report("REFERENCE private configurations removed")
