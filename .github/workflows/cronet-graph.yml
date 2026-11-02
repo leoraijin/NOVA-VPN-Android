@@ -1,0 +1,33 @@
+name: Pinned Cronet build graph
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: cronet-graph-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  graph:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify and restore pinned source identity and modes
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p work/cronet-evidence
+          python3 native/xhttp/build/Fetch-CronetSource.py --output work/cronet-inputs 2>&1 | tee work/cronet-evidence/fetch.log
+          python3 native/xhttp/build/Restore-CronetTree.py --input work/cronet-inputs --output work/cronet-tree 2>&1 | tee work/cronet-evidence/restore.log
+          cp work/restoration.json work/cronet-evidence/restoration.json
+          cp work/cronet-inputs/verification.json work/cronet-evidence/input-verification.json
+      - name: Generate publisher-argument Android ARM64 graph
+        run: python3 native/xhttp/build/Generate-CronetGraph.py --source work/cronet-tree --work work/cronet-evidence/graph
+      - name: Retain graph attempt evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cronet-graph-evidence
+          path: work/cronet-evidence/
+          if-no-files-found: warn
+          retention-days: 30
