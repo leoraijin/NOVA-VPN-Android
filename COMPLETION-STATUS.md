@@ -556,3 +556,15 @@ claim a product defect or test-only cause yet. Synthetic runner now includes a
 limited source stack and retains recovery screenshots. Targeted run 41507264889
 repeats recovery/diagnostics without the already-passed 2000-node library phases.
 Diagnostics was not reached in the failed run. No physical phone operation occurred.
+
+## Native fork repeated race checks — independent artifact verified
+
+For a6a9924c1ca4c29d7aae1200fd36a50c00e62ef6, Linux race job of run 41508575957
+completed SUCCESS. Downloaded artifact 13171323216 SHA256
+4adf8ff1b44071cb90bb6f94e6b3a886ff4e5256258f36846982b6744f124188 matched GitHub.
+Parsing native-race.jsonl confirmed 1550 test/subtest pass events across five repeats,
+zero skips/failures, and package pass records for XHTTP and option. Exact scope is
+recorded in native/diagnostic-evidence/xhttp-race-2026-11-03.json.
+Windows-only H1/Reality load tests are not covered by this Linux job. The Windows
+regression job and local 300-second H1/Reality soak remain live; no full-workflow
+or Android-native acceptance claim follows from the race job alone.

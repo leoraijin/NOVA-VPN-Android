@@ -1,0 +1,21 @@
+{
+  "run": "https://github.com/leoraijin/sing-box-lx/actions/runs/41508575957",
+  "scope": "Linux tagged XHTTP/option test packages, -race -count=5; not Windows interop or full workflow acceptance",
+  "testAndSubtestPassEvents": 1550,
+  "artifactSha256": "4adf8ff1b44071cb90bb6f94e6b3a886ff4e5256258f36846982b6744f124188",
+  "overallWorkflow": "still running when this artifact was inspected",
+  "skipEvents": 0,
+  "artifactId": 13171323216,
+  "failEvents": 0,
+  "packages": [
+    "github.com/sagernet/sing-box/option",
+    "github.com/sagernet/sing-box/transport/v2rayxhttp"
+  ],
+  "sourceCommit": "a6a9924c1ca4c29d7aae1200fd36a50c00e62ef6",
+  "date": "2026-11-03",
+  "limitations": [
+    "New windows-only H1/Reality load tests are not compiled by the Linux job",
+    "No Android TUN or physical network/battery proof",
+    "Production AAR unchanged"
+  ]
+}
