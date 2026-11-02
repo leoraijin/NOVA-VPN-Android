@@ -74,17 +74,20 @@ internal object VpnDiagnostics {
 
     internal fun coreCode(message: String): String {
         val text = message.lowercase()
+        // Transport context must not come from a hostname/path containing "rpc".
+        val grpcContext = Regex("\\bgrpc(?::|\\s|\\])|\\brpc error\\s*:").containsMatchIn(text)
+        val notFound = Regex("\\b404\\b").containsMatchIn(text)
         return when {
             "no such host" in text || "server misbehaving" in text -> "dns_lookup_failed"
             "dns" in text && ("failed" in text || "timeout" in text) -> "dns_exchange_failed"
             "x509" in text || "certificate verification" in text || "invalid peer certificate" in text -> "tls_certificate_failed"
             "alpn" in text || "no application protocol" in text -> "tls_alpn_failed"
             "handshake" in text && ("failed" in text || "error" in text) -> "tls_handshake_failed"
-            ("grpc" in text || "rpc" in text) && ("unimplemented" in text || "404" in text) -> "grpc_service_not_found"
-            Regex("\\b404\\b").containsMatchIn(text) -> "http_not_found"
+            grpcContext && ("unimplemented" in text || notFound) -> "grpc_service_not_found"
+            notFound -> "http_not_found"
             Regex("\\b401\\b").containsMatchIn(text) || "unauthenticated" in text -> "remote_unauthorized"
             Regex("\\b403\\b").containsMatchIn(text) || "permissiondenied" in text -> "remote_forbidden"
-            "unavailable" in text && ("rpc" in text || "grpc" in text) -> "grpc_unavailable"
+            "unavailable" in text && grpcContext -> "grpc_unavailable"
             "http2" in text || "goaway" in text -> "http2_transport_error"
             "deadline exceeded" in text || "timeout" in text || "timed out" in text -> "timeout"
             "connection refused" in text -> "connection_refused"

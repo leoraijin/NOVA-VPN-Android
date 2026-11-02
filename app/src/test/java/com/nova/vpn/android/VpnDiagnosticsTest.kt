@@ -18,6 +18,17 @@ class VpnDiagnosticsTest {
         assertEquals("unclassified_warning", VpnDiagnostics.coreCode("request id 14031"))
     }
 
+    @Test fun hostnamesPathsAndRequestIdsDoNotInventGrpcFailures() {
+        assertEquals("http_not_found", VpnDiagnostics.coreCode("xhttp response 404 from https://rpc.example/path"))
+        assertEquals("http_not_found", VpnDiagnostics.coreCode("HTTP status 404 from https://grpc.example/path"))
+        assertEquals("http_not_found", VpnDiagnostics.coreCode("HTTP status 404 path=/rpc/private"))
+        assertEquals("unclassified_warning", VpnDiagnostics.coreCode("grpc request id 14041"))
+        assertEquals("unclassified_warning", VpnDiagnostics.coreCode("unavailable host=rpc.example"))
+        assertEquals("grpc_service_not_found", VpnDiagnostics.coreCode("rpc error: code = Unimplemented desc = unknown service"))
+        assertEquals("grpc_unavailable", VpnDiagnostics.coreCode("rpc error: code = Unavailable"))
+        assertEquals("grpc_service_not_found", VpnDiagnostics.coreCode("transport/grpc: status 404"))
+    }
+
     @Test fun xhttpReportIdentifiesPinnedCoreWithoutSecrets() {
         VpnDiagnostics.setEngine(false)
         val profile = ImportedProfile(name = "PRIVATE_NAME", protocol = "vless", server = "PRIVATE_HOST", port = 443,
