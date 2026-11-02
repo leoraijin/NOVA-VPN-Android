@@ -618,3 +618,22 @@ Logcat shows DocumentsUI starts took1.263/1.382s, while cancellation used a fixe
 500ms sleep. Fixture now waits for actual DocumentsUI foreground ownership before
 Back, retaining all export/close/state assertions. Local instrumentation build
 passed. Runtime recheck is pending; full diagnostics is not yet accepted.
+
+## Recovery and diagnostics — complete targeted CI verified
+
+Run41511764229 (6ecf45e) completed SUCCESS. Downloaded artifact13174815563 SHA256
+b0396ffccebe212685e62104b582195db07d3442ef461bc3ecf4fe6a66b8514f matched GitHub.
+verification.json plus individual LIGHT/DARK logs confirmed all8 appearance
+results, four real SAF JSON/TXT exports with exact preview bytes and marker
+redaction, copy/cancel/close controls, unchanged selection/routes and no VPN start.
+All8 screenshots retained; IOS dark and ONE_UI light were visually sampled.
+They show scrolled diagnostic content, readable controls, no full accessibility
+or layout audit claim. Eight crash boundaries, five faults and safe corrupt-journal
+recovery also passed in this run. See ANDROID-DIAGNOSTICS-VERIFICATION-2026-11-03.json.
+
+The new library saved-state harness uses actual background process termination
+(am kill), verifies process replacement, resumes the task and requires the same
+search text. Its pre-ADB non-cloud refusal and syntax were checked locally. It
+uses only the disposable cloud emulator and fixed isolated package, never TECNO.
+It was added after the successful run; run41513271511 is pending, so no saved-state
+runtime success is claimed yet. Production APK0.2.55 remains unchanged.

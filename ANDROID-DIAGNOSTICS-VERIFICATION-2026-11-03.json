@@ -1,0 +1,30 @@
+{
+  "run": "https://github.com/leoraijin/NOVA-VPN-Android/actions/runs/41511764229",
+  "artifactSha256": "b0396ffccebe212685e62104b582195db07d3442ef461bc3ecf4fe6a66b8514f",
+  "artifactId": 13174815563,
+  "sourceCommit": "6ecf45eb85dde993d21568e258ac98314fec75a4",
+  "conclusion": "success",
+  "screenshotReview": "IOS dark and ONE_UI light sampled; all8 retained, not a complete accessibility/layout audit",
+  "verified": {
+    "eight_actual_process_death_boundaries": true,
+    "five_restore_faults": true,
+    "corrupt_startup_safe_recovery_ui": true,
+    "diagnostic_themes": [
+      "LIGHT",
+      "DARK"
+    ],
+    "diagnostic_designs": [
+      "IOS_LIQUID_GLASS",
+      "MATERIAL_YOU",
+      "ONE_UI",
+      "WINDOWS_11"
+    ],
+    "synthetic_data_only": true,
+    "physical_device_used": false
+  },
+  "limits": [
+    "Cloud API35 isolated package and synthetic data only",
+    "No physical TUN, network handover, battery or power-loss claim",
+    "Library am-kill saved-state check is a later phase, run41513271511 pending"
+  ]
+}
