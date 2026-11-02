@@ -18,3 +18,5 @@ python3 tools/Verify-SubscriptionSchedule.py --adb "$adb_path" --serial "$serial
 python3 tools/Verify-ServerLibrary.py --adb "$adb_path" --serial "$serial" --work work/completion/library
 
 python3 tools/Verify-DeleteAll.py --adb "$adb_path" --serial "$serial" --work work/completion/delete-all
+
+python3 tools/Verify-RestoreDiagnosticsCi.py --adb "$adb_path" --serial "$serial" --work work/completion/restore-diagnostics
