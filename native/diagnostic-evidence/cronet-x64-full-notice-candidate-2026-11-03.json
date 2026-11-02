@@ -1,0 +1,20 @@
+{
+  "compilerRun": 41526506768,
+  "abi": "x86_64",
+  "noticeDocuments": 46,
+  "inputPaths": 7419,
+  "unresolvedPaths": 0,
+  "conservativeExceptions": {
+    "src/buildtools/third_party/libc++/__config_site": "No standalone notice declaration; retain both Chromium and libc++ notices conservatively"
+  },
+  "noticeBytes": 1698798,
+  "noticeSha256": "0e9f4be7fda3783a73455981b6fb6bced4906db70ff11c25903740ddd47f0369",
+  "evidence": "native/xhttp/provenance/cronet-x64-full-notice-candidate-2026-11-03.json.gz",
+  "evidenceSha256": "64beab2a0646e12d5eacf1d7c2edfb67f85564dbbbdca63192344e440a2e3b8c",
+  "alteredNoticeRejectedBeforeOutput": true,
+  "limits": [
+    "Full-source conservative document collection, not a final shipped-only legal conclusion",
+    "Generated candidates follow declared data/scripts and built-tool entry sources, not all transitive generator runtime code",
+    "Other ABI byte/header inventories remain separate"
+  ]
+}
