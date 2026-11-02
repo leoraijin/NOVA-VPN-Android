@@ -465,3 +465,26 @@ then passed locally in Python3.14.10. Portable official embeddable archive SHA-2
 python.exe Authenticode was Valid / Python Software Foundation. Runtime resides only in
 the project's external toolchain directory; system Python/registry/PATH were not changed.
 No APK or acceptance requirement was altered. Cloud end-to-end acceptance is still pending.
+## Exact signed APK update acceptance — verified 3 November 2026
+
+Run 41502782927 completed SUCCESS for harness 261cafeb307642a1096717348c05aed95f5a48b6.
+Artifact 13170485891 was downloaded and SHA256 matched GitHub:
+97e6c4d059ee4f53f8775c82f4b95d546c2a251b4df964626b3f590ed7f7846b.
+Individual verification.json and screenshots were inspected. Exact candidate APK
+60571ad84bf834a8582852be6de487936bfb9cb95c7d13a10ff7441d82e81925 passed:
+- 0.2.52 -> 0.2.55: same UID, exact four private-file hashes before first launch,
+  decryptable profile, same selection and stored routing rules after launch.
+- 0.2.54 -> 0.2.55: same checks plus seeded favorite preserved and visible.
+- Clean 0.2.55 install: empty catalog. Original signer verified on all three APKs.
+
+favorite_preserved=false in the 0.2.52 report means no favorite was seeded for that
+baseline, not loss of a favorite. Both updates pass. No VPN was started; stored-rule
+preservation is not an active traffic/routing test. This is cloud API35 x86_64 with
+advertised arm64-v8a native bridge, not physical ARM64/TUN acceptance. Screenshot
+controls still require scrolling and do not prove a complete accessibility audit.
+
+Previous run 41501547644 stopped at a favorite visibility timeout; its screenshot
+showed the expanded card below the viewport. Only the harness scroll was fixed.
+Production inputs app/src/main, app/build.gradle.kts and settings.gradle.kts have
+no changes since APK source commit 5c95879972722fcb59574fa7522f62cf35369a70.
+These checks permit this incremental release; full Android/Windows plans remain open.
