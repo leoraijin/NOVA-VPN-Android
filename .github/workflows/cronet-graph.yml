@@ -23,7 +23,7 @@ jobs:
           python3 native/xhttp/build/Restore-CronetTree.py --input work/cronet-inputs --output work/cronet-tree 2>&1 | tee work/cronet-evidence/restore.log
           cp work/restoration.json work/cronet-evidence/restoration.json
           cp work/cronet-inputs/verification.json work/cronet-evidence/input-verification.json
-      - name: Generate all Android ABI graphs and rebuild ARM64
+      - name: Generate additional Android ABI graphs
         shell: bash
         run: |
           set -euo pipefail
@@ -31,6 +31,20 @@ jobs:
           for cpu in arm x64 x86; do
             python3 native/xhttp/build/Generate-CronetGraph.py --source work/cronet-tree --work "work/cronet-evidence/graph-$cpu" --cpu "$cpu"
           done
+      - name: Retain additional ABI graphs before long compilation
+        uses: actions/upload-artifact@v4
+        with:
+          name: cronet-additional-abi-graphs
+          path: |
+            work/cronet-evidence/graph-arm/
+            work/cronet-evidence/graph-x64/
+            work/cronet-evidence/graph-x86/
+          if-no-files-found: error
+          retention-days: 30
+      - name: Generate ARM64 graph and rebuild its archive
+        shell: bash
+        run: |
+          set -euo pipefail
           python3 native/xhttp/build/Generate-CronetGraph.py --source work/cronet-tree --work work/cronet-evidence/graph-arm64 --cpu arm64 --rebuild
       - name: Capture actual ARM64 compiler dependencies
         if: always()
