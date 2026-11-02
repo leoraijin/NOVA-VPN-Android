@@ -795,3 +795,19 @@ passed in four designs times LIGHT/DARK. IOS light controls and OneUI dark lands
 were visually inspected. This is isolated API35 x86_64 UI evidence, not physical
 ARM64, large-font/accessibility completeness or a performance benchmark. No VPN
 started; this UI and diagnostic-context fix are not in published0.2.56 yet.
+
+
+## New .4 native source archive — full restore/rebuild round trip verified
+
+ArchiveNOVA-XHTTP-source-1.14.3-lx.23-nova-downlink.4-2026-11-03-r1.zip,
+318307633bytes, SHA256186a47d8e26215060310e0e5dab064a961472066dbb23bf4cfe39cbd9f55b23f.
+All ZIP CRCs passed. Contains117 pinned module distributions,17 provenance files
+including10 compressed proof maps and compiler-rt patch. All provenance SHA256s
+matched after extraction into a new cache. Restored exact core/CGo guard passed.
+Using the archive's own helpers, gomobile/gobind and all four Android ABIs built
+offline; AAR SHA25667abf3aafeff36f5b042929d74f75fbc646aa7085a3b3bb69091874a1e70559c
+is byte-identical to canonical. All four ELF machine/version/LOAD/RELRO checks
+passed. Source artifact/manifest/checksum copied to outputs/native-source without
+overwriting historical candidates. This closes this new source archive round trip,
+not final Cronet header/notice closure, independent C++ reproduction for remaining
+ABIs, physical ARM64/TUN/handover/battery acceptance or the original overall goal.

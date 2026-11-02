@@ -1,0 +1,18 @@
+{
+  "sourceArchiveSha256": "186a47d8e26215060310e0e5dab064a961472066dbb23bf4cfe39cbd9f55b23f",
+  "restoredModules": 117,
+  "restoredProvenanceFiles": 17,
+  "allProvenanceByteHashesMatch": true,
+  "exactCoreGuard": "PASS",
+  "restoredBuild": "PASS all four ABIs offline using restored helpers",
+  "restoredAarSha256": "67abf3aafeff36f5b042929d74f75fbc646aa7085a3b3bb69091874a1e70559c",
+  "byteIdenticalToCanonical": true,
+  "archiveName": "NOVA-XHTTP-source-1.14.3-lx.23-nova-downlink.4-2026-11-03-r1.zip",
+  "archiveBytes": 318307633,
+  "archiveZipCrcVerified": true,
+  "metadataCompressedFiles": 10,
+  "sourceBase": "20f89c2f4cb3f77acaf3daa063bd857a055a5259",
+  "sourceDeltaSha256": "cc2ed1a5cb930c8342c28eb4809e70f84df8990b8631f2fa963c61d50e0fa1e3",
+  "elfVerification": "PASS all four ABI machine/version/LOAD/RELRO checks using restored helper",
+  "scope": "Full .4 source archive packaging, extraction and offline four ABI Go AAR reproduction. Reuses pinned prebuilt Cronet inputs; independent C++ proofs and notices are separate. No production native replacement or physical runtime acceptance."
+}
