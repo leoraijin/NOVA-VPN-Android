@@ -16,7 +16,7 @@ internal object LiveXrayReferenceSmoke {
     fun run(instrumentation: Instrumentation, phase: String, port: Int) {
         val context = instrumentation.targetContext
         check(isIsolatedUsbTestPackage(context.packageName))
-        check(!VpnRuntime.state.value.connected && !VpnRuntime.state.value.connecting)
+        if (phase != "cleanup") check(!VpnRuntime.state.value.connected && !VpnRuntime.state.value.connecting)
         check(port in 1024..65535)
         fun report(value: String) = instrumentation.sendStatus(0, Bundle().apply { putString("stream", "$value\n") })
         fun output(kind: String) = File(context.filesDir, "xray-reference-$kind.json")
