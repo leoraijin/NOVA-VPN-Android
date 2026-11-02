@@ -1,0 +1,18 @@
+{
+  "checkedDate": "2026-11-03",
+  "repository": "Leadaxe/sing-box-lx",
+  "pullRequest": 57,
+  "url": "https://github.com/Leadaxe/sing-box-lx/pull/57",
+  "state": "closed",
+  "draft": true,
+  "merged": false,
+  "closedAt": "2026-10-29T17:57:04Z",
+  "closedBy": "Leadaxe",
+  "headCommit": "fe2e2f52ae0b360b95b6cd82900208f1d393f357",
+  "nativeForkDecisionCommit": "869592a",
+  "ownerAccepted": false,
+  "ownerIssueAgreed": false,
+  "localCandidateTechnicallyComplete": false,
+  "productionNativePinChanged": false,
+  "scope": "Upstream declined this proposal; own-fork technical evidence remains separate. No new issue, PR or comment sent. A real-world independent-path case is absent; subscription gRPC failures are not XHTTP evidence."
+}

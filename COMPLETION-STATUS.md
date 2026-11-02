@@ -732,3 +732,17 @@ All six release assets, tag target and latest-release state verified at publicat
 Original seven Android sections and Windows5+15 goal remain incomplete; physical
 network/sleep/endurance, unresolved subscription gRPC and native provenance/notice
 acceptance are not closed by this incremental release.
+
+
+## Upstream independent-downlink proposal declined — current state verified
+
+GitHub API confirms Leadaxe/sing-box-lx PR57 was closed by Leadaxe at
+2026-10-29T17:57:04Z, merged=false, draft=true, headfe2e2f52ae0b360b95b6cd82900208f1d393f357.
+It is not awaiting owner review. The owner declined maintenance cost without a
+reproducible field failure/degradation attributable to a single shared path;
+requested issue-first justification and noted task139 was already allocated.
+Native fork documentation now records this at869592a; no external issue/PR/comment
+was sent. Local test evidence remains valid only within its measured scope and
+cannot substitute for upstream acceptance. The tested real subscription contains
+no XHTTP; its gRPC failures do not establish this field case. Production native
+pins remain unchanged and remaining technical gates remain open.
