@@ -384,3 +384,22 @@ GitHub server digest. Checked the extracted individual logs and unit XML, not on
 Previous run 41485093203 failed before tests because Aliyun Maven returned HTTP502. The
 workflow now opts into official repositories; local mirror fallback remains available.
 This closes this CI regression run, not the full seven-part plan or the live gRPC question.
+## Late-import generation guard — 3 November 2026
+
+Run https://github.com/leoraijin/NOVA-VPN-Android/actions/runs/41490821348 completed SUCCESS
+for fe454b42795100d5b93e55236404adb22b921e4a. Artifact 13164009302 was downloaded;
+SHA-256 ca401ba410d68c280780d38ebc35a4b6bcc411101e655c79fb66dd630ffe4b07 matches GitHub.
+Individual XML/log inspection confirmed 344 unit tests (343 PASS, one optional skip, no
+failure/error), all six WorkManager phases, eight library appearances and both delete-all
+phases with their expected PASS and instrumentation code -1.
+
+The mandatory runStore branch now also rejects pre-delete manual import and subscription
+import, verifies the empty catalog remains empty and the encrypted vault bytes unchanged.
+Fresh-generation setup succeeds. The UI captures generation before fetch/parse, commits
+under the vault lock and refuses late selection persistence. This is Android Keystore/
+AtomicFile runtime proof on API35 emulator, not a new physical-phone or power-loss result.
+
+Candidate 0.2.55 / code57 is being prepared for this fix. Stable APK remains 0.2.54 until
+final package/signature/update acceptance. The real gRPC reference is still awaiting direct
+human approval after automatic approval review rejected the device command; no retry or
+indirect device operation was performed. All broader plan requirements retain their scope.
