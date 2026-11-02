@@ -12,6 +12,8 @@ jobs:
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
+      - name: Verify dependency evidence parser
+        run: python3 -B native/xhttp/build/Test-CronetDependencies.py
       - name: Verify and restore pinned source identity and modes
         shell: bash
         run: |
