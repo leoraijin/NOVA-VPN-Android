@@ -15,17 +15,22 @@ import sys
 import tarfile
 import zipfile
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from NativeProvenance import MAX_DOCUMENTS, MAX_FILE_BYTES, MAX_TOTAL_BYTES, valid_name
+
 parser = argparse.ArgumentParser()
 parser.add_argument('--workspace', type=Path, required=True)
 parser.add_argument('--toolchain-root', type=Path, help='External workspace containing toolchain/go-1.25.5; module sources remain local')
+parser.add_argument('--android-source', type=Path, default=Path(__file__).resolve().parents[3], help='Android checkout supplying current helpers and provenance')
 parser.add_argument('--output', type=Path, required=True)
 parser.add_argument('--cronet-source', type=Path, required=True, help='Directory verified by Fetch-CronetSource.py')
 args = parser.parse_args()
 root = args.workspace.resolve(strict=True)
+android_source = args.android_source.resolve(strict=True)
 output = args.output.resolve()
 assert root in output.parents and not output.exists(), 'Use a NEW output inside the project workspace'
 external = args.cronet_source.resolve(strict=True)
-subprocess.run([sys.executable, str(root / 'source/native/xhttp/build/Fetch-CronetSource.py'),
+subprocess.run([sys.executable, str(android_source / 'native/xhttp/build/Fetch-CronetSource.py'),
                 '--output', str(external), '--verify-only'], check=True)
 external_verified = json.loads((external / 'verification.json').read_text(encoding='utf-8'))
 parts = root / 'work/native-source-package/parts'
@@ -203,20 +208,24 @@ with zipfile.ZipFile(output, 'x', allowZip64=True) as bundle:
                                     'notice_files': notices, 'prebuilt_files': binaries})
         if number % 20 == 0:
             print(f'PASS source and go.mod checksums + notices: {number}/{len(modules)} modules', flush=True)
-    for file in sorted((root / 'source/native/xhttp/build').glob('*')):
+    for file in sorted((android_source / 'native/xhttp/build').glob('*')):
         if file.suffix in ['.py', '.ps1']:
             put_file(bundle, 'build/' + file.name, file)
     manifest['provenance'] = {}
-    provenance = root / 'source/native/xhttp/provenance'
+    provenance_bytes = 0
+    provenance = android_source / 'native/xhttp/provenance'
     if provenance.is_dir():
         for file in sorted(provenance.iterdir()):
-            if file.is_file() and file.suffix in ('.json', '.md'):
-                if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]*\.(?:json|md)', file.name) or file.stat().st_size > 4 * 1024 * 1024:
+            if file.is_file() and file.name.endswith(('.json', '.json.gz', '.md', '.patch')):
+                if not valid_name(file.name) or file.stat().st_size > MAX_FILE_BYTES:
                     raise ValueError('Invalid provenance file: ' + file.name)
+                provenance_bytes += file.stat().st_size
+                if len(manifest['provenance']) >= MAX_DOCUMENTS or provenance_bytes > MAX_TOTAL_BYTES:
+                    raise ValueError('Provenance collection exceeds restore limits')
                 archive_name = 'provenance/' + file.name
                 put_file(bundle, archive_name, file, zipfile.ZIP_DEFLATED)
                 manifest['provenance'][file.name] = {'archive': archive_name, 'sha256': sha(file)}
-    put_file(bundle, 'README-NOVA.md', root / 'source/native/xhttp/README.md')
+    put_file(bundle, 'README-NOVA.md', android_source / 'native/xhttp/README.md')
     put(bundle, 'manifest.json', (json.dumps(manifest, indent=2) + '\n').encode())
 (output.with_suffix('.manifest.json')).write_text(json.dumps(manifest, indent=2) + '\n', encoding='utf-8')
 (output.with_suffix('.sha256')).write_text(f'{sha(output)}  {output.name}\n', encoding='ascii')

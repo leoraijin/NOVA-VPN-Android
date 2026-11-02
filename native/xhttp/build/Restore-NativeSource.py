@@ -7,8 +7,12 @@ import re
 import shutil
 import subprocess
 import sys
+
 import tarfile
 import zipfile
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from NativeProvenance import restore_provenance
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--workspace', type=Path, required=True)
@@ -118,20 +122,7 @@ with zipfile.ZipFile(args.archive) as bundle:
         if name.startswith('build/') and PurePosixPath(name).name == name.removeprefix('build/'):
             (helpers / name).write_bytes(bundle.read(name))
     (helpers / 'README.md').write_bytes(bundle.read('README-NOVA.md'))
-    for name, item in manifest.get('provenance', {}).items():
-        if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]*\.(?:json|md)', name):
-            raise ValueError('Invalid provenance filename')
-        if item['archive'] != 'provenance/' + name:
-            raise ValueError('Invalid provenance archive path')
-        if bundle.getinfo(item['archive']).file_size > 4 * 1024 * 1024:
-            raise ValueError('Provenance file exceeds size limit')
-        data = bundle.read(item['archive'])
-        if hashlib.sha256(data).hexdigest() != item['sha256']:
-            raise ValueError('Provenance checksum mismatch: ' + name)
-        target = helpers / 'provenance' / name
-        target.parent.mkdir(exist_ok=True)
-        with target.open('xb') as output:
-            output.write(data)
+    restore_provenance(bundle, manifest.get('provenance', {}), helpers / 'provenance')
 
     if 'external_cronet' in manifest:
         external = native / 'cronet-source'
