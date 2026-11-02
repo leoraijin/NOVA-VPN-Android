@@ -7,3 +7,4 @@ trap '"$adb_path" -s "$serial" logcat -d > work/recovery/logcat.txt 2>&1 || true
 "$adb_path" -s "$serial" install -r app/build/outputs/apk/androidTest/realitypreview/app-realitypreview-androidTest.apk
 "$adb_path" -s "$serial" shell pm grant --user 0 com.nova.vpn.android.usbtest.realitypreview android.permission.POST_NOTIFICATIONS
 python3 tools/Verify-RestoreDiagnosticsCi.py --adb "$adb_path" --serial "$serial" --work work/recovery/result
+python3 tools/Verify-LibraryProcessRestart.py --adb "$adb_path" --serial "$serial" --work work/recovery/library-restart
