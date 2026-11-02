@@ -1,0 +1,17 @@
+{
+  "abi": "x86_64",
+  "compilerRun": 41526506768,
+  "sourceCommit": "72a06c9fca0e2d228588c7f3074bf7efff3ff686",
+  "sourceArchiveSha256": "396d4ad6f5bf8ff812f915f0e21281748d7009773fa1bf182cd765f130fd9b19",
+  "actualCompilerFiles": 7419,
+  "counts": {
+    "pinned_git_bytes_match": 6459,
+    "not_in_pinned_git": 406,
+    "generated_not_in_git": 554
+  },
+  "mismatchingPinnedGitFiles": 0,
+  "evidence": "native/xhttp/provenance/cronet-x64-compiler-source-mapping-2026-11-03.json.gz",
+  "evidenceSha256": "1a36a458835194433b1f8250c722b9de0cc00b7e8baeafe8571d95542480d725",
+  "wrongInputDigestRejectedBeforeReport": true,
+  "scope": "Exact pinned Git byte matches for6459 compiler inputs.554 generated and406 downloaded toolchain files still require origin/notice mapping. This is not final license acceptance."
+}
