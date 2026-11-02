@@ -51,6 +51,7 @@ class RealityCoreSmokeRunner : Instrumentation() {
     private var automaticServerOnly = false
     private var autoBudgetOnly = false
     private var autoBudgetPhase = "roundtrip"
+    private var physicalNetworkMonitorOnly = false
     private var diagnosticsUiOnly = false
     private var transferCrashPhase: String? = null
     private var subscriptionSchedulePhase: String? = null
@@ -58,6 +59,7 @@ class RealityCoreSmokeRunner : Instrumentation() {
     private var serverLibraryTheme = ThemeMode.DARK
     private var diagnosticsTheme = ThemeMode.LIGHT
     override fun onCreate(arguments: Bundle?) {
+        physicalNetworkMonitorOnly = arguments?.getString("physicalNetworkMonitorOnly") == "true"
         deleteAllStoreOnly = arguments?.getString("deleteAllStoreOnly") == "true"
         deleteAllOnly = arguments?.getString("deleteAllOnly") == "true"
         xrayReferencePhase = arguments?.getString("xrayReferencePhase")
@@ -206,6 +208,18 @@ class RealityCoreSmokeRunner : Instrumentation() {
                 finish(Activity.RESULT_OK, result)
             } catch (error: Throwable) {
                 result.putString("stream", "FAIL transfer crash phase $phase: ${error.javaClass.simpleName}: ${error.message}\n")
+                finish(Activity.RESULT_CANCELED, result)
+            }
+            return
+        }
+        if (physicalNetworkMonitorOnly) {
+            val result = Bundle()
+            try {
+                PhysicalNetworkMonitorSmoke.run(targetContext)
+                result.putString("stream", "PASS physical monitor lifecycle: close-before-start, duplicate start, 40 registration races\n")
+                finish(Activity.RESULT_OK, result)
+            } catch (error: Throwable) {
+                result.putString("stream", "FAIL physical monitor lifecycle: ${error.javaClass.simpleName}: ${error.message}\n")
                 finish(Activity.RESULT_CANCELED, result)
             }
             return

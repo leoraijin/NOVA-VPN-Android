@@ -39,6 +39,8 @@ def instrument(name, flags, expected):
 
 
 try:
+    instrument('physical-monitor', ['-e', 'physicalNetworkMonitorOnly', 'true'],
+               'PASS physical monitor lifecycle:')
     instrument('synthetic-store', ['-e', 'subscriptionsOnly', 'true'],
                'PASS Android encrypted legacy migration')
     subprocess.run([sys.executable, str(Path(__file__).with_name('Verify-TransferCrash.py')),

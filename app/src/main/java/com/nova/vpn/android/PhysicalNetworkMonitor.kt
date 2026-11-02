@@ -34,24 +34,25 @@ internal class PhysicalNetworkMonitor(private val connectivity: ConnectivityMana
         override fun onLost(network: Network) = synchronized(lock) { if (!closed) { entries.remove(network); emit() } }
     }
 
-    fun start() {
+    fun start() = synchronized(lock) {
+        // Registration and close share ownership: a cancelled start must not register
+        // after close, and repeated starts must not allocate duplicate callbacks.
+        if (closed || registered) return@synchronized
         connectivity.registerNetworkCallback(NetworkRequest.Builder().addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
             .addCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN).build(), callback)
-        synchronized(lock) {
-            registered = true
-            // Synchronous snapshot is only for initial seeding, outside any NetworkCallback.
-            connectivity.allNetworks.forEach { network ->
-                val caps = connectivity.getNetworkCapabilities(network)
-                val links = connectivity.getLinkProperties(network)
-                if (caps != null && links != null) {
-                    val existing = entries[network]
-                    // onAvailable may already have inserted a partial entry.
-                    // Seed missing fields without overwriting newer callbacks.
-                    entries[network] = Entry(existing?.caps ?: caps, existing?.links ?: Links.from(links))
-                }
+        registered = true
+        // Synchronous snapshot is only for initial seeding, outside any NetworkCallback.
+        connectivity.allNetworks.forEach { network ->
+            val caps = connectivity.getNetworkCapabilities(network)
+            val links = connectivity.getLinkProperties(network)
+            if (caps != null && links != null) {
+                val existing = entries[network]
+                // onAvailable may already have inserted a partial entry.
+                // Seed missing fields without overwriting newer callbacks.
+                entries[network] = Entry(existing?.caps ?: caps, existing?.links ?: Links.from(links))
             }
-            emit()
         }
+        emit()
     }
 
     private fun emit() {

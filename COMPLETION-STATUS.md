@@ -508,3 +508,22 @@ outputs/release-0.2.55/PUBLICATION.json outside the repository.
 This closes this fix's main/stable-release/redownload gate. Physical gRPC reference,
 remaining full Android seven-part acceptance and Windows scope are still open.
 No phone or installed Windows VPN was modified during this publication.
+
+## Physical network monitor lifecycle ownership — local build verified
+
+Code review found start() registered the ConnectivityManager callback before taking
+its lifecycle lock. close() could run first, then late start() register a callback
+on the closed monitor. Repeated start() could also register the same callback twice.
+Registration and initial seeding now share the close lock and refuse closed or
+already-registered monitors. Callback filtering and network selection are unchanged.
+
+PhysicalNetworkMonitorSmoke uses real Android framework registrations in an isolated
+test package: close-before-start must publish nothing, duplicate start must succeed,
+closed restart must publish nothing, and 40 concurrent start/close pairs must finish
+without errors/deadlock. This is lifecycle acceptance, not a physical handover test.
+It is added to the cloud-only restore/diagnostics wrapper; no phone action was used.
+
+Local offline optimized unit + x86_64 preview/test APK build succeeded. XML recount:
+344 total, 343 passed, one optional skip, zero errors/failures. Runtime result for
+this new phase remains pending; run 41504182927 began on the preceding source and
+must not be cited as proof for this fix. Published APK 0.2.55 is unchanged.
