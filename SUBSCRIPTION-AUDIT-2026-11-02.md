@@ -108,3 +108,19 @@ IP также завершался таймаутом или ошибкой TLS,
 [Xray Hysteria outbound](https://xtls.github.io/en/config/outbounds/hysteria.html),
 [Xray Hysteria transport](https://xtls.github.io/en/config/transports/hysteria.html),
 [sing-box Hysteria2](https://sing-box.sagernet.org/configuration/outbound/hysteria2/).
+## gRPC reference preparation (PC only)
+
+`tools/New-XrayReferenceConfig.ps1` requires PowerShell 7 and one original Xray JSON object.
+It creates a new private diagnostic config selecting a zero-based outbound index through a
+single TCP SOCKS inbound on 127.0.0.1. It preserves all original outbounds (including dependencies),
+DNS, policy, transport, and existing routing after the diagnostic rule; logging is disabled.
+API, original listening ports, reverse bridges and background observatories are not copied.
+Use the same failed endpoint and a working TCP control on the same test device/network.
+The generated file contains credentials: keep it outside the repository, never print it,
+and delete it after testing. The helper refuses to overwrite input or existing output.
+It does not start Xray, change routes, install anything or contact a device.
+
+Synthetic verification passed for exact outbound preservation including gRPC authority,
+serviceName, multiMode, finalmask and chained dependency, DNS aliases, loopback-only inbound,
+selection rule and disabled logging. This is preparation, not proof of live gRPC connectivity.
+The live reference comparison remains outstanding until the shared TECNO is explicitly released.
