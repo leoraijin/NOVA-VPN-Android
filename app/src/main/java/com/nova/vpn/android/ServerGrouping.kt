@@ -90,7 +90,7 @@ internal fun ServersPage(
     editingProfile?.let { profile ->
         AlertDialog(onDismissRequest = { if (!savingEdit) { editingProfile = null; editError = null } },
             title = { Text("Настройки сервера") }, text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("Название провайдера: ${profile.name}", style = MaterialTheme.typography.bodySmall)
                     OutlinedTextField(value = personalName, onValueChange = { personalName = it; editError = null },
                         label = { Text("Моё название") }, placeholder = { Text(profile.name) }, singleLine = true,
