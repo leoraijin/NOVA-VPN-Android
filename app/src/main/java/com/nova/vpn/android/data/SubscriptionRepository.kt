@@ -25,7 +25,7 @@ internal class SubscriptionRepository(context: Context,
         state.copy(profiles = changes.catalog.profiles, memberships = changes.catalog.memberships,
             manuallyOwned = changes.catalog.manuallyOwned, subscriptions = state.subscriptions.filterNot { it.id == source.id } +
                 source.copy(status = if (changes.partial) "partial" else "ok", lastAttempt = now, lastSuccess = now,
-                    etag = null, lastModified = null, retryAfterMillis = 0,
+                    etag = null, lastModified = null, formatAgent = null, retryAfterMillis = 0,
                     added = changes.added, updated = changes.updated, removed = changes.removed))
     }
 
@@ -67,13 +67,13 @@ internal class SubscriptionRepository(context: Context,
                 val identity = IdentityVault(context).load().forUrl(initial.url)
                 val deviceId = if (initial.sendDeviceId && identity == null) SubscriptionDeviceIdentity(context).forUrl(initial.url) else null
                 val response = request?.invoke(initial, deviceId, identity)
-                    ?: SubscriptionFetcher.fetchSubscription(initial.url, deviceId, initial.etag, initial.lastModified, identity)
+                    ?: SubscriptionFetcher.fetchSubscription(initial.url, deviceId, initial.etag, initial.lastModified, identity, initial.formatAgent)
                 coroutineContext.ensureActive()
                 val usage = SubscriptionUsage.parse(response.userInfo)
                 if (response.status == 304) {
                     require(initial.lastSuccess > 0) { "Сервер вернул 304 без сохранённой подписки" }
                     return@withContext updateSource(initial, generation) { it.copy(lastAttempt = now, lastSuccess = now,
-                        status = "not_modified", retryAfterMillis = 0, etag = response.etag ?: it.etag,
+                        status = "not_modified", retryAfterMillis = 0, formatAgent = response.requestAgent ?: it.formatAgent, etag = response.etag ?: it.etag,
                         lastModified = response.lastModified ?: it.lastModified,
                         usedBytes = if (response.userInfo == null) it.usedBytes else usage.used,
                         totalBytes = if (response.userInfo == null) it.totalBytes else usage.total,
@@ -92,7 +92,7 @@ internal class SubscriptionRepository(context: Context,
                     current.copy(profiles = changes.catalog.profiles, memberships = changes.catalog.memberships,
                         manuallyOwned = changes.catalog.manuallyOwned, subscriptions = current.subscriptions.map {
                             if (it.id != id) it else it.copy(lastAttempt = now, lastSuccess = now,
-                                status = if (changes.partial) "partial" else "ok", retryAfterMillis = 0,
+                                status = if (changes.partial) "partial" else "ok", retryAfterMillis = 0, formatAgent = response.requestAgent ?: it.formatAgent,
                                 // A partial parse must be retried, not converted into permanent 304s.
                                 etag = response.etag.takeUnless { changes.partial }, lastModified = response.lastModified.takeUnless { changes.partial },
                                 usedBytes = usage.used, totalBytes = usage.total, expiresAtSeconds = usage.expires,

@@ -18,24 +18,35 @@ object SubscriptionFetcher {
         fetchWith(input, deviceId, ::download)
 
     internal data class Response(val body: String, val hwidMissing: Boolean = false, val deviceLimit: Boolean = false,
-        val status: Int = 200, val etag: String? = null, val lastModified: String? = null, val userInfo: String? = null)
+        val status: Int = 200, val etag: String? = null, val lastModified: String? = null, val userInfo: String? = null,
+        val requestAgent: String? = null)
 
     internal class FetchFailure(val status: Int, val retryAfterMillis: Long = 0) : IOException("Ошибка обновления подписки (HTTP $status).")
 
-    internal fun fetchSubscription(url: String, deviceId: String?, etag: String?, lastModified: String?, identity: SubscriptionIdentity? = null): Response {
-        var response: Response? = null
+    internal val FORMAT_AGENTS = setOf("NOVA-VPN-Android", "v2raytun/android")
+
+    internal fun fetchSubscription(url: String, deviceId: String?, etag: String?, lastModified: String?,
+        identity: SubscriptionIdentity? = null, preferredAgent: String? = null,
+        open: (URI) -> HttpsURLConnection = { uri -> uri.toURL().openConnection() as? HttpsURLConnection
+            ?: throw IOException("Не удалось открыть защищённое соединение.") }): Response {
         identity?.validate()
-        fetchWith(url, deviceId) { uri, agent, providedDeviceId ->
-            download(uri, agent, providedDeviceId, etag, lastModified, identity).also { response = it }
-        }
-        return requireNotNull(response) { "Нужна HTTPS-ссылка на подписку" }
+        return requireNotNull(fetchResponseWith(url, deviceId, preferredAgent, identity?.userAgent == null) { uri, agent, providedDeviceId ->
+            // Legacy caches have no format marker. Negotiate once with fresh bodies;
+            // conditional validators must belong to the selected representation.
+            download(uri, agent, providedDeviceId, etag.takeIf { preferredAgent == agent },
+                lastModified.takeIf { preferredAgent == agent }, identity, open)
+        }) { "Нужна HTTPS-ссылка на подписку" }
     }
 
-    internal fun fetchWith(input: String, deviceId: String?, request: (URI, String, String?) -> Response): String {
+    internal fun fetchWith(input: String, deviceId: String?, request: (URI, String, String?) -> Response): String =
+        fetchResponseWith(input, deviceId, request = request)?.body ?: input
+
+    internal fun fetchResponseWith(input: String, deviceId: String?, preferredAgent: String? = null,
+        negotiate: Boolean = true, request: (URI, String, String?) -> Response): Response? {
         val text = input.trim()
         val uri = runCatching { URI(text) }.getOrNull()
         val scheme = uri?.scheme?.lowercase()
-        if (scheme != "http" && scheme != "https") return input
+        if (scheme != "http" && scheme != "https") return null
         require(scheme == "https") { "Ссылка на подписку должна использовать HTTPS." }
         require(uri.host != null && uri.userInfo == null && (uri.port == -1 || uri.port in 1..65535)) {
             "Некорректная HTTPS-ссылка на подписку."
@@ -44,7 +55,8 @@ object SubscriptionFetcher {
         require(deviceId == null || deviceId.matches(Regex("[a-zA-Z0-9=-]{10,64}"))) {
             "Некорректный идентификатор устройства подписки."
         }
-        fun checked(agent: String): String {
+        require(preferredAgent == null || preferredAgent in FORMAT_AGENTS)
+        fun checked(agent: String): Response {
             val response = request(uri, agent, deviceId)
             require(!response.hwidMissing) {
                 if (deviceId == null) "Провайдер требует HWID. Включите ниже передачу идентификатора устройства и повторите импорт."
@@ -53,14 +65,22 @@ object SubscriptionFetcher {
             require(!response.deviceLimit) {
                 "Достигнут лимит устройств подписки. Удалите старое устройство в кабинете провайдера или обратитесь в поддержку."
             }
-            return response.body
+            return response.copy(requestAgent = agent)
         }
-        val response = checked("NOVA-VPN-Android")
-        // Some subscription panels select a client-specific format from User-Agent.
-        // Retry only when the first response is the known unusable 0.0.0.0:1 placeholder.
-        return if (isUnsupportedPlaceholder(response)) {
-            checked("v2raytun/android")
-        } else response
+        val response = checked(preferredAgent ?: "NOVA-VPN-Android")
+        if (response.status == 304) return response
+        if (isUnsupportedPlaceholder(response.body) && response.requestAgent != "v2raytun/android" && negotiate) {
+            return checked("v2raytun/android")
+        }
+        // Panels can return a short URI list for an unknown client and their full
+        // Xray catalog for a compatible client, without an unsupported-app marker.
+        // Negotiate only before the representation has been saved with its validators.
+        if (preferredAgent != null || !negotiate) return response
+        fun usable(body: String) = runCatching { ProfileLinkParser.parseReport(body).profiles.size }.getOrDefault(0)
+        val currentCount = usable(response.body)
+        if (currentCount == 0) return response
+        val compatible = runCatching { checked("v2raytun/android") }.getOrNull() ?: return response
+        return if (compatible.status == 200 && usable(compatible.body) > currentCount) compatible else response
     }
 
     private fun isUnsupportedPlaceholder(body: String): Boolean = runCatching {

@@ -126,6 +126,10 @@ object ProfileLinkParser {
                         }
                     }
                 }
+                "hysteria" -> {
+                    val outbound = XrayHysteria2.from(settings, stream)
+                    addProfile(imported(outbound, name.ifBlank { "Hysteria 2" }))
+                }
                 "trojan", "shadowsocks" -> {
                     val servers = settings.optJSONArray("servers") ?: return@forEachIndexed
                     for (serverIndex in 0 until servers.length()) {
@@ -157,7 +161,7 @@ object ProfileLinkParser {
             failures += "Xray-профиль ${index + 1}: ${if (error is IllegalArgumentException) error.message ?: "неподдерживаемый формат" else "некорректная конфигурация"}"
           }
         }
-        require(profiles.isNotEmpty()) { "Xray JSON не содержит поддерживаемых VLESS, VMess, Trojan или Shadowsocks серверов" }
+        require(profiles.isNotEmpty()) { "Xray JSON не содержит поддерживаемых VPN-серверов" }
         return profiles
     }
 

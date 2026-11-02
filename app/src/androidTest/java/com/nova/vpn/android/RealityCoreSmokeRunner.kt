@@ -16,6 +16,7 @@ import kotlin.concurrent.thread
 class RealityCoreSmokeRunner : Instrumentation() {
     private var deleteAllStoreOnly = false
     private var deleteAllOnly = false
+    private var liveSubscriptionAudit = false
     private var liveSubscription = false
     private var probeUseNetworkCallbacks = true
     private var lastProbeNetworkHandle = 0L
@@ -56,6 +57,7 @@ class RealityCoreSmokeRunner : Instrumentation() {
     override fun onCreate(arguments: Bundle?) {
         deleteAllStoreOnly = arguments?.getString("deleteAllStoreOnly") == "true"
         deleteAllOnly = arguments?.getString("deleteAllOnly") == "true"
+        liveSubscriptionAudit = arguments?.getString("liveSubscriptionAudit") == "true"
         liveSubscription = arguments?.getString("liveSubscription") == "true"
         transferCrashPhase = arguments?.getString("transferCrashPhase")
         subscriptionSchedulePhase = arguments?.getString("subscriptionSchedulePhase")
@@ -124,6 +126,18 @@ class RealityCoreSmokeRunner : Instrumentation() {
                 finish(Activity.RESULT_OK, result)
             } catch (error: Throwable) {
                 result.putString("stream", "FAIL delete all configurations: ${error.javaClass.simpleName}: ${error.message}\n")
+                finish(Activity.RESULT_CANCELED, result)
+            }
+            return
+        }
+        if (liveSubscriptionAudit) {
+            val result = Bundle()
+            try {
+                LiveSubscriptionAuditSmoke.run(this)
+                result.putString("stream", "PASS live subscription audit completed; inspect aggregate outcomes\n")
+                finish(Activity.RESULT_OK, result)
+            } catch (error: Throwable) {
+                result.putString("stream", "FAIL live subscription audit: ${error.javaClass.simpleName}\n")
                 finish(Activity.RESULT_CANCELED, result)
             }
             return

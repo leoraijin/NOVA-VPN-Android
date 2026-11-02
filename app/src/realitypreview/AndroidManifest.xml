@@ -1,0 +1,6 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- A separate installed fixture UID is used by the explicit per-app live test. -->
+    <queries>
+        <package android:name="com.nova.vpn.android.identitypreview.test" />
+    </queries>
+</manifest>

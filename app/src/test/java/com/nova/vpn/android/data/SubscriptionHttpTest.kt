@@ -25,6 +25,38 @@ class SubscriptionHttpTest {
         override fun getServerCertificates(): Array<Certificate> = emptyArray()
     }
 
+    @Test fun choosingAFullerFormatDoesNotReuseLegacyConditionalValidators() {
+        val url = URL("https://provider.test/sub")
+        val node = "vless://11111111-1111-4111-8111-111111111111@fixture.example:443#Fixture"
+        val first = Connection(url, headers = mapOf("ETag" to "short-tag"), body = node)
+        val second = Connection(url, headers = mapOf("ETag" to "full-tag"), body = "$node\n${node.replace(":443", ":8443")}")
+        var calls = 0
+        val selected = SubscriptionFetcher.fetchSubscription(url.toString(), null, "legacy-tag", "legacy-date", open = { if (calls++ == 0) first else second })
+        assertEquals("full-tag", selected.etag)
+        for (connection in listOf(first, second)) {
+            assertNull(connection.getRequestProperty("If-None-Match"))
+            assertNull(connection.getRequestProperty("If-Modified-Since"))
+        }
+    }
+
+    @Test fun fallbackCannotSendThePreviousFormatsValidatorsAndSavedFormatRetains304() {
+        val url = URL("https://provider.test/sub")
+        val placeholder = Connection(url, body = "vless://11111111-1111-4111-8111-111111111111@0.0.0.0:1#Status")
+        val compatible = Connection(url, headers = mapOf("ETag" to "compatible-tag"), body = "vless://11111111-1111-4111-8111-111111111111@fixture.example:443#Fixture")
+        var calls = 0
+        val selected = SubscriptionFetcher.fetchSubscription(url.toString(), null, "nova-tag", "nova-date", preferredAgent = "NOVA-VPN-Android", open = { if (calls++ == 0) placeholder else compatible })
+        assertEquals("nova-tag", placeholder.getRequestProperty("If-None-Match"))
+        assertNull(compatible.getRequestProperty("If-None-Match"))
+        assertNull(compatible.getRequestProperty("If-Modified-Since"))
+        assertEquals("v2raytun/android", selected.requestAgent)
+        val notModified = Connection(url, 304, mapOf("ETag" to "compatible-tag"))
+        val cached = SubscriptionFetcher.fetchSubscription(url.toString(), null, "compatible-tag", null, preferredAgent = selected.requestAgent, open = { notModified })
+        assertEquals(304, cached.status)
+        assertEquals("v2raytun/android", notModified.getRequestProperty("User-Agent"))
+        assertEquals("compatible-tag", notModified.getRequestProperty("If-None-Match"))
+        assertFalse(notModified.bodyRead)
+    }
+
     @Test fun crossOriginRedirectDoesNotReceiveIdentityOrConditionalHeaders() {
         val first = Connection(URL("https://provider.test/sub/TOKEN"), 302, mapOf("Location" to "https://other.test/list"))
         val second = Connection(URL("https://other.test/list"))

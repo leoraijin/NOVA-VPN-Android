@@ -18,11 +18,12 @@ public final class LiveHttpsProbeActivity extends Activity {
         final String nonce = getIntent().getStringExtra("nonce");
         final boolean physical = getIntent().getBooleanExtra("physical", false);
         final String endpoint = getIntent().getStringExtra("endpoint");
-        if (nonce == null || !("cloudflare".equals(endpoint) || "google".equals(endpoint))) { finish(); return; }
+        if (nonce == null || !("cloudflare".equals(endpoint) || "google".equals(endpoint) || "trace4".equals(endpoint) || "trace-ip".equals(endpoint))) { finish(); return; }
         final String target = getPackageName().substring(0, getPackageName().length() - ".test".length());
         new Thread(() -> {
             String outcome = "network_not_ready";
             boolean vpn = false;
+            String exitIp = null;
             long elapsed = 0;
             HttpsURLConnection connection = null;
             try {
@@ -31,7 +32,7 @@ public final class LiveHttpsProbeActivity extends Activity {
                 vpn = network.capabilities != null && network.capabilities.hasTransport(NetworkCapabilities.TRANSPORT_VPN);
                 if (!network.ready) throw new IllegalStateException();
                 long started = android.os.SystemClock.elapsedRealtime();
-                String url = "cloudflare".equals(endpoint) ? "https://www.cloudflare.com/cdn-cgi/trace" : "https://www.google.com/generate_204";
+                String url = "trace-ip".equals(endpoint) ? "https://1.1.1.1/cdn-cgi/trace" : "trace4".equals(endpoint) ? "https://ipv4.icanhazip.com/" : "cloudflare".equals(endpoint) ? "https://www.cloudflare.com/cdn-cgi/trace" : "https://www.google.com/generate_204";
                 connection = (HttpsURLConnection) new URL(url).openConnection();
                 connection.setConnectTimeout(10000); connection.setReadTimeout(10000);
                 connection.setInstanceFollowRedirects(false); connection.setUseCaches(false);
@@ -49,13 +50,20 @@ public final class LiveHttpsProbeActivity extends Activity {
                         }
                     }
                     String body = new String(bytes.toByteArray(), StandardCharsets.UTF_8);
-                    outcome = body.contains("\nip=") || body.startsWith("ip=") ? "ok" : "invalid_response";
+                    if ("trace4".equals(endpoint)) {
+                        String ip = body.trim();
+                        if (ip.matches("[0-9]{1,3}(\\.[0-9]{1,3}){3}")) { exitIp = ip; outcome = "ok"; }
+                        else outcome = "invalid_response";
+                    } else {
+                        outcome = body.contains("\nip=") || body.startsWith("ip=") ? "ok" : "invalid_response";
+                        for (String line : body.split("\n")) if (line.startsWith("ip=")) exitIp = line.substring(3).trim();
+                    }
                 } else outcome = "http_" + code;
                 elapsed = android.os.SystemClock.elapsedRealtime() - started;
             } catch (Exception error) { outcome += "_" + error.getClass().getSimpleName(); }
             finally { if (connection != null) connection.disconnect(); }
             sendBroadcast(new Intent(target + ".LIVE_HTTPS_RESULT").setPackage(target)
-                .putExtra("nonce", nonce).putExtra("outcome", outcome).putExtra("vpn", vpn).putExtra("elapsed", elapsed));
+                .putExtra("nonce", nonce).putExtra("outcome", outcome).putExtra("vpn", vpn).putExtra("elapsed", elapsed).putExtra("exitIp", exitIp));
             runOnUiThread(this::finish);
         }, "nova-live-https").start();
     }

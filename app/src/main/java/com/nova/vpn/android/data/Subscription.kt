@@ -22,7 +22,8 @@ internal data class Subscription(
     val retryAfterMillis: Long = 0,
     val added: Int = 0,
     val updated: Int = 0,
-    val removed: Int = 0
+    val removed: Int = 0,
+    val formatAgent: String? = null
 ) {
     fun validate() {
         val uri = URI(url)
@@ -31,6 +32,7 @@ internal data class Subscription(
         require(uri.port == -1 || uri.port in 1..65535)
         require(intervalHours in setOf(0, 6, 12, 24))
         require(status in STATUSES)
+        require(formatAgent == null || formatAgent in SubscriptionFetcher.FORMAT_AGENTS)
     }
 
     fun toJson(): JSONObject = JSONObject().put("id", id).put("name", name).put("url", url)
@@ -38,7 +40,7 @@ internal data class Subscription(
         .put("lastAttempt", lastAttempt).put("lastSuccess", lastSuccess).put("status", status)
         .put("etag", etag).put("lastModified", lastModified).put("usedBytes", usedBytes)
         .put("totalBytes", totalBytes).put("expiresAtSeconds", expiresAtSeconds)
-        .put("retryAfterMillis", retryAfterMillis).put("added", added).put("updated", updated).put("removed", removed)
+        .put("retryAfterMillis", retryAfterMillis).put("added", added).put("updated", updated).put("removed", removed).put("formatAgent", formatAgent)
 
     companion object {
         val STATUSES = setOf("never", "ok", "partial", "not_modified", "error", "auth", "rate_limited")
@@ -51,7 +53,7 @@ internal data class Subscription(
                 status = json.optString("status", "never"), etag = text("etag"), lastModified = text("lastModified"),
                 usedBytes = number("usedBytes"), totalBytes = number("totalBytes"), expiresAtSeconds = number("expiresAtSeconds"),
                 retryAfterMillis = json.optLong("retryAfterMillis"), added = json.optInt("added"), updated = json.optInt("updated"),
-                removed = json.optInt("removed")).also { it.validate() }
+                removed = json.optInt("removed"), formatAgent = text("formatAgent")).also { it.validate() }
         }
     }
 }
