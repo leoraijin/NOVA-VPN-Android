@@ -357,3 +357,30 @@ claiming that all numbered requirements have already been audited or fulfilled.
 ### 2026-10-26: user-requested main source publication
 
 The current Android source snapshot is prepared for main publication at the user's explicit request without additional tests. Previous results and open gates remain recorded above. No new signed APK, production native pin, or version promotion is included in this source update. Physical device identifiers are redacted from this public snapshot; the original work history is preserved locally.
+
+## Current main CI — 3 November 2026
+
+Run https://github.com/leoraijin/NOVA-VPN-Android/actions/runs/41485844005 completed SUCCESS
+at tested commit a91c91a8cedd97a2a483b7e4bd1023cda2e714dd. Downloaded artifact 13163500194
+SHA-256 d9384e6ed1c9042d9301a68e6e33ba06a9c42e6c8137da013aac75ca75d1d056 matched the
+GitHub server digest. Checked the extracted individual logs and unit XML, not only job status.
+
+- Unit: 344 total, 343 passed, one optional skipped, zero failures/errors.
+- Real API35 WorkManager phases normal, stale-snapshot, stale-prune, terminal-retry,
+  prepare-boot and verify-boot each reported their expected PASS and instrumentation code -1.
+- All eight appearances (four styles x light/dark) reported server-library PASS/code -1,
+  using 2000 synthetic nodes, search/personal edits, rotation and Activity recreation.
+- deleteAllStoreOnly and deleteAllOnly both PASS/code -1. Encrypted persistence, late
+  HTTP 200/304/401, cancel vs confirm, request invalidation, unchanged routing/identity,
+  corrupt-vault refusal, repeated deletion and reopening the empty catalog were covered.
+- Reviewed all 24 library screenshots and the separate empty-catalog screenshot. These
+  are emulator UI/lifecycle results, not physical performance, TalkBack, active-TUN deletion,
+  or emergency power-loss acceptance. Some controls are within scrollable/clipped viewports;
+  no claim of a complete accessibility/layout audit is made.
+- Later changes through 56257be affect opt-in reference instrumentation/tools/docs. A Git
+  diff confirmed no production app source/build-settings difference from the tested commit.
+  The new reference phases have local build/mock evidence, not live connectivity proof.
+
+Previous run 41485093203 failed before tests because Aliyun Maven returned HTTP502. The
+workflow now opts into official repositories; local mirror fallback remains available.
+This closes this CI regression run, not the full seven-part plan or the live gRPC question.
