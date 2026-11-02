@@ -86,8 +86,19 @@ def screenshot(label):
 
 
 def details():
+    # dumpsys renamed userId/appId across Android releases. Read the public UID listing
+    # and cross-check actual data-directory ownership instead of guessing a dump field.
+    listing = shell('cmd', 'package', 'list', 'packages', '-U', '--user', '0', PACKAGE)
     text = shell('dumpsys', 'package', PACKAGE)
-    return int(re.search(r'userId=(\d+)', text)[1]), int(re.search(r'versionCode=(\d+)', text)[1])
+    uid = re.search(r'^package:' + re.escape(PACKAGE) + r'\s+uid:(\d+)\s*$', listing, re.MULTILINE)
+    version = re.search(r'\bversionCode=(\d+)', text)
+    if uid is None or version is None:
+        (args.work / 'package-details.txt').write_text(listing + '\n' + text)
+        raise RuntimeError('Cannot identify exact installed package UID/version')
+    owner = shell('stat', '-c', '%u', PRIVATE).strip()
+    if not owner.isdecimal() or int(owner) != int(uid[1]):
+        raise RuntimeError('Package UID differs from private directory owner')
+    return int(uid[1]), int(version[1])
 
 
 def preferences(name):

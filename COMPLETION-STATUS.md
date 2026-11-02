@@ -430,3 +430,12 @@ release access. No PAT/account token enters CI. The URL is passed only in dispat
 data, masked before network use, checked for HTTPS/GitHub release-asset hosts/path and
 redirects; the APK digest/signer remain mandatory. It is not saved in reports or artifacts.
 No repository/release write permission or stable publication is introduced by this fix.
+Exact-APK run 41497036952 downloaded/verified all three signed APKs with read-only CI.
+Its API35 Google APIs image advertised x86_64,arm64-v8a; the untouched 0.2.52 ARM64 APK
+installed successfully (logcat confirms com.nova.vpn.android appid10209). Failure occurred
+before the app UI/import/update: the fixture expected `userId=` in dumpsys and got no match.
+Artifact 13166448121 SHA-256 c95e6546d404160eda0b0ff5ce84b1ebcf6e1a478abb6df49a52e6f97d84dabe
+was verified; the screenshot shows the Android launcher, not an application crash.
+The fixture now reads cmd package list packages -U --user 0 and independently checks the
+private data-directory owner; missing UID/version saves diagnostics and fails explicitly.
+Candidate APK remains byte-identical. No full update/clean-install PASS is claimed yet.
