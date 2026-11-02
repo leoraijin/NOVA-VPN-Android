@@ -31,7 +31,7 @@ internal object DeleteAllProfilesSmoke {
                 val subscribed = node.copy(id = "subscribed", subscriptionUrl = source.url)
                 val initial = ProfileSnapshot(listOf(node, subscribed), listOf(source),
                     setOf(SubscriptionMembership(subscribed.id, source.id)), setOf(node.id))
-                vault.updateSnapshot { initial }
+                vault.updateSnapshot(ProfileVault.replacementGeneration) { initial }
                 val entered = CountDownLatch(1)
                 val release = CountDownLatch(1)
                 val executor = Executors.newSingleThreadExecutor()
@@ -61,6 +61,13 @@ internal object DeleteAllProfilesSmoke {
                     late.get(15, TimeUnit.SECONDS)
                     check(vault.loadSnapshot() == ProfileSnapshot()) { "Late HTTP $response restored profiles" }
                     check(file.readBytes().contentEquals(emptyBytes)) { "Late HTTP $response rewrote vault" }
+                    val lateReport = ProfileLinkParser.ImportResult(listOf(node), emptyList())
+                    check(runCatching { vault.updateSnapshot(generation) { it.importManual(listOf(node)) } }
+                        .exceptionOrNull() is ProfileVault.ReplacementSupersededException)
+                    check(runCatching { SubscriptionRepository(context).importReport(source.url, false, lateReport, generation) }
+                        .exceptionOrNull() is ProfileVault.ReplacementSupersededException)
+                    check(vault.loadSnapshot() == ProfileSnapshot()) { "Pre-delete import recreated the catalog" }
+                    check(file.readBytes().contentEquals(emptyBytes)) { "Rejected import rewrote the encrypted vault" }
                     synchronized(ProfileVault.lock) {
                         val boundary = ProfileVault.replacementGeneration
                         file.writeText("corrupt-synthetic-vault")

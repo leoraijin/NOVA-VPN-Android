@@ -1020,6 +1020,7 @@ private fun NovaAndroidApp(
                     TextButton(enabled = !importing && importText.isNotBlank(), onClick = {
                         importing = true
                         val rawImport = importText
+                        val importGeneration = ProfileVault.replacementGeneration
                         scope.launch {
                             runCatching {
                                 val source = withContext(Dispatchers.IO) {
@@ -1040,18 +1041,25 @@ private fun NovaAndroidApp(
                                     withContext(Dispatchers.IO) {
                                         merged = if (rawImport.trim().startsWith("https://", true)) {
                                             val state = com.nova.vpn.android.data.SubscriptionRepository(context)
-                                                .importReport(rawImport.trim(), sendSubscriptionDeviceId, report)
+                                                .importReport(rawImport.trim(), sendSubscriptionDeviceId, report, importGeneration)
                                             SubscriptionScheduling.request(context, state.subscriptions)
                                             state.profiles
-                                        } else vault.updateSnapshot { current -> current.importManual(incoming) }.profiles
+                                        } else vault.updateSnapshot(importGeneration) { current -> current.importManual(incoming) }.profiles
                                     }
-                                }.onSuccess {
+                                }.onSuccess saved@{
+                                    if (ProfileVault.replacementGeneration != importGeneration) {
+                                        importError = "Импорт отменён: каталог конфигов был заменён. Повторите импорт."
+                                        return@saved
+                                    }
                                     profiles = merged
                                     if (selectedProfileId.isBlank()) {
                                         selectedProfileId = merged.firstOrNull { it.configurationKey() == incoming.firstOrNull()?.configurationKey() }?.id.orEmpty()
                                         if (selectedProfileId.isNotBlank()) {
                                             withContext(Dispatchers.IO) {
-                                                runCatching { selectedProfileStore.save(selectedProfileId) }
+                                                synchronized(ProfileVault.lock) {
+                                                    if (ProfileVault.replacementGeneration == importGeneration)
+                                                        runCatching { selectedProfileStore.save(selectedProfileId) }
+                                                }
                                             }
                                         }
                                     }
@@ -1062,7 +1070,9 @@ private fun NovaAndroidApp(
                                     Toast.makeText(context, "Получено серверов: ${incoming.size}" +
                                         if (report.warnings.isEmpty()) "" else "; есть пропуски — подробности на странице серверов", Toast.LENGTH_LONG).show()
                                 }.onFailure {
-                                    importError = "Не удалось безопасно сохранить профили. Проверьте свободное место и блокировку экрана устройства."
+                                    importError = if (it is ProfileVault.ReplacementSupersededException)
+                                        "Импорт отменён: каталог конфигов был заменён. Повторите импорт."
+                                    else "Не удалось безопасно сохранить профили. Проверьте свободное место и блокировку экрана устройства."
                                 }
                             }.onFailure { error ->
                                 importError = error.message?.take(180) ?: "Не удалось прочитать конфигурацию."

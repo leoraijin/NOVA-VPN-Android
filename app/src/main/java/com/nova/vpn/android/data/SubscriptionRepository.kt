@@ -14,7 +14,8 @@ internal class SubscriptionRepository(context: Context,
     private val context = context.applicationContext
     private val vault = ProfileVault(this.context)
 
-    fun importReport(url: String, sendDeviceId: Boolean, report: ProfileLinkParser.ImportResult): ProfileSnapshot = vault.updateSnapshot { state ->
+    fun importReport(url: String, sendDeviceId: Boolean, report: ProfileLinkParser.ImportResult,
+        expectedGeneration: Long? = null): ProfileSnapshot = vault.updateSnapshot(expectedGeneration) { state ->
         val source = (state.subscriptions.firstOrNull { it.url == url }
             ?: Subscription(name = java.net.URI(url).host ?: "Подписка", url = url)).copy(sendDeviceId = sendDeviceId)
         source.validate()

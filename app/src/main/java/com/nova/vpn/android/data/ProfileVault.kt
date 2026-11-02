@@ -22,9 +22,14 @@ class ProfileVault(context: Context) {
 
     fun load(): List<ImportedProfile> = loadSnapshot().profiles
     internal fun loadSnapshot(): ProfileSnapshot = synchronized(lock) { readLocked() }
-    internal fun updateSnapshot(transform: (ProfileSnapshot) -> ProfileSnapshot): ProfileSnapshot = synchronized(lock) {
+    internal class ReplacementSupersededException : IllegalStateException("Каталог конфигов был заменён. Повторите импорт.")
+    internal fun updateSnapshot(transform: (ProfileSnapshot) -> ProfileSnapshot): ProfileSnapshot = updateSnapshot(null, transform)
+    /** Check and commit under the same lock: a pre-delete import cannot recreate the catalog. */
+    internal fun updateSnapshot(expectedGeneration: Long?, transform: (ProfileSnapshot) -> ProfileSnapshot): ProfileSnapshot = synchronized(lock) {
+        if (expectedGeneration != null && expectedGeneration != replacement) throw ReplacementSupersededException()
         transform(readLocked()).also { writeLocked(it) }
     }
+
     /** A checked recovery pre-image must also replace an unreadable crash-damaged target. */
     internal fun restoreSnapshot(snapshot: ProfileSnapshot) = synchronized(lock) { writeLocked(snapshot) }
 
