@@ -1,0 +1,30 @@
+{
+  "verifiedPhases": [
+    "prepare",
+    "verify-0",
+    "verify-1",
+    "verify-2",
+    "verify-3",
+    "verify-4",
+    "verify-5",
+    "verify-6",
+    "verify-7",
+    "fault-apply",
+    "fault-rollback",
+    "fault-recovery",
+    "fault-corrupt-journal",
+    "fault-journal-delete",
+    "corrupt-startup-prepare",
+    "corrupt-startup-ui",
+    "cleanup"
+  ],
+  "run": "https://github.com/leoraijin/NOVA-VPN-Android/actions/runs/41509362134",
+  "diagnostics": "Not accepted: new harness sent LIGHT instead of supported light; corrected in8c35dce, run41510436433 pending",
+  "scope": "Isolated Android API35 cloud emulator, synthetic stores, actual process death; no active TUN or physical power-loss claim",
+  "overallConclusion": "failure after successful recovery phases",
+  "appearanceBaseline": "Migrated preferences with explicit IOS style, DARK mode, hue197 and frost0.37; exact full snapshot equality retained",
+  "artifactId": 13171914206,
+  "previousMismatchCause": "First UI launch migrated three missing appearance fields",
+  "artifactSha256": "5ab38a6946a2801b668260c8056051597a0cbd1e164dd0d0b1f2072ccf41645c",
+  "sourceCommit": "ba21c6f8e06265247f8a1286640cbdc418918ca6"
+}

@@ -568,3 +568,25 @@ recorded in native/diagnostic-evidence/xhttp-race-2026-11-03.json.
 Windows-only H1/Reality load tests are not covered by this Linux job. The Windows
 regression job and local 300-second H1/Reality soak remain live; no full-workflow
 or Android-native acceptance claim follows from the race job alone.
+
+## Recovery startup UI — verified, diagnostics fixture corrected separately
+
+Artifact 13171914206 of run 41509362134 was downloaded and SHA256 matched GitHub:
+5ab38a6946a2801b668260c8056051597a0cbd1e164dd0d0b1f2072ccf41645c. All eight
+verify logs, five fault logs, prepare/corrupt-prepare/corrupt-startup-ui/cleanup
+contained their expected PASS and instrumentation code -1. The recovery screenshot
+was reviewed: safe authentication error, no automatic data reset, retry/code-copy
+controls and preserved data message. Healthy retry then removed the journal and
+returned to the application with exact baseline profiles/identity/routes/selection/
+preferences. See ANDROID-RECOVERY-UI-VERIFICATION-2026-11-03.json.
+
+Earlier UI comparison failed only at appearance_style/glass_frost/material_hue:
+AppPreferencesStore.appearance performs first-launch migration on missing legacy
+fields. The fixture now takes its baseline after migration and seeds explicit
+non-default hue/frost/theme; equality is still strict, with path-only failure
+attribution. No production recovery change was needed.
+
+Overall run remains FAILED because the new diagnostics wrapper supplied LIGHT,
+whereas the runner accepts light/dark. Logcat attributes process exit to that
+unsupported instrumentation input, not a product runtime defect. The wrapper was
+corrected and run41510436433 is pending. Diagnostics is not marked passed yet.
