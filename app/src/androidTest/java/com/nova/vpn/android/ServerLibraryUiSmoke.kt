@@ -16,9 +16,13 @@ import java.io.File
 
 /** Large synthetic library, real UI and encrypted persistence; isolated package only. */
 internal object ServerLibraryUiSmoke {
-    fun run(instrumentation: Instrumentation, style: String, theme: ThemeMode = ThemeMode.DARK) {
+    fun run(instrumentation: Instrumentation, style: String, theme: ThemeMode = ThemeMode.DARK, expectedFontScale: Float? = null) {
         val context = instrumentation.targetContext
         check(isIsolatedUsbTestPackage(context.packageName))
+        val actualFontScale = context.resources.configuration.fontScale
+        expectedFontScale?.let { check(kotlin.math.abs(actualFontScale - it) < .01f) { "Requested font scale was not applied" } }
+        instrumentation.sendStatus(0, Bundle().apply { putString("stream", "LIBRARY_FONT_SCALE=$actualFontScale\n") })
+
         check(!VpnRuntime.state.value.connected && !VpnRuntime.state.value.connecting)
         val backup = FullTransfer.export(context, "Synthetic-library-backup-2026")
         val vault = ProfileVault(context)

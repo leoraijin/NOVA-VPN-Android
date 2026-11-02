@@ -56,9 +56,13 @@ class RealityCoreSmokeRunner : Instrumentation() {
     private var transferCrashPhase: String? = null
     private var subscriptionSchedulePhase: String? = null
     private var serverLibraryStyle: String? = null
+    private var serverLibraryFontScale: Float? = null
     private var serverLibraryTheme = ThemeMode.DARK
     private var diagnosticsTheme = ThemeMode.LIGHT
     override fun onCreate(arguments: Bundle?) {
+        serverLibraryFontScale = arguments?.getString("serverLibraryFontScale")?.let { value ->
+            value.toFloat().also { require(it == 1f || it == 2f) }
+        }
         physicalNetworkMonitorOnly = arguments?.getString("physicalNetworkMonitorOnly") == "true"
         deleteAllStoreOnly = arguments?.getString("deleteAllStoreOnly") == "true"
         deleteAllOnly = arguments?.getString("deleteAllOnly") == "true"
@@ -179,7 +183,7 @@ class RealityCoreSmokeRunner : Instrumentation() {
         serverLibraryStyle?.let { style ->
             val result = Bundle()
             try {
-                ServerLibraryUiSmoke.run(this, style, serverLibraryTheme)
+                ServerLibraryUiSmoke.run(this, style, serverLibraryTheme, serverLibraryFontScale)
                 result.putString("stream", "PASS server library UI: $style\n")
                 finish(Activity.RESULT_OK, result)
             } catch (error: Throwable) {

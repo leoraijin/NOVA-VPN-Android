@@ -1,6 +1,13 @@
 name: Android responsive server library
 on:
   workflow_dispatch:
+    inputs:
+      font_scale:
+        description: Font scale verified inside the isolated Android app
+        type: choice
+        options: ['1.0', '2.0']
+        default: '1.0'
+        required: true
 permissions:
   contents: read
 concurrency:
@@ -10,6 +17,8 @@ jobs:
   library:
     runs-on: ubuntu-24.04
     timeout-minutes: 40
+    env:
+      NOVA_TEST_FONT_SCALE: ${{ inputs.font_scale }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
