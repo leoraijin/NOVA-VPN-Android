@@ -527,3 +527,16 @@ Local offline optimized unit + x86_64 preview/test APK build succeeded. XML reco
 344 total, 343 passed, one optional skip, zero errors/failures. Runtime result for
 this new phase remains pending; run 41504182927 began on the preceding source and
 must not be cited as proof for this fix. Published APK 0.2.55 is unchanged.
+
+## Physical network monitor lifecycle — Android runtime verified
+
+Run https://github.com/leoraijin/NOVA-VPN-Android/actions/runs/41505540172 completed
+SUCCESS at harness/source 06f4dcad7b50b0f06c3faa151154681a3dc91210. Artifact
+13171495781 was downloaded and SHA256 matched GitHub:
+b18e1c1b65e950c95a586897ad865ef72e95a71ad1734f81c811cb9b91460e56.
+Individual physical-monitor.log contains the expected lifecycle PASS and
+INSTRUMENTATION_CODE -1; verification.json confirms 40 registration races.
+This exercises real ConnectivityManager registration on cloud Android API35,
+close-before-start, repeated start, closed restart and concurrent start/close.
+It does not claim phone handover, active TUN, cellular, Doze or battery coverage.
+Source fix is on main; published 0.2.55 predates it and remains unchanged.
