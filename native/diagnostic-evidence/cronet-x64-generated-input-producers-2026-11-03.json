@@ -1,0 +1,17 @@
+{
+  "compilerRun": 41526506768,
+  "abi": "x86_64",
+  "generatedDependencyPaths": 554,
+  "producerNodes": 102,
+  "producerTypes": {
+    "action": 101,
+    "copy": 1
+  },
+  "builtTools": 4,
+  "unresolvedDeclaredInputs": 0,
+  "graphSha256": "65114d1f02854df5c40a4d146abd41a286f191617048cd79838fd7321e4475a5",
+  "evidence": "native/xhttp/provenance/cronet-x64-generated-input-producers-2026-11-03.json.gz",
+  "evidenceSha256": "b5c131d3df54ad96fc53b2d452098938edad71693012b86fb6376d6dd13982ba",
+  "removedProducerRejectedBeforeReport": true,
+  "scope": "Exact GN producer ownership and declared input provenance for observed generated inputs. Generator source/runtime transitive closure and final notice associations are not inferred complete."
+}
