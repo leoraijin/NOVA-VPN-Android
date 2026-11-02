@@ -52,5 +52,6 @@ def tab_selected(tree, label):
     if label not in NAV_LABELS:
         return False
     description = 'Маршрутизация' if label == 'Маршруты' else label
-    return any(node.get('content-desc') == description and node.get('selected') == 'true'
+    return any(node.get('selected') == 'true' and
+               any(child.get('content-desc') == description for child in node.iter('node'))
                for node in tree.iter('node'))

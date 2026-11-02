@@ -456,3 +456,12 @@ while Home is a real clickable target. The regression now checks Home's actual p
 separately confirms selected Servers without forcing a click. Navigation treats a positively
 identified already-selected tab as a no-op. No favorite/update assertion was removed and
 the production APK did not change. Four selector regressions are required before retry.
+Run 41500598297 stopped in the fourth selector regression, before emulator/install work:
+selected=true belongs to a navigation ancestor while its content description is a child.
+The local portable Python preflight reproduced the same failure; tab_selected now checks
+the selected container's descendant label. All four regressions and AST syntax checks
+then passed locally in Python3.14.10. Portable official embeddable archive SHA-256
+90905e64a840557d8c1bc4f5b74db3d7ee85e3ffb217611cac1c7813acea4159 matched Python.org;
+python.exe Authenticode was Valid / Python Software Foundation. Runtime resides only in
+the project's external toolchain directory; system Python/registry/PATH were not changed.
+No APK or acceptance requirement was altered. Cloud end-to-end acceptance is still pending.
