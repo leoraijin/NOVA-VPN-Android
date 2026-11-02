@@ -1,15 +1,25 @@
 name: Pinned Cronet build graph
+run-name: Cronet ${{ inputs.rebuild_cpu }} independent rebuild
 on:
   workflow_dispatch:
+    inputs:
+      rebuild_cpu:
+        description: Android CPU for independent C++ archive reproduction
+        type: choice
+        options: [arm64, arm, x64, x86]
+        default: arm64
+        required: true
 permissions:
   contents: read
 concurrency:
-  group: cronet-graph-${{ github.ref }}
+  group: cronet-graph-${{ github.ref }}-${{ inputs.rebuild_cpu }}
   cancel-in-progress: false
 jobs:
   graph:
     runs-on: ubuntu-24.04
     timeout-minutes: 90
+    env:
+      REBUILD_CPU: ${{ inputs.rebuild_cpu }}
     steps:
       - uses: actions/checkout@v4
       - name: Verify dependency evidence parser
@@ -28,33 +38,32 @@ jobs:
         run: |
           set -euo pipefail
           command -v ninja
-          for cpu in arm x64 x86; do
+          case "$REBUILD_CPU" in arm64|arm|x64|x86) ;; *) exit 2 ;; esac
+          for cpu in arm64 arm x64 x86; do
+            if test "$cpu" = "$REBUILD_CPU"; then continue; fi
             python3 native/xhttp/build/Generate-CronetGraph.py --source work/cronet-tree --work "work/cronet-evidence/graph-$cpu" --cpu "$cpu"
           done
       - name: Retain additional ABI graphs before long compilation
         uses: actions/upload-artifact@v4
         with:
           name: cronet-additional-abi-graphs
-          path: |
-            work/cronet-evidence/graph-arm/
-            work/cronet-evidence/graph-x64/
-            work/cronet-evidence/graph-x86/
+          path: work/cronet-evidence/graph-*/
           if-no-files-found: error
           retention-days: 30
-      - name: Generate ARM64 graph and rebuild its archive
+      - name: Generate selected graph and rebuild its archive
         shell: bash
         run: |
           set -euo pipefail
-          python3 native/xhttp/build/Generate-CronetGraph.py --source work/cronet-tree --work work/cronet-evidence/graph-arm64 --cpu arm64 --rebuild
-      - name: Capture actual ARM64 compiler dependencies
+          python3 native/xhttp/build/Generate-CronetGraph.py --source work/cronet-tree --work "work/cronet-evidence/graph-$REBUILD_CPU" --cpu "$REBUILD_CPU" --rebuild
+      - name: Capture actual compiler dependencies
         if: always()
         shell: bash
         run: |
           set -euo pipefail
-          if test -f work/cronet-tree/src/out/cronet-android-arm64/.ninja_deps; then
-            python3 native/xhttp/build/Collect-CronetDependencies.py --source work/cronet-tree/src --out work/cronet-tree/src/out/cronet-android-arm64 --output work/cronet-evidence/compiler-dependencies
+          if test -f "work/cronet-tree/src/out/cronet-android-$REBUILD_CPU/.ninja_deps"; then
+            python3 native/xhttp/build/Collect-CronetDependencies.py --source work/cronet-tree/src --out "work/cronet-tree/src/out/cronet-android-$REBUILD_CPU" --output work/cronet-evidence/compiler-dependencies
           else
-            echo 'No ARM64 Ninja dependency database was produced'
+            echo 'No selected-ABI Ninja dependency database was produced'
           fi
       - name: Retain graph attempt evidence
         if: always()
