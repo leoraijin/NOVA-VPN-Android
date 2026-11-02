@@ -782,3 +782,16 @@ Only core+patch identity is verified here. Four submodules, fresh module graphs,
 matching AAR/build inputs, full new archive and restored-source build remain open.
 Historical archive transfer reports were read; missing newer candidates are not
 assumed recovered from older retained source packages.
+
+
+## Responsive library controls — eight real Android appearances verified
+
+Run41525371517 on0990fe42c1c4e4042617e1c4aa4dd7cfa9577f0c SUCCESS.
+Artifact13179129478 SHA2568dd80a40a887c8763e3abac494c0748f5d65a6b1ecd8f4dfbe4500bb30742b5c
+matched GitHub. All8 individual instrumentation logs contain the expected PASS
+and INSTRUMENTATION_CODE-1;32 screenshots retained. Grouping/sorting/reset actions,
+2000-node search, personal name/order persistence, rotation and Activity recreation
+passed in four designs times LIGHT/DARK. IOS light controls and OneUI dark landscape
+were visually inspected. This is isolated API35 x86_64 UI evidence, not physical
+ARM64, large-font/accessibility completeness or a performance benchmark. No VPN
+started; this UI and diagnostic-context fix are not in published0.2.56 yet.

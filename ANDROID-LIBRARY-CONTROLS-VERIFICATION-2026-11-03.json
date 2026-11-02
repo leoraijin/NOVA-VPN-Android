@@ -1,0 +1,26 @@
+{
+  "run": 41525371517,
+  "sourceCommit": "0990fe42c1c4e4042617e1c4aa4dd7cfa9577f0c",
+  "artifactId": 13179129478,
+  "artifactSha256": "8dd80a40a887c8763e3abac494c0748f5d65a6b1ecd8f4dfbe4500bb30742b5c",
+  "appearances": 8,
+  "syntheticProfiles": 2000,
+  "screenshots": 32,
+  "passed": [
+    "grouping dropdown change and restore",
+    "sorting dropdown selection",
+    "filter reset",
+    "personal name/order encrypted persistence",
+    "search and case folding",
+    "landscape rotation",
+    "Activity recreation",
+    "unchanged selected profile",
+    "no VPN started"
+  ],
+  "visuallyInspected": [
+    "IOS_LIQUID_GLASS-LIGHT-controls",
+    "ONE_UI-DARK-landscape"
+  ],
+  "scope": "API35 x86_64 isolated preview; four designs times two themes. Not physical ARM64, full accessibility, large-font matrix or performance benchmark.",
+  "includedInPublished0256": false
+}
