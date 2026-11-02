@@ -488,3 +488,23 @@ showed the expanded card below the viewport. Only the harness scroll was fixed.
 Production inputs app/src/main, app/build.gradle.kts and settings.gradle.kts have
 no changes since APK source commit 5c95879972722fcb59574fa7522f62cf35369a70.
 These checks permit this incremental release; full Android/Windows plans remain open.
+
+## Incremental release 0.2.55 — published and re-downloaded
+
+https://github.com/leoraijin/NOVA-VPN-Android/releases/tag/v0.2.55 is published,
+non-draft, non-prerelease and verified as latest. Release tag points to exact APK
+source commit 5c95879972722fcb59574fa7522f62cf35369a70; later main commits contain
+acceptance tools/documentation. All six uploaded asset sizes/digests matched local
+files. Source ZIP is from the APK code commit; release notes carry newer evidence.
+
+Public APK was downloaded independently after publication. SHA256 matched
+60571ad84bf834a8582852be6de487936bfb9cb95c7d13a10ff7441d82e81925;
+apksigner verify passed with original signer
+7abeb400a6f16c0adf6c127027f2bdd205ce79f558c53f631d41083ecca24626.
+aapt confirmed package com.nova.vpn.android, versionCode57/versionName0.2.55,
+ARM64 only, no application-debuggable flag. Local publication receipt resides in
+outputs/release-0.2.55/PUBLICATION.json outside the repository.
+
+This closes this fix's main/stable-release/redownload gate. Physical gRPC reference,
+remaining full Android seven-part acceptance and Windows scope are still open.
+No phone or installed Windows VPN was modified during this publication.
