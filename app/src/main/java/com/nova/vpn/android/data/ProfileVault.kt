@@ -36,6 +36,13 @@ class ProfileVault(context: Context) {
         next
     }
 
+    /** Remove sources too, so scheduled or already-running refreshes cannot restore servers. */
+    internal fun deleteAllConfigurations() = synchronized(lock) {
+        readLocked() // Respect recovery/corruption guards before replacing user data.
+        writeLocked(ProfileSnapshot())
+        invalidatePendingUpdates()
+    }
+
     private fun readLocked(): ProfileSnapshot {
         StoreRecoveryGuard.beforeAccess(recoveryContext)
         if (!file.baseFile.exists() && !File(file.baseFile.path + ".bak").exists()) return ProfileSnapshot()

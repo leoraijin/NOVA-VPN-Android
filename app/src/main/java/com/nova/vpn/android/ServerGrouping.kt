@@ -49,6 +49,7 @@ internal fun ServersPage(
     error: String?, shareStatus: String?, shareProfileId: String?, transferBusy: Boolean,
     onAdd: () -> Unit, onSelect: (String) -> Unit, onSendToWatch: (ImportedProfile) -> Unit,
     onDelete: (ImportedProfile) -> Unit,
+    onDeleteAll: () -> Unit,
     onToggleFavorite: (String) -> Unit,
     onOpenSubscriptions: () -> Unit,
     onChooseBest: (List<ImportedProfile>) -> Unit
@@ -163,6 +164,11 @@ internal fun ServersPage(
             TextButton(onClick = { query = ""; favoritesOnly = false; chosen = null }) { Text("Сбросить") }
           }
             TextButton(onClick = onOpenSubscriptions) { Text("Подписки") }
+        }
+        TextButton(onClick = onDeleteAll, enabled = profiles.isNotEmpty() || snapshot?.subscriptions?.isNotEmpty() == true,
+            modifier = Modifier.padding(horizontal = 16.dp)) {
+            Text("Удалить все конфиги VPN", color = if (profiles.isNotEmpty() || snapshot?.subscriptions?.isNotEmpty() == true)
+                MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface.copy(alpha = .38f))
         }
         Text("Найдено: ${visible.size} из ${profiles.size}", modifier = Modifier.padding(horizontal = 16.dp))
         FilterChip(selected = autoOptions.enabled, enabled = autoOptions.enabled || visible.isNotEmpty(),

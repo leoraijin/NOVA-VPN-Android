@@ -283,6 +283,8 @@ private fun NovaAndroidApp(
     var profileShareId by remember { mutableStateOf<String?>(null) }
     var profileTransferBusy by remember { mutableStateOf(false) }
     var profileToDelete by remember { mutableStateOf<ImportedProfile?>(null) }
+    var showDeleteAll by remember { mutableStateOf(false) }
+    var deletingAll by remember { mutableStateOf(false) }
     var importing by remember { mutableStateOf(false) }
     var routing by remember { mutableStateOf(routingStore.load()) }
     var routingDocument by remember { mutableStateOf(routingStore.loadPresets()) }
@@ -862,6 +864,7 @@ private fun NovaAndroidApp(
                                     .onFailure { profileTransferBusy = false; profileShareStatus = it.message ?: "Не удалось подготовить профиль для часов." }
                             },
                             onDelete = { profileToDelete = it; profileError = null },
+                            onDeleteAll = { showDeleteAll = true; profileError = null },
                             onToggleFavorite = { id ->
                                 scope.launch {
                                     runCatching { withContext(Dispatchers.IO) {
@@ -1107,6 +1110,61 @@ private fun NovaAndroidApp(
                         }) { Text("Больше не показывать") }
                     }
                 }
+            )
+        }
+
+        if (showDeleteAll) {
+            AlertDialog(
+                onDismissRequest = { if (!deletingAll) showDeleteAll = false },
+                title = { Text("Удалить все конфиги VPN?") },
+                text = { Text(if (deletingAll) "Удаляем конфиги…" else
+                    "Все серверы и источники подписок будут удалены с этого устройства. VPN отключится. " +
+                    "Чтобы вернуть серверы, потребуется импортировать их заново. Настройки приложения и маршрутизации сохранятся.") },
+                confirmButton = {
+                    TextButton(enabled = !deletingAll, onClick = {
+                        if (!deletingAll) {
+                            deletingAll = true
+                            reconnectJob?.cancel()
+                            serverChecks.reset()
+                            diagnosticChecks.reset()
+                            pendingVpnConfiguration = null
+                            pendingVpnRequest = null
+                            scope.launch(kotlinx.coroutines.NonCancellable) {
+                                val pause = AutomaticProbePause.acquire()
+                                try {
+                                    runCatching {
+                                        withContext(Dispatchers.IO) {
+                                            AutoServerSettingsStore(context).use { it.save(false, emptySet()) }
+                                        }
+                                        // Invalidate prepared/consent requests even if the tunnel is already idle.
+                                        VpnUserRequests.stop(context)
+                                        withContext(Dispatchers.IO) { vault.deleteAllConfigurations() }
+                                    }.onSuccess {
+                                        profiles = emptyList()
+                                        selectedProfileId = ""
+                                        profileShareStatus = null
+                                        profileShareId = null
+                                        connectError = null
+                                        val selectionCleared = withContext(Dispatchers.IO) {
+                                            runCatching { selectedProfileStore.clear() }.isSuccess
+                                        }
+                                        profileError = if (selectionCleared) null else
+                                            "Конфиги удалены, но не удалось сбросить сохранённый выбор сервера."
+                                        runCatching { SubscriptionScheduling.request(context, emptyList(), force = true) }
+                                        Toast.makeText(context, "Все конфиги VPN удалены", Toast.LENGTH_SHORT).show()
+                                    }.onFailure {
+                                        profileError = "Не удалось удалить конфиги. Проверьте хранилище и повторите попытку."
+                                    }
+                                } finally {
+                                    pause.close()
+                                    deletingAll = false
+                                    showDeleteAll = false
+                                }
+                            }
+                        }
+                    }) { Text("Удалить всё", color = MaterialTheme.colorScheme.error) }
+                },
+                dismissButton = { TextButton(enabled = !deletingAll, onClick = { showDeleteAll = false }) { Text("Отмена") } }
             )
         }
 

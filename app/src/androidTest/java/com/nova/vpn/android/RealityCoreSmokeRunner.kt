@@ -14,6 +14,8 @@ import kotlin.concurrent.thread
 
 /** Synthetic fixtures by default; liveSubscription is an explicit opt-in with one-use local input. */
 class RealityCoreSmokeRunner : Instrumentation() {
+    private var deleteAllStoreOnly = false
+    private var deleteAllOnly = false
     private var liveSubscription = false
     private var probeUseNetworkCallbacks = true
     private var lastProbeNetworkHandle = 0L
@@ -52,6 +54,8 @@ class RealityCoreSmokeRunner : Instrumentation() {
     private var serverLibraryTheme = ThemeMode.DARK
     private var diagnosticsTheme = ThemeMode.LIGHT
     override fun onCreate(arguments: Bundle?) {
+        deleteAllStoreOnly = arguments?.getString("deleteAllStoreOnly") == "true"
+        deleteAllOnly = arguments?.getString("deleteAllOnly") == "true"
         liveSubscription = arguments?.getString("liveSubscription") == "true"
         transferCrashPhase = arguments?.getString("transferCrashPhase")
         subscriptionSchedulePhase = arguments?.getString("subscriptionSchedulePhase")
@@ -110,6 +114,20 @@ class RealityCoreSmokeRunner : Instrumentation() {
         super.onCreate(arguments); start()
     }
     override fun onStart() {
+        if (deleteAllOnly || deleteAllStoreOnly) {
+            val result = Bundle()
+            try {
+                if (deleteAllStoreOnly) DeleteAllProfilesSmoke.runStore(this) else DeleteAllProfilesSmoke.run(this)
+                result.putString("stream", if (deleteAllStoreOnly)
+                    "PASS delete all store: encrypted persistence, late HTTP 200/304/401, generation boundary, corruption guard, idempotence, preserved settings\n"
+                    else "PASS delete all configurations: cancel, encrypted persistence, late refresh, request invalidation, preserved settings, corruption guard, reopen\n")
+                finish(Activity.RESULT_OK, result)
+            } catch (error: Throwable) {
+                result.putString("stream", "FAIL delete all configurations: ${error.javaClass.simpleName}: ${error.message}\n")
+                finish(Activity.RESULT_CANCELED, result)
+            }
+            return
+        }
         if (liveSubscription) {
             val result = Bundle()
             try {
