@@ -180,8 +180,10 @@ internal object TransferCrashSmoke {
                     }
                     check(RestoreRecoveryState.problem.value == null && find(ui.rootInActiveWindow, "Нужно восстановить данные") == null)
                     check(!journal.exists() && !VpnRuntime.state.value.connecting && !VpnRuntime.state.value.connected)
-                    check(comparable(FullTransfer.read(FullTransfer.export(context, PASSWORD), PASSWORD)) ==
-                        comparable(FullTransfer.read(original.readText(), PASSWORD)))
+                    val actual = JSONObject(comparable(FullTransfer.read(FullTransfer.export(context, PASSWORD), PASSWORD)))
+                    val expected = JSONObject(comparable(FullTransfer.read(original.readText(), PASSWORD)))
+                    val differences = differentPaths(expected, actual)
+                    check(differences.isEmpty()) { "Recovery snapshot differs at: ${differences.take(20).joinToString()}" }
                 } finally {
                     recoveryWork?.let { androidx.work.WorkManager.getInstance(context).cancelWorkById(it).result.get(5, java.util.concurrent.TimeUnit.SECONDS) }
                     if (journal.exists() && validJournal.exists()) java.io.FileOutputStream(journal).use {
@@ -371,6 +373,20 @@ internal object TransferCrashSmoke {
         }
     }
 
+    /** Synthetic fixture diagnostics: paths only, never exported values or credentials. */
+    private fun differentPaths(expected: Any?, actual: Any?, path: String = "root"): List<String> {
+        if (expected is JSONObject && actual is JSONObject) {
+            return (expected.keys().asSequence().toSet() + actual.keys().asSequence().toSet()).sorted().flatMap { key ->
+                if (!expected.has(key) || !actual.has(key)) listOf("$path.$key")
+                else differentPaths(expected.get(key), actual.get(key), "$path.$key")
+            }
+        }
+        if (expected is JSONArray && actual is JSONArray) {
+            if (expected.length() != actual.length()) return listOf("$path.length")
+            return (0 until expected.length()).flatMap { differentPaths(expected.get(it), actual.get(it), "$path[$it]") }
+        }
+        return if (canonical(expected) == canonical(actual)) emptyList() else listOf(path)
+    }
     private fun comparable(document: JSONObject): String {
         val platforms = document.getJSONObject("platforms")
         platforms.put("android", JSONObject(platforms.getString("android")))
