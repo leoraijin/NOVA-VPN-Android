@@ -403,3 +403,23 @@ Candidate 0.2.55 / code57 is being prepared for this fix. Stable APK remains 0.2
 final package/signature/update acceptance. The real gRPC reference is still awaiting direct
 human approval after automatic approval review rejected the device command; no retry or
 indirect device operation was performed. All broader plan requirements retain their scope.
+## Exact signed APK installation/update acceptance — prepared
+
+Candidate 0.2.55 APK is retained in an unpublished draft release for cloud verification;
+stable/latest remains 0.2.54. Exact APK SHA-256 is
+60571ad84bf834a8582852be6de487936bfb9cb95c7d13a10ff7441d82e81925, source commit
+5c95879972722fcb59574fa7522f62cf35369a70, original signer and all four ARM64 native
+entries verified locally. app code57 is not a declaration that the full plan is complete.
+
+android-release-upgrade.yml and Verify-ReleaseUpgrade.py will download this exact draft
+asset and pinned released 0.2.52/0.2.54 APKs, verify all digests/signers, and attempt an
+API35 Google APIs emulator with advertised arm64-v8a compatibility. No ABI forcing or
+repackaging is allowed. Only GITHUB_ACTIONS plus emulator serial/qemu-property checks
+allow the fixture; no local emulator or phone is used. Native-bridge emulation does not
+count as physical ARM64/TUN/gRPC acceptance.
+
+The synthetic fixture seeds only test preferences/routes, imports a synthetic VLESS key
+through the actual UI, and checks unchanged UID/private bytes across package installation,
+then successful vault decryption, selected profile, stored routes and 0.2.54 favorite after
+launch. A fresh candidate install must show an empty catalog. No VPN start permission is
+granted and no VPN connection is attempted. These phases are prepared, not yet passed.

@@ -1,0 +1,80 @@
+name: Exact release APK upgrade acceptance
+on:
+  workflow_dispatch:
+    inputs:
+      candidate_asset_id:
+        description: Draft asset containing the exact signed candidate APK
+        type: string
+        required: true
+        default: '702644741'
+      candidate_sha256:
+        description: SHA-256 verified locally before the draft upload
+        type: string
+        required: true
+        default: '60571ad84bf834a8582852be6de487936bfb9cb95c7d13a10ff7441d82e81925'
+permissions:
+  contents: read
+concurrency:
+  group: release-upgrade-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  upgrade:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
+          log-accepted-android-sdk-licenses: false
+      - name: Fetch and verify exact signed APKs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ASSET_ID: ${{ inputs.candidate_asset_id }}
+          CANDIDATE_SHA: ${{ inputs.candidate_sha256 }}
+        run: |
+          set -euo pipefail
+          [[ "$ASSET_ID" =~ ^[0-9]+$ ]]
+          [[ "$CANDIDATE_SHA" =~ ^[a-f0-9]{64}$ ]]
+          mkdir -p work/apks work/acceptance
+          python3 -m py_compile tools/Verify-ReleaseUpgrade.py
+          curl -fLsS --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/octet-stream' "https://api.github.com/repos/${{ github.repository }}/releases/assets/$ASSET_ID" -o work/apks/candidate.apk
+          curl -fLsS --retry 3 https://github.com/leoraijin/NOVA-VPN-Android/releases/download/v0.2.52/NOVA-VPN-Android-0.2.52-arm64-optimized.apk -o work/apks/0.2.52.apk
+          curl -fLsS --retry 3 https://github.com/leoraijin/NOVA-VPN-Android/releases/download/v0.2.54/NOVA-VPN-Android-0.2.54-arm64-optimized.apk -o work/apks/0.2.54.apk
+          python3 - <<'PY'
+          import hashlib, os, pathlib, subprocess
+          expected = {'candidate.apk': os.environ['CANDIDATE_SHA'],
+                      '0.2.52.apk': 'dbbaff9bcb63b248f2abe869eb30f552ac308cd7d3bed1e1e2138cbe4a4a008b',
+                      '0.2.54.apk': '44e5277f2b2aa63294eecdc5a0ef7d8cba375d9a1743ebca6debef73c3c9c274'}
+          signer = '7abeb400a6f16c0adf6c127027f2bdd205ce79f558c53f631d41083ecca24626'
+          for name, digest in expected.items():
+              path = pathlib.Path('work/apks') / name
+              assert hashlib.sha256(path.read_bytes()).hexdigest() == digest, name
+              result = subprocess.check_output([os.environ['ANDROID_HOME'] + '/build-tools/35.0.0/apksigner', 'verify', '--print-certs', str(path)], text=True)
+              assert signer in result, name
+          print('PASS all three exact APK digests and original signer')
+          PY
+      - name: Enable KVM in disposable runner
+        run: sudo chmod 666 /dev/kvm
+      - name: Check exact package install and data-preserving updates
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_2
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none -memory 2048
+          disable-animations: true
+          script: python3 tools/Verify-ReleaseUpgrade.py --adb "$ANDROID_HOME/platform-tools/adb" --serial emulator-5554 --apks work/apks --work work/acceptance/result
+      - name: Retain acceptance evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: exact-apk-upgrade-evidence
+          path: work/acceptance/
+          if-no-files-found: warn
+          retention-days: 14
