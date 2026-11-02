@@ -188,7 +188,12 @@ internal object DiagnosticsUiSmoke {
                     saveReport(requireNotNull(text), json = false)
                 }
                 else {
-                    SystemClock.sleep(500)
+                    val pickerDeadline = SystemClock.elapsedRealtime() + 10_000
+                    while (ui.rootInActiveWindow?.packageName?.toString()?.endsWith(".documentsui") != true &&
+                        SystemClock.elapsedRealtime() < pickerDeadline) SystemClock.sleep(100)
+                    check(ui.rootInActiveWindow?.packageName?.toString()?.endsWith(".documentsui") == true) {
+                        "Document picker was not visible before cancelling export"
+                    }
                     check(ui.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK))
                 }
                 waitFor("Закрыть")
