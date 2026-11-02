@@ -207,7 +207,7 @@ class RealityCoreSmokeRunner : Instrumentation() {
                 result.putString("stream", "PASS transfer crash phase: $phase\n")
                 finish(Activity.RESULT_OK, result)
             } catch (error: Throwable) {
-                result.putString("stream", "FAIL transfer crash phase $phase: ${error.javaClass.simpleName}: ${error.message}\n")
+                result.putString("stream", "FAIL transfer crash phase $phase: ${error.javaClass.simpleName}: ${error.message}\n${error.stackTraceToString().lineSequence().take(8).joinToString("\n")}\n")
                 finish(Activity.RESULT_CANCELED, result)
             }
             return

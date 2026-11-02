@@ -71,4 +71,6 @@ try:
         'synthetic_data_only': True, 'physical_device_used': False,
     }, indent=2) + '\n', encoding='utf-8')
 finally:
+    for name in ('restore-recovery-error.png', 'restore-recovery-missing.png'):
+        adb('pull', f'/sdcard/Android/data/{package}/files/{name}', str(args.work / name), timeout=30)
     adb('shell', 'am', 'force-stop', package, timeout=30)
