@@ -1,11 +1,18 @@
-﻿param(
+param(
     [string] $AdbPath = 'adb',
     [string] $LogDirectory,
     [ValidateSet('com.nova.vpn.android.usbtest.realitypreview','com.nova.vpn.android.usbtest.completionpreview')]
     [string] $Package = 'com.nova.vpn.android.usbtest.realitypreview',
+    [string] $DeviceSerial,
+    [string] $ReservationFile = $env:NOVA_DEVICE_RESERVATION,
     [switch] $BypassOnly
 )
 $ErrorActionPreference = 'Stop'
+if ($ReservationFile) {
+    if (-not $DeviceSerial) { throw 'DeviceSerial is required when using a shared-device reservation.' }
+    & (Join-Path $PSScriptRoot 'Assert-DeviceReservation.ps1') -ReservationFile $ReservationFile -DeviceSerial $DeviceSerial
+}
+$selector = if ($DeviceSerial) { @('-s', $DeviceSerial) } else { @('-d') }
 $source = Split-Path $PSScriptRoot -Parent
 if (-not $LogDirectory) { $LogDirectory = Join-Path $source 'build/usb-smoke' }
 New-Item -ItemType Directory -Path $LogDirectory -Force | Out-Null
@@ -17,16 +24,16 @@ if ($metadata.applicationId -ne $package) {
 # these two synthetic test packages and granting their test VPN permission.
 foreach ($apk in @('app/build/outputs/apk/realitypreview/app-arm64-v8a-realitypreview.apk',
                    'app/build/outputs/apk/androidTest/realitypreview/app-realitypreview-androidTest.apk')) {
-    & $AdbPath -d install -r (Join-Path $source $apk)
+    & $AdbPath @selector install -r (Join-Path $source $apk)
     if ($LASTEXITCODE) { throw 'Test APK installation failed' }
 }
-& $AdbPath -d shell appops set $package ACTIVATE_VPN allow
+& $AdbPath @selector shell appops set $package ACTIVATE_VPN allow
 if ($LASTEXITCODE) { throw 'Test VPN authorization failed' }
-& $AdbPath -d shell pm grant $package android.permission.POST_NOTIFICATIONS
+& $AdbPath @selector shell pm grant $package android.permission.POST_NOTIFICATIONS
 if ($LASTEXITCODE) { throw 'Test notification permission failed' }
 $log = Join-Path $LogDirectory ('usb-smoke-' + (Get-Date -Format 'yyyyMMdd-HHmmss') + '.txt')
 try {
-    $arguments = @('-d', 'shell', 'am', 'instrument', '-w', '-r')
+    $arguments = @($selector) + @('shell', 'am', 'instrument', '-w', '-r')
     if ($BypassOnly) { $arguments += @('-e', 'bypassVisibilityOnly', 'true') }
     $arguments += ($package + '.test/com.nova.vpn.android.RealityCoreSmokeRunner')
     & $AdbPath @arguments |
@@ -38,6 +45,6 @@ try {
     }
     'USB VPN smoke: PASS'
 } finally {
-    & $AdbPath -d shell am force-stop $package
-    & $AdbPath -d shell am force-stop ($package + '.test')
+    & $AdbPath @selector shell am force-stop $package
+    & $AdbPath @selector shell am force-stop ($package + '.test')
 }
