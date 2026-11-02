@@ -694,3 +694,19 @@ This is stronger than earlier unique-basename guessing, but remains object-name
 correspondence, not cryptographic binary/source equivalence or a build attestation.
 Generated source contents, all other ABIs, final linked NOTICE, and independent
 Cronet C++ rebuild comparison remain open. Production native pins are unchanged.
+
+## Actual compiler dependency collection — prepared, not yet CI-verified
+
+Collect-CronetDependencies.py now preserves the raw Ninja dependency database and
+per-object dependency lists, hashes existing files contained in the restored
+source tree, and reports stale records. Paths outside that tree are classified
+without reading their contents. Unrecognized records/count mismatches fail closed.
+Local parser checks covered multiple objects, spaces in paths, stale entries,
+and rejection of empty/orphan/malformed/count-mismatched input.
+
+The manual Cronet workflow captures this evidence after an ARM64 build attempt,
+including failed builds when .ninja_deps exists. Run41518658390 was already running
+on the earlier workflow and remains unchanged; no duplicate was dispatched.
+The new collector has not run in Linux CI yet. Ninja records can include host and
+generator objects; intersection with archive members, header origin mapping and
+final linked NOTICE remain open. No production binaries were changed.

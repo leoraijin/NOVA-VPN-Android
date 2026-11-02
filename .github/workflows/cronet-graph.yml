@@ -30,6 +30,16 @@ jobs:
             python3 native/xhttp/build/Generate-CronetGraph.py --source work/cronet-tree --work "work/cronet-evidence/graph-$cpu" --cpu "$cpu"
           done
           python3 native/xhttp/build/Generate-CronetGraph.py --source work/cronet-tree --work work/cronet-evidence/graph-arm64 --cpu arm64 --rebuild
+      - name: Capture actual ARM64 compiler dependencies
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if test -f work/cronet-tree/src/out/cronet-android-arm64/.ninja_deps; then
+            python3 native/xhttp/build/Collect-CronetDependencies.py --source work/cronet-tree/src --out work/cronet-tree/src/out/cronet-android-arm64 --output work/cronet-evidence/compiler-dependencies
+          else
+            echo 'No ARM64 Ninja dependency database was produced'
+          fi
       - name: Retain graph attempt evidence
         if: always()
         uses: actions/upload-artifact@v4
