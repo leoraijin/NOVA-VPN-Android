@@ -2,11 +2,10 @@ name: Exact release APK upgrade acceptance
 on:
   workflow_dispatch:
     inputs:
-      candidate_asset_id:
-        description: Draft asset containing the exact signed candidate APK
+      candidate_url:
+        description: Short-lived read-only GitHub CDN URL for the exact candidate APK
         type: string
         required: true
-        default: '702644741'
       candidate_sha256:
         description: SHA-256 verified locally before the draft upload
         type: string
@@ -23,6 +22,8 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -33,16 +34,34 @@ jobs:
           log-accepted-android-sdk-licenses: false
       - name: Fetch and verify exact signed APKs
         env:
-          GH_TOKEN: ${{ github.token }}
-          ASSET_ID: ${{ inputs.candidate_asset_id }}
           CANDIDATE_SHA: ${{ inputs.candidate_sha256 }}
         run: |
           set -euo pipefail
-          [[ "$ASSET_ID" =~ ^[0-9]+$ ]]
           [[ "$CANDIDATE_SHA" =~ ^[a-f0-9]{64}$ ]]
           mkdir -p work/apks work/acceptance
           python3 -m py_compile tools/Verify-ReleaseUpgrade.py
-          curl -fLsS --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/octet-stream' "https://api.github.com/repos/${{ github.repository }}/releases/assets/$ASSET_ID" -o work/apks/candidate.apk
+          python3 - <<'PY'
+          import json, os, pathlib, shutil, urllib.parse, urllib.request
+          url = json.loads(pathlib.Path(os.environ['GITHUB_EVENT_PATH']).read_text())['inputs']['candidate_url']
+          def allowed(value):
+              parsed = urllib.parse.urlsplit(value)
+              return (len(value) <= 8192 and not any(ord(c) < 32 or ord(c) == 127 for c in value) and
+                      parsed.scheme == 'https' and parsed.hostname in ('release-assets.githubusercontent.com', 'objects.githubusercontent.com') and
+                      parsed.username is None and parsed.password is None and parsed.port in (None, 443) and
+                      parsed.path.startswith('/github-production-release-asset'))
+          if not allowed(url):
+              raise RuntimeError('Invalid scoped candidate download URL')
+          print('::add-mask::' + url, flush=True)
+          class ScopedRedirect(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, req, fp, code, msg, headers, newurl):
+                  if not allowed(newurl):
+                      raise RuntimeError('Unexpected candidate redirect')
+                  return super().redirect_request(req, fp, code, msg, headers, newurl)
+          with urllib.request.build_opener(ScopedRedirect()).open(url, timeout=120) as response:
+              with pathlib.Path('work/apks/candidate.apk').open('wb') as output:
+                  shutil.copyfileobj(response, output)
+          print('Downloaded exact candidate through scoped read-only URL')
+          PY
           curl -fLsS --retry 3 https://github.com/leoraijin/NOVA-VPN-Android/releases/download/v0.2.52/NOVA-VPN-Android-0.2.52-arm64-optimized.apk -o work/apks/0.2.52.apk
           curl -fLsS --retry 3 https://github.com/leoraijin/NOVA-VPN-Android/releases/download/v0.2.54/NOVA-VPN-Android-0.2.54-arm64-optimized.apk -o work/apks/0.2.54.apk
           python3 - <<'PY'

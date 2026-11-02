@@ -423,3 +423,10 @@ through the actual UI, and checks unchanged UID/private bytes across package ins
 then successful vault decryption, selected profile, stored routes and 0.2.54 favorite after
 launch. A fresh candidate install must show an empty catalog. No VPN start permission is
 granted and no VPN connection is attempted. These phases are prepared, not yet passed.
+Automatic approval review rejected widening the CI token to contents:write for draft access;
+that attempted command did not run. The accepted design keeps contents:read and uses a
+short-lived read-only GitHub CDN URL scoped to this one APK, obtained locally with existing
+release access. No PAT/account token enters CI. The URL is passed only in dispatch event
+data, masked before network use, checked for HTTPS/GitHub release-asset hosts/path and
+redirects; the APK digest/signer remain mandatory. It is not saved in reports or artifacts.
+No repository/release write permission or stable publication is introduced by this fix.
