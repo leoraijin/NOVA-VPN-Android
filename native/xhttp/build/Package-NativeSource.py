@@ -21,6 +21,7 @@ from NativeProvenance import MAX_DOCUMENTS, MAX_FILE_BYTES, MAX_TOTAL_BYTES, val
 parser = argparse.ArgumentParser()
 parser.add_argument('--workspace', type=Path, required=True)
 parser.add_argument('--toolchain-root', type=Path, help='External workspace containing toolchain/go-1.25.5; module sources remain local')
+parser.add_argument('--core-source', type=Path, help='Separate checked native core checkout; base and exact delta guards remain mandatory')
 parser.add_argument('--android-source', type=Path, default=Path(__file__).resolve().parents[3], help='Android checkout supplying current helpers and provenance')
 parser.add_argument('--output', type=Path, required=True)
 parser.add_argument('--cronet-source', type=Path, required=True, help='Directory verified by Fetch-CronetSource.py')
@@ -33,11 +34,11 @@ external = args.cronet_source.resolve(strict=True)
 subprocess.run([sys.executable, str(android_source / 'native/xhttp/build/Fetch-CronetSource.py'),
                 '--output', str(external), '--verify-only'], check=True)
 external_verified = json.loads((external / 'verification.json').read_text(encoding='utf-8'))
-parts = root / 'work/native-source-package/parts'
-parts.mkdir(parents=True, exist_ok=True)
+parts = output.parent / (output.stem + '.parts')
+parts.mkdir(parents=True, exist_ok=False)
 output.parent.mkdir(parents=True, exist_ok=True)
-core = root / 'native-source/sing-box-lx'
-patch = root / 'source/native/xhttp/core-downlink.patch'
+core = args.core_source.resolve(strict=True) if args.core_source else root / 'native-source/sing-box-lx'
+patch = android_source / 'native/xhttp/core-downlink.patch'
 base = '20f89c2f4cb3f77acaf3daa063bd857a055a5259'
 patch_sha = 'cc2ed1a5cb930c8342c28eb4809e70f84df8990b8631f2fa963c61d50e0fa1e3'
 

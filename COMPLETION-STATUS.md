@@ -766,3 +766,19 @@ headers/generator origins and final linked NOTICE remain open. Full compressed
 per-unit mappings, candidate notices and generated hashes are retained publicly;
 receipt native/diagnostic-evidence/cronet-independent-rebuild-2026-11-03.json
 contains exact artifact/source/hash scope. No production native binary changed.
+
+
+## Native .4 archive preparation — fresh core source verified
+
+Current retained native-source/sing-box-lx has delta37ea56ca9fa6865f6faae56df14498d5ee84130fca51c7b446ead6c9afeaafac,
+while the checked .4 archive recipe requirescc2ed1a5cb930c8342c28eb4809e70f84df8990b8631f2fa963c61d50e0fa1e3.
+No archive was claimed from this mismatch. A separate local clone from base
+20f89c2f4cb3f77acaf3daa063bd857a055a5259 now reproduces the exact pinned .4 delta;
+the existing native directory is unchanged. Native source packager accepts an
+explicit --core-source while retaining base/delta guards and takes its patch
+from the selected Android checkout. Intermediate source parts now use a new
+output-specific directory rather than overwriting previous work parts.
+Only core+patch identity is verified here. Four submodules, fresh module graphs,
+matching AAR/build inputs, full new archive and restored-source build remain open.
+Historical archive transfer reports were read; missing newer candidates are not
+assumed recovered from older retained source packages.
