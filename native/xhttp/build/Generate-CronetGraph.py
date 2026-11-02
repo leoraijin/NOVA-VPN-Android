@@ -40,7 +40,7 @@ out = source / 'out/cronet-android-arm64'
 with (work / 'gn-gen.log').open('w') as output:
     subprocess.run([str(gn), 'gen', str(out), '--args=' + ' '.join(flags)], cwd=source,
                    stdout=output, stderr=subprocess.STDOUT, check=True, timeout=300)
-for kind, values in [('targets', ['*']), ('closure', ['//:cronet_static'])]:
+for kind, values in [('targets', ['*']), ('closure', ['//components/cronet:cronet_static'])]:
     with (work / (kind + '.json')).open('w') as output:
         subprocess.run([str(gn), 'desc', str(out), *values, '--format=json', '--all'],
                        cwd=source, stdout=output, stderr=subprocess.STDOUT, check=True, timeout=120)
