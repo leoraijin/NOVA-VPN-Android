@@ -1,0 +1,15 @@
+{
+  "abi": "armeabi-v7a",
+  "rebuiltSha256": "7987c5507b0f0bdf401b830ddaa4734b357f282fc1233aaa52973ffef9e9a5cc",
+  "publishedSha256": "7987c5507b0f0bdf401b830ddaa4734b357f282fc1233aaa52973ffef9e9a5cc",
+  "byteIdentical": true,
+  "generatedFilesInventoried": 1500,
+  "scope": "Independent publisher-source rebuild; equality is measured, not assumed",
+  "run": 41532602718,
+  "artifactId": 13184274008,
+  "artifactSha256": "51a7db087121e2eaaaec32997b01cfcd8d6c18bdbbbcfbbced8c0473b9e6b60a",
+  "targetObjectMultisetMatchesPublished": true,
+  "targetDependencyPathsWithoutHash": 0,
+  "uniqueTargetDependencyPaths": 7287,
+  "targetDependencyInventorySha256": "1676dc89bcd4295c11411bc735680b1ddc52a74d640b3643a2e28131c5c99083"
+}

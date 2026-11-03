@@ -1,0 +1,15 @@
+{
+  "abi": "arm64-v8a",
+  "rebuiltSha256": "3588acd27dfa992852ffb3225c3bddb1c65eaeea785ea4e3bfb1f927b65c8733",
+  "publishedSha256": "3588acd27dfa992852ffb3225c3bddb1c65eaeea785ea4e3bfb1f927b65c8733",
+  "byteIdentical": true,
+  "generatedFilesInventoried": 1500,
+  "scope": "Independent publisher-source rebuild; equality is measured, not assumed",
+  "run": 41532611988,
+  "artifactId": 13184109911,
+  "artifactSha256": "7c793c6c4ac4cd5c92359f4eeb20c018956f2bdc34ddeb6d04293bd782ea5ddc",
+  "targetObjectMultisetMatchesPublished": true,
+  "targetDependencyPathsWithoutHash": 0,
+  "uniqueTargetDependencyPaths": 7302,
+  "targetDependencyInventorySha256": "80b85db814d6092e20a0583d87945bb6931304c55e1b717af2b4d0d3bb844c00"
+}
