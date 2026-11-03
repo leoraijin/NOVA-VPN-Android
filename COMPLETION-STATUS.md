@@ -854,4 +854,10 @@ XHTTP modes over IPv4 and IPv6 through VpnService from a separate UID.
 Run 41590024639 reported PAGE_SIZE=16384 and established the VPN, then
 libbox aborted after a nil dereference in grpc-go v1.83.1 handleStream
 (server.go:1857). The images differ, so the comparison does not isolate
-page size as the cause. Runtime acceptance at 16 KiB remains open.
+page size as the cause.
+
+Run 41596556168 passed on the Android API 36 x86_64 Google APIs 16 KiB
+image. ADB reported PAGE_SIZE=16384. All four XHTTP modes passed IPv4
+and IPv6 echo over TUN from a separate UID, with instrumentation code -1.
+The pinned stable core and normal log stream were used in the isolated
+USB-test variant. The Android API 35 crashes remain unresolved.
