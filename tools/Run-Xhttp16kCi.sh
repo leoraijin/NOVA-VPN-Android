@@ -5,7 +5,7 @@ out=work/xhttp-16k
 mkdir -p "$out"
 page_size=$(adb shell getconf PAGE_SIZE | tr -d '\r')
 printf 'Android page size: %s\n' "$page_size" | tee "$out/page-size.log"
-test "$page_size" = 16384
+test "$page_size" = "${1:-16384}"
 curl -fsSL --retry 3 https://github.com/XTLS/Xray-core/releases/download/v26.10.21/Xray-linux-64.zip -o "$out/xray.zip"
 echo "0eec3ed4163c273d8c8bf821f7d219e257921cf584aa3fb970715e458e631978  $out/xray.zip" | sha256sum --check
 unzip -q "$out/xray.zip" xray -d "$out"
