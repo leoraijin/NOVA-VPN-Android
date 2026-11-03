@@ -832,3 +832,14 @@ record scope. Production native binaries unchanged. Large-font UI run41533032017
 passed both IOS themes then failed Material search because the test assumed an
 onscreen editable node; bounded normal scrolling was added, compiled, and retry
 41535584379 is running. No product bypass or weaker persistence assertion added.
+
+## Physical ARM64 XHTTP smoke
+
+TECNO KM4, Android API 35, isolated ARM64 USB test build from 4d77073.
+The local Xray fixture returned IPv4 and IPv6 echo traffic from a separate
+application UID through tun0 in packet-up, stream-up, stream-one, and auto
+modes. Android instrumentation completed with code -1.
+
+This run covered the local cleartext XHTTP fixture. The separate download
+path, Cronet-specific runtime behavior, physical network handover, and the
+live subscription import still require their own acceptance results.
