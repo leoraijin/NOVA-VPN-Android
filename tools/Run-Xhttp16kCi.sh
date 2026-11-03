@@ -11,12 +11,21 @@ echo "0eec3ed4163c273d8c8bf821f7d219e257921cf584aa3fb970715e458e631978  $out/xra
 unzip -q "$out/xray.zip" xray -d "$out"
 chmod +x "$out/xray"
 package=com.nova.vpn.android.usbtest.realitypreview
-adb install -r app/build/outputs/apk/realitypreview/app-x86_64-realitypreview.apk
-adb install -r app/build/outputs/apk/androidTest/realitypreview/app-realitypreview-androidTest.apk
+trap 'sleep 5; adb logcat -b all -d -v threadtime > "$out/android.log" || true; adb shell dumpsys activity exit-info "$package" > "$out/exit-info.log" || true; adb shell dumpsys dropbox --print SYSTEM_TOMBSTONE > "$out/tombstones.log" || true; adb shell am force-stop "$package" || true; adb reverse --remove tcp:38123 || true; if [[ -n ${fixture:-} ]]; then kill -INT "$fixture" 2>/dev/null || true; wait "$fixture" || true; fi' EXIT
+install_apk() {
+    for attempt in 1 2 3; do
+        if adb shell cmd package list packages android >/dev/null && adb install --no-streaming -r "$1"; then
+            return 0
+        fi
+        sleep 10
+    done
+    return 1
+}
+install_apk app/build/outputs/apk/realitypreview/app-x86_64-realitypreview.apk
+install_apk app/build/outputs/apk/androidTest/realitypreview/app-realitypreview-androidTest.apk
 adb shell appops set "$package" ACTIVATE_VPN allow
 python3 tools/Run-XhttpAndroidFixture.py --xray "$out/xray" --work "$out/fixture" --seconds 120 --probe-echo > "$out/fixture.log" 2>&1 &
 fixture=$!
-trap 'sleep 5; adb logcat -b all -d -v threadtime > "$out/android.log" || true; adb shell dumpsys activity exit-info "$package" > "$out/exit-info.log" || true; adb shell dumpsys dropbox --print SYSTEM_TOMBSTONE > "$out/tombstones.log" || true; adb shell am force-stop "$package" || true; adb reverse --remove tcp:38123 || true; kill -INT "$fixture" 2>/dev/null || true; wait "$fixture" || true' EXIT
 for attempt in {1..30}; do
     if grep -q ANDROID_XHTTP_FIXTURE_READY "$out/fixture.log"; then break; fi
     kill -0 "$fixture"
