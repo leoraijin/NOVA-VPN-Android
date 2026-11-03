@@ -85,7 +85,7 @@ jobs:
         if: inputs.xhttp_16k == true || inputs.xhttp_4k == true
         uses: reactivecircus/android-emulator-runner@v2
         with:
-          api-level: 35
+          api-level: ${{ inputs.xhttp_4k && '35' || '36' }}
           target: ${{ inputs.xhttp_4k && 'google_apis' || 'google_apis_ps16k' }}
           arch: x86_64
           profile: pixel_2
