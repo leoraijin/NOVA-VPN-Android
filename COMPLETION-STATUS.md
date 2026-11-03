@@ -846,3 +846,12 @@ for packet-up, stream-up, and auto. IPv4 and IPv6 echo from a separate UID
 traversed tun0 using a separate download pool. Instrumentation returned -1.
 Cronet-specific runtime behavior, physical network handover, and the live
 subscription import still require their own acceptance results.
+
+## Android x86_64 page-size runtime comparison
+
+GitHub Actions run 41591157301 reported PAGE_SIZE=4096 and passed all four
+XHTTP modes over IPv4 and IPv6 through VpnService from a separate UID.
+Run 41590024639 reported PAGE_SIZE=16384 and established the VPN, then
+libbox aborted after a nil dereference in grpc-go v1.83.1 handleStream
+(server.go:1857). The images differ, so the comparison does not isolate
+page size as the cause. Runtime acceptance at 16 KiB remains open.
