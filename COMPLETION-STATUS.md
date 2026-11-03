@@ -861,3 +861,10 @@ image. ADB reported PAGE_SIZE=16384. All four XHTTP modes passed IPv4
 and IPv6 echo over TUN from a separate UID, with instrumentation code -1.
 The pinned stable core and normal log stream were used in the isolated
 USB-test variant. The Android API 35 crashes remain unresolved.
+
+## Physical Wi-Fi recovery on TECNO KM4
+
+Both sing-box and Reality passed two Wi-Fi loss/return cycles, retaining
+the same TUN and restoring separate-UID IPv4 and IPv6 echo. Manual stop
+cancelled recovery on both engines. The phone reported no SIM in either
+slot, so cellular handover remains open.
