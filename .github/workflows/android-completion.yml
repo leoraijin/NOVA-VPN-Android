@@ -3,6 +3,11 @@ on:
   push:
     branches: ['codex/android-completion-20261025']
   workflow_dispatch:
+    inputs:
+      xhttp_16k:
+        description: Run XHTTP through TUN on the Android 16 KiB image
+        type: boolean
+        default: false
 permissions:
   contents: read
 concurrency:
@@ -31,6 +36,7 @@ jobs:
           mkdir -p work/completion
           bash gradlew --no-daemon -PnovaOfficialRepositoriesOnly=true '-Dorg.gradle.jvmargs=-Xmx4g -Dfile.encoding=UTF-8' :app:testOptimizedUnitTest :app:assembleRealitypreview :app:assembleRealitypreviewAndroidTest -PnovaRealitySmoke -PnovaUsbTest -PnovaRealityAbi=x86_64 2>&1 | tee work/completion/build.log
       - name: Cache isolated Android system image
+        if: inputs.xhttp_16k != true
         uses: actions/cache@v4
         with:
           path: /usr/local/lib/android/sdk/system-images/android-35/default/x86_64
@@ -38,6 +44,7 @@ jobs:
       - name: Enable KVM in isolated runner
         run: sudo chmod 666 /dev/kvm
       - name: Android WorkManager race and failure checks
+        if: inputs.xhttp_16k != true
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 35
@@ -47,6 +54,23 @@ jobs:
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none -memory 2048
           disable-animations: true
           script: bash tools/Run-ScheduleChecksCi.sh
+      - name: XHTTP TUN on Android 16 KiB
+        if: inputs.xhttp_16k == true
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis_ps16k
+          arch: x86_64
+          profile: pixel_2
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none -memory 2048
+          script: bash tools/Run-Xhttp16kCi.sh
+      - name: Retain XHTTP runtime evidence
+        if: always() && inputs.xhttp_16k == true
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-xhttp-16k-evidence
+          path: work/xhttp-16k/*.log
+          if-no-files-found: warn
       - name: Save verification evidence
         if: always()
         uses: actions/upload-artifact@v4
