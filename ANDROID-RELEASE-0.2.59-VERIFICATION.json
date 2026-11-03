@@ -1,0 +1,35 @@
+{
+  "release": "https://github.com/leoraijin/NOVA-VPN-Android/releases/tag/v0.2.59",
+  "source": "7e09d9434a5d663fdd6ecfb497a1c2b63b581ac6",
+  "upgradeRun": "https://github.com/leoraijin/NOVA-VPN-Android/actions/runs/41583417038",
+  "baselines": [
+    "0.2.52",
+    "0.2.54",
+    "0.2.55",
+    "0.2.56",
+    "0.2.57",
+    "0.2.58"
+  ],
+  "assets": [
+    {
+      "name": "app-arm64-v8a-optimized.apk",
+      "digest": "sha256:faff8dea9f41e910519b36c5e7874088109b38cc04ce2ed41d940fc8dccd4b34"
+    },
+    {
+      "name": "app-armeabi-v7a-optimized.apk",
+      "digest": "sha256:dc2adf00ee167eb26a454cdbfcb510eb1ddaa8a1cc0f24502491e048adf13482"
+    },
+    {
+      "name": "app-universal-optimized.apk",
+      "digest": "sha256:b58dfc56db6e6b25c49be05ac4ed594fb25bd8b0ff50bd7cb65700696d91eb95"
+    },
+    {
+      "name": "app-x86-optimized.apk",
+      "digest": "sha256:9344ac7287113e017eaa84f42148f88a0d333f2ea7df8944aca5e04e7d46fadd"
+    },
+    {
+      "name": "app-x86_64-optimized.apk",
+      "digest": "sha256:cce4a6e391aa85d516e7da42dea99c82924f9cb9cdaf2f03c8373186de088b31"
+    }
+  ]
+}
