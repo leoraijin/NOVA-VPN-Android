@@ -233,11 +233,9 @@ internal fun OneUIServers(profiles: List<ImportedProfile>, selectedId: String, s
     checks: ServerCheckState, onCheck: () -> Unit, onCancel: () -> Unit, onConnect: () -> Unit,
     error: String?, shareStatus: String?, shareId: String?, busy: Boolean, onAdd: () -> Unit,
     onSelect: (String) -> Unit, onWatch: (ImportedProfile) -> Unit, onDelete: (ImportedProfile) -> Unit) {
-    var query by rememberSaveable { mutableStateOf("") }
     var showMap by rememberSaveable { mutableStateOf(false) }
     val tutorial = LocalTutorialStep.current
     LaunchedEffect(tutorial) { if (tutorial == TutorialStep.Servers) showMap = true }
-    val visible = remember(profiles, query) { profiles.filter { it.name.contains(query, true) || it.protocol.contains(query, true) } }
     OneUIFrame("Серверы", "Сохранено профилей: ${profiles.size}", tutorialTargetIndex = if (tutorial == TutorialStep.Servers) 2 else 1) {
         item {
             OneUIGroup(TutorialStep.Import) {
@@ -251,19 +249,10 @@ internal fun OneUIServers(profiles: List<ImportedProfile>, selectedId: String, s
             }
         }
         error?.let { item { Text(it, Modifier.padding(12.dp), color = MaterialTheme.colorScheme.error) } }
-        if (profiles.isNotEmpty()) item {
-            TextField(query, { query = it }, Modifier.fillMaxWidth(), placeholder = { Text("Поиск серверов") },
-                leadingIcon = { Icon(Icons.Rounded.Search, null) }, singleLine = true, shape = RoundedCornerShape(24.dp),
-                trailingIcon = { if (query.isNotEmpty()) IconButton({ query = "" }) { Icon(Icons.Rounded.Close, "Очистить поиск") } },
-                colors = TextFieldDefaults.colors(focusedContainerColor = MaterialTheme.colorScheme.surface,
-                    unfocusedContainerColor = MaterialTheme.colorScheme.surface, focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent))
-        }
         if (profiles.isEmpty()) item {
             OneUIGroup { OneUIRow("Нет сохранённых серверов", "Добавьте конфигурацию вашего VPN-провайдера.") }
-        } else if (visible.isEmpty()) item {
-            OneUIGroup { OneUIRow("Ничего не найдено", "Измените запрос или очистите поиск.") }
         }
-        items(visible, key = { it.id }) { profile ->
+        items(profiles, key = { it.id }) { profile ->
             OneUIGroup {
                 Row(Modifier.fillMaxWidth().selectable(profile.id == selectedId, role = Role.RadioButton, onClick = { onSelect(profile.id) })
                     .heightIn(min = 76.dp).padding(start = 20.dp, end = 8.dp, top = 12.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
