@@ -16,7 +16,7 @@ adb install -r app/build/outputs/apk/androidTest/realitypreview/app-realityprevi
 adb shell appops set "$package" ACTIVATE_VPN allow
 python3 tools/Run-XhttpAndroidFixture.py --xray "$out/xray" --work "$out/fixture" --seconds 120 --probe-echo > "$out/fixture.log" 2>&1 &
 fixture=$!
-trap 'sleep 5; adb logcat -b all -d -v threadtime > "$out/android.log" || true; adb shell am force-stop "$package" || true; adb reverse --remove tcp:38123 || true; kill -INT "$fixture" 2>/dev/null || true; wait "$fixture" || true' EXIT
+trap 'sleep 5; adb logcat -b all -d -v threadtime > "$out/android.log" || true; adb shell dumpsys activity exit-info "$package" > "$out/exit-info.log" || true; adb shell dumpsys dropbox --print SYSTEM_TOMBSTONE > "$out/tombstones.log" || true; adb shell am force-stop "$package" || true; adb reverse --remove tcp:38123 || true; kill -INT "$fixture" 2>/dev/null || true; wait "$fixture" || true' EXIT
 for attempt in {1..30}; do
     if grep -q ANDROID_XHTTP_FIXTURE_READY "$out/fixture.log"; then break; fi
     kill -0 "$fixture"
