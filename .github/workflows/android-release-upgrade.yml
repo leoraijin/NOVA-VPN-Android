@@ -64,12 +64,14 @@ jobs:
           PY
           curl -fLsS --retry 3 https://github.com/leoraijin/NOVA-VPN-Android/releases/download/v0.2.52/NOVA-VPN-Android-0.2.52-arm64-optimized.apk -o work/apks/0.2.52.apk
           curl -fLsS --retry 3 https://github.com/leoraijin/NOVA-VPN-Android/releases/download/v0.2.54/NOVA-VPN-Android-0.2.54-arm64-optimized.apk -o work/apks/0.2.54.apk
+          curl -fLsS --retry 3 https://github.com/leoraijin/NOVA-VPN-Android/releases/download/v0.2.56/NOVA-VPN-Android-0.2.56-arm64-optimized.apk -o work/apks/0.2.56.apk
           curl -fLsS --retry 3 https://github.com/leoraijin/NOVA-VPN-Android/releases/download/v0.2.55/NOVA-VPN-Android-0.2.55-arm64-optimized.apk -o work/apks/0.2.55.apk
           python3 - <<'PY'
           import hashlib, os, pathlib, subprocess
           expected = {'candidate.apk': os.environ['CANDIDATE_SHA'],
                       '0.2.52.apk': 'dbbaff9bcb63b248f2abe869eb30f552ac308cd7d3bed1e1e2138cbe4a4a008b',
                       '0.2.54.apk': '44e5277f2b2aa63294eecdc5a0ef7d8cba375d9a1743ebca6debef73c3c9c274',
+                      '0.2.56.apk': 'baa2ad88a7db34f7e0b18ffc470adfca0e1017bf28d29dfc207787ca3b3ccec0',
                       '0.2.55.apk': '60571ad84bf834a8582852be6de487936bfb9cb95c7d13a10ff7441d82e81925'}
           signer = '7abeb400a6f16c0adf6c127027f2bdd205ce79f558c53f631d41083ecca24626'
           for name, digest in expected.items():
