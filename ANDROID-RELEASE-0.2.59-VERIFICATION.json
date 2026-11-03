@@ -31,5 +31,15 @@
       "name": "app-x86_64-optimized.apk",
       "digest": "sha256:cce4a6e391aa85d516e7da42dea99c82924f9cb9cdaf2f03c8373186de088b31"
     }
-  ]
+  ],
+  "pageAlignment": {
+    "zipalign16KiB": "passed for all five published APKs",
+    "elfLoadAlignmentBytes": {
+      "arm64-v8a": 16384,
+      "x86_64": 16384,
+      "armeabi-v7a-libbox": 4096,
+      "x86-libbox": 4096
+    },
+    "runtime16KiB": "unverified"
+  }
 }
