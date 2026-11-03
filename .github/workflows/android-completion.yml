@@ -62,7 +62,7 @@ jobs:
           target: google_apis_ps16k
           arch: x86_64
           profile: pixel_2
-          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none -memory 2048
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none -memory 4096
           script: bash tools/Run-Xhttp16kCi.sh
       - name: Retain XHTTP runtime evidence
         if: always() && inputs.xhttp_16k == true
