@@ -78,7 +78,6 @@ object SubscriptionFetcher {
         if (preferredAgent != null || !negotiate) return response
         fun usable(body: String) = runCatching { ProfileLinkParser.parseReport(body).profiles.size }.getOrDefault(0)
         val currentCount = usable(response.body)
-        if (currentCount == 0) return response
         val compatible = runCatching { checked("v2raytun/android") }.getOrNull() ?: return response
         return if (compatible.status == 200 && usable(compatible.body) > currentCount) compatible else response
     }

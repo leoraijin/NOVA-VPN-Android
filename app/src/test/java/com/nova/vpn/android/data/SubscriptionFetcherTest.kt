@@ -41,12 +41,13 @@ class SubscriptionFetcherTest {
         assertEquals(listOf("NOVA-VPN-Android", "v2raytun/android"), agents)
     }
 
-    @Test fun normalSubscriptionNeedsNoDeviceIdOrRetry() {
+    @Test fun unparseableDefaultResponseTriesCompatibleFormatWithoutDeviceId() {
         var calls = 0
-        assertEquals("response", SubscriptionFetcher.fetchWith(url, null) { _, _, actual ->
-            calls++; assertNull(actual); SubscriptionFetcher.Response("response")
+        val compatible = "vless://11111111-1111-1111-1111-111111111111@server.example:443#fixture"
+        assertEquals(compatible, SubscriptionFetcher.fetchWith(url, null) { _, _, actual ->
+            calls++; assertNull(actual); SubscriptionFetcher.Response(if (calls == 1) "response" else compatible)
         })
-        assertEquals(1, calls)
+        assertEquals(2, calls)
     }
 
     @Test fun noNetworkForLocalImportOrInvalidIdentity() {
