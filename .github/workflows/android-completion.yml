@@ -4,6 +4,10 @@ on:
     branches: ['codex/android-completion-20261025']
   workflow_dispatch:
     inputs:
+      preview_aar_url:
+        description: Scoped GitHub CDN URL for the pinned preview AAR
+        type: string
+        required: false
       xhttp_4k:
         description: Run the XHTTP TUN control on Android 4 KiB
         type: boolean
@@ -35,10 +39,21 @@ jobs:
           log-accepted-android-sdk-licenses: false
       - name: Compile and run unit checks
         shell: bash
+        env:
+          PREVIEW_AAR_URL: ${{ inputs.preview_aar_url }}
         run: |
-          set -o pipefail
+          set -euo pipefail
           mkdir -p work/completion
-          bash gradlew --no-daemon -PnovaOfficialRepositoriesOnly=true '-Dorg.gradle.jvmargs=-Xmx4g -Dfile.encoding=UTF-8' :app:testOptimizedUnitTest :app:assembleRealitypreview :app:assembleRealitypreviewAndroidTest -PnovaRealitySmoke -PnovaUsbTest -PnovaRealityAbi=x86_64 2>&1 | tee work/completion/build.log
+          extra=()
+          if [[ -n "$PREVIEW_AAR_URL" ]]; then
+            echo "::add-mask::$PREVIEW_AAR_URL"
+            [[ "$PREVIEW_AAR_URL" =~ ^https://(release-assets|objects)\.githubusercontent\.com/github-production-release-asset ]]
+            curl -fsS --proto '=https' "$PREVIEW_AAR_URL" -o work/completion/preview.aar
+            sha=c8a9981a684cc42c8a83e3b6d3a2839f08e1d91fd8f7b27c64e73bd87ce61583
+            echo "$sha  work/completion/preview.aar" | sha256sum -c
+            extra+=("-PnovaXhttpPreviewAar=$PWD/work/completion/preview.aar" "-PnovaXhttpPreviewSha256=$sha")
+          fi
+          bash gradlew "${extra[@]}" --no-daemon -PnovaOfficialRepositoriesOnly=true '-Dorg.gradle.jvmargs=-Xmx4g -Dfile.encoding=UTF-8' :app:testOptimizedUnitTest :app:assembleRealitypreview :app:assembleRealitypreviewAndroidTest -PnovaRealitySmoke -PnovaUsbTest -PnovaRealityAbi=x86_64 2>&1 | tee work/completion/build.log
       - name: Cache isolated Android system image
         if: inputs.xhttp_16k != true && inputs.xhttp_4k != true
         uses: actions/cache@v4
@@ -81,7 +96,7 @@ jobs:
         with:
           name: android-completion-schedule-evidence
           path: |
-            work/completion/
+            work/completion/*.log
             app/build/test-results/testOptimizedUnitTest/
           if-no-files-found: warn
           retention-days: 14
