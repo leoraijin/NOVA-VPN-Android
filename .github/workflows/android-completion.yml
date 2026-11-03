@@ -4,6 +4,10 @@ on:
     branches: ['codex/android-completion-20261025']
   workflow_dispatch:
     inputs:
+      skip_core_log_stream:
+        description: Isolate the VPN data path from the core log stream
+        type: boolean
+        default: false
       preview_aar_url:
         description: Scoped GitHub CDN URL for the pinned preview AAR
         type: string
@@ -40,11 +44,15 @@ jobs:
       - name: Compile and run unit checks
         shell: bash
         env:
+          SKIP_CORE_LOG_STREAM: ${{ inputs.skip_core_log_stream }}
           PREVIEW_AAR_URL: ${{ inputs.preview_aar_url }}
         run: |
           set -euo pipefail
           mkdir -p work/completion
           extra=()
+          if [[ "$SKIP_CORE_LOG_STREAM" == true ]]; then
+            extra+=("-PnovaSkipCoreLogStream")
+          fi
           if [[ -n "$PREVIEW_AAR_URL" ]]; then
             echo "::add-mask::$PREVIEW_AAR_URL"
             [[ "$PREVIEW_AAR_URL" =~ ^https://(release-assets|objects)\.githubusercontent\.com/github-production-release-asset ]]

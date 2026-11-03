@@ -596,6 +596,7 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
     }
     /** Read core warnings for safe UI notices; detailed logs/connection events are debug-only. */
     private fun startDebugLogStream() {
+        if (BuildConfig.SKIP_CORE_LOG_STREAM_FOR_USB_TEST) return
         if (debugLogClient != null) return
         val options = CommandClientOptions().apply {
             addCommand(Libbox.CommandLog)

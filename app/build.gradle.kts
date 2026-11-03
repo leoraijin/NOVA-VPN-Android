@@ -62,6 +62,7 @@ android {
         versionName = "0.2.59"
         manifestPlaceholders["novaAppLabel"] = "NOVA VPN"
         buildConfigField("boolean", "REALITY_PREVIEW", "false")
+        buildConfigField("boolean", "SKIP_CORE_LOG_STREAM_FOR_USB_TEST", (providers.gradleProperty("novaUsbTest").isPresent && providers.gradleProperty("novaSkipCoreLogStream").isPresent).toString())
         buildConfigField("boolean", "XHTTP_DOWNLOAD_SUPPORTED", (xhttpPreviewAar != null).toString())
         buildConfigField("String", "LIBBOX_REVISION", if (xhttpPreviewAar == null)
             "\"1.14.3-lx.23_20f89c2f4cb3f77acaf3daa063bd857a055a5259\"" else "\"$xhttpPreviewRevision\"")
