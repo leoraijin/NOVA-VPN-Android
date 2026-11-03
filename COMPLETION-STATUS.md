@@ -840,6 +840,9 @@ The local Xray fixture returned IPv4 and IPv6 echo traffic from a separate
 application UID through tun0 in packet-up, stream-up, stream-one, and auto
 modes. Android instrumentation completed with code -1.
 
-This run covered the local cleartext XHTTP fixture. The separate download
-path, Cronet-specific runtime behavior, physical network handover, and the
-live subscription import still require their own acceptance results.
+This run covered the local cleartext XHTTP fixture. A separate ARM64 USB build
+with the SHA-256 pinned preview AAR also passed imported download_settings
+for packet-up, stream-up, and auto. IPv4 and IPv6 echo from a separate UID
+traversed tun0 using a separate download pool. Instrumentation returned -1.
+Cronet-specific runtime behavior, physical network handover, and the live
+subscription import still require their own acceptance results.
