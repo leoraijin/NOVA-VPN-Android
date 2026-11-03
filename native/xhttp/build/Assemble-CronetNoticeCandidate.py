@@ -12,6 +12,7 @@ import tarfile
 parser=argparse.ArgumentParser()
 for name in ('workspace','notices-root','source-archive','source-mapping','generated','ndk','clang','output'):
     parser.add_argument('--'+name,required=True,type=Path)
+parser.add_argument('--additional-toolchain-headers',type=Path)
 a=parser.parse_args();root=a.workspace.resolve();out=a.output.resolve()
 assert root in out.parents and not out.exists()
 inv=json.loads((a.notices_root/'inventory.json').read_text())
@@ -47,6 +48,16 @@ for label,path in (('ndk',a.ndk),('clang',a.clang)):
     for row in bundle['files']:
         assert row['matches']
         external[row['sourceRelativePath']]=(row['observedCompilerSha256'],keys)
+if a.additional_toolchain_headers:
+    additional=json.loads(gzip.decompress(a.additional_toolchain_headers.read_bytes()))
+    assert additional['schema']==1
+    for row in additional['headers']:
+        name=row['path']
+        assert row['match'] and row['actual']==row['expected'] and name not in external
+        label='ndk' if '/ndk/' in name else 'clang'
+        keys=[key for key in docs if key.startswith('external:'+label+'/')]
+        assert keys
+        external[name]=(row['actual'],keys)
 wrapper=(a.notices_root/'wrapper-licenses/arm64-v8a/LICENSE').read_bytes()
 assert hashlib.sha256(wrapper).hexdigest()=='2f02b7486bcfa90d115c71a20437f3906b6fd5bef81c5dc0efd341399e89d0fd'
 add('wrapper:cronet-go',wrapper,'Pinned cronet-go module LICENSE, identical across four ABI modules')
