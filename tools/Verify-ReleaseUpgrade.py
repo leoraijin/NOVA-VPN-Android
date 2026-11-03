@@ -188,7 +188,7 @@ try:
     shell('svc', 'power', 'stayon', 'true')
     shell('input', 'keyevent', 'KEYCODE_WAKEUP')
     shell('wm', 'dismiss-keyguard')
-    for version in ('0.2.52', '0.2.54', '0.2.55', '0.2.56', '0.2.57'):
+    for version in ('0.2.52', '0.2.54', '0.2.55', '0.2.56', '0.2.57', '0.2.58'):
         adb('uninstall', PACKAGE, check=False)
         install(args.apks / (version + '.apk'))
         seed_preferences(routes=True)
@@ -221,7 +221,7 @@ try:
         before = hashes()
         install(args.apks / 'candidate.apk')
         new_uid, new_code = details()
-        if new_uid != uid or new_code != 60 or new_code <= old_code or hashes() != before:
+        if new_uid != uid or new_code != 61 or new_code <= old_code or hashes() != before:
             raise RuntimeError('Package update did not preserve exact private data and UID')
         shell('am', 'start', '-W', '-n', COMPONENT)
         click('Серверы')
@@ -237,12 +237,12 @@ try:
         if preferences('profile_selection').get('selected_profile_id') != selected:
             raise RuntimeError('Selected profile changed after update')
         screenshot('upgrade-' + version)
-        reports.append({'baseline': version, 'candidate': '0.2.58', 'uid_preserved': True,
+        reports.append({'baseline': version, 'candidate': '0.2.59', 'uid_preserved': True,
                         'encrypted_data_preserved_before_launch': True, 'decrypted_profile_visible': True,
                         'selected_profile_preserved': True, 'routes_preserved': True,
                         'favorite_preserved': favorite, 'vpn_started': False})
         (args.work / 'verification-partial.json').write_text(json.dumps(reports, indent=2) + '\n')
-        print('PASS exact signed APK update ' + version + ' -> 0.2.58', flush=True)
+        print('PASS exact signed APK update ' + version + ' -> 0.2.59', flush=True)
     adb('uninstall', PACKAGE)
     install(args.apks / 'candidate.apk')
     seed_preferences(routes=False)
@@ -250,7 +250,7 @@ try:
     click('Серверы')
     pause_until('empty fresh catalog', lambda: shown('Найдено: 0 из 0'))
     screenshot('clean-install')
-    reports.append({'clean_install': True, 'version': '0.2.58', 'empty_catalog': True, 'vpn_started': False})
+    reports.append({'clean_install': True, 'version': '0.2.59', 'empty_catalog': True, 'vpn_started': False})
     (args.work / 'verification.json').write_text(json.dumps(reports, indent=2) + '\n')
     print('PASS exact signed APK clean install', flush=True)
 except Exception:
