@@ -892,3 +892,22 @@ The new watchdog still needs an on-device run before diagnosis is complete.
 Evidence is retained in ../work/tecno-local-h3-20261104/VERIFICATION-STATUS.md,
 result/verification.json, build-identity.json and failure logs.
 Windows remains local-only; no push, publication or GitHub Actions.
+
+## Physical HTTP/3 TLS control/refusal/control — 2026-11-04
+
+Repeat on TECNO ARM64/API35 passed with source584e345 and the exact pinned
+preview core. Both separate-UID IPv4/IPv6 echoes worked with the trusted identity,
+failed with wrong-download.invalid, and worked again after restoring the trusted
+identity. Instrumentation completed normally with code-1 and all stage markers,
+including final service stop and activity completion. No working fallback was
+observed. The same-device Xray fixture is not a WAN/provider or handover test.
+
+Evidence: ../work/tecno-local-h3-20261104/retry-diagnostic/tls-refusal/
+verification.json and android-smoke.log; APK hashes in retry-diagnostic/
+build-identity.json. Raw smoke log SHA256:
+1966056b8752d8a397825bcebcd6fff6d83c1134205030475b701522940f192f.
+The preceding timeout remains retained and unexplained; this successful repeat
+does not establish that its cause was fixed. The diagnostic watchdog was included
+and stages exercised, but no stall occurred to exercise stack dumping.
+The fixture reported PHONE_H3_STOPPED and its own temporary phone files and both
+new test packages were removed. No other application or desktop VPN was stopped.
