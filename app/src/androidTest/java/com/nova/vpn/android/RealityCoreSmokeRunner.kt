@@ -34,6 +34,7 @@ class RealityCoreSmokeRunner : Instrumentation() {
     private var liveReloadOnly = false
     private var allowWifiToggle = false
     private var xhttpOnly = false
+    private var xhttpLanHost: String? = null
     private var xhttpDownlinkOnly = false
     private var xhttpTlsManifest: JSONObject? = null
     private var xhttpCoreTrace = false
@@ -94,6 +95,13 @@ class RealityCoreSmokeRunner : Instrumentation() {
         allowWifiToggle = arguments?.getString("allowWifiToggle") == "true"
         xhttpOnly = arguments?.getString("xhttpOnly") == "true"
         xhttpDownlinkOnly = arguments?.getString("xhttpDownlinkOnly") == "true"
+        xhttpLanHost = arguments?.getString("xhttpLanHost")?.also { host ->
+            val parts = host.split('.').map { it.toIntOrNull() ?: -1 }
+            check(xhttpDownlinkOnly && parts.size == 4 && parts.all { it in 0..255 } &&
+                parts.joinToString(".") == host &&
+                (parts[0] == 10 || (parts[0] == 172 && parts[1] in 16..31) ||
+                    (parts[0] == 192 && parts[1] == 168)))
+        }
         if (xhttpDownlinkOnly) xhttpOnly = true
         arguments?.getString("xhttpTlsManifestBase64")?.let {
             check(it.length <= 32_768 && xhttpDownlinkOnly)
@@ -928,6 +936,29 @@ class RealityCoreSmokeRunner : Instrumentation() {
     }
 
     private fun runXhttpSmoke() {
+        // Test-only watchdog: preserve evidence even if native close or a main-thread
+        // callback blocks before Instrumentation.finish can return its result.
+        val stage = java.util.concurrent.atomic.AtomicReference("entry")
+        val stageSince = java.util.concurrent.atomic.AtomicLong(android.os.SystemClock.elapsedRealtime())
+        fun progress(value: String) {
+            stage.set(value)
+            stageSince.set(android.os.SystemClock.elapsedRealtime())
+            android.util.Log.i("NOVA_XHTTP_SMOKE", "stage=$value")
+            sendStatus(0, Bundle().apply { putString("stream", "XHTTP_STAGE $value\n") })
+        }
+        val watchdog = java.util.concurrent.Executors.newSingleThreadScheduledExecutor { task ->
+            Thread(task, "xhttp-smoke-watchdog").apply { isDaemon = true }
+        }
+        watchdog.scheduleWithFixedDelay({
+            val elapsed = android.os.SystemClock.elapsedRealtime() - stageSince.get()
+            if (elapsed >= 30000) {
+                android.util.Log.e("NOVA_XHTTP_SMOKE", "STALLED stage=${stage.get()} elapsedMs=$elapsed")
+                Thread.getAllStackTraces().forEach { (thread, stack) ->
+                    android.util.Log.e("NOVA_XHTTP_SMOKE", "THREAD ${thread.name} state=${thread.state}")
+                    stack.take(48).forEach { frame -> android.util.Log.e("NOVA_XHTTP_SMOKE", "  at $frame") }
+                }
+            }
+        }, 30, 30, java.util.concurrent.TimeUnit.SECONDS)
         val result = Bundle()
         var outcome = Activity.RESULT_CANCELED
         var activity: Activity? = null
@@ -941,6 +972,7 @@ class RealityCoreSmokeRunner : Instrumentation() {
             AppPreferencesStore(context).apply {
                 dismissTutorial(); setAutoConnectEnabled(false); setUpdateChecksEnabled(false); setVpnEngine(VpnEngine.SING_BOX)
             }
+            progress("activity-start")
             activity = startActivitySync(android.content.Intent(context, MainActivity::class.java)
                 .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
             val rootFiles = xhttpTlsManifest?.let { manifest -> listOf("upload", "download").associateWith { leg ->
@@ -958,6 +990,7 @@ class RealityCoreSmokeRunner : Instrumentation() {
             val modes = if (xhttpTlsRefusal || xhttpRealityKeyRefusal) listOf("packet-up", "packet-up", "packet-up")
                 else if (xhttpDownlinkOnly) listOf("packet-up", "stream-up", "auto") else listOf("packet-up", "stream-up", "stream-one", "auto")
             for ((caseIndex, mode) in modes.withIndex()) {
+                progress("case-$caseIndex-$mode-prepare")
                 val rejectDownloadIdentity = (xhttpTlsRefusal || xhttpRealityKeyRefusal) && caseIndex == 1
                 val uploadHostname = "xup-${java.util.UUID.randomUUID()}.test"
                 val downloadHostname = "xdown-${java.util.UUID.randomUUID()}.test"
@@ -986,7 +1019,7 @@ class RealityCoreSmokeRunner : Instrumentation() {
                     }
                     fun address(leg: JSONObject): String {
                         val literal = leg.optString("address", "127.0.0.1")
-                        check(literal == "127.0.0.1" || literal == "10.0.2.2")
+                        check(literal == "127.0.0.1" || literal == "10.0.2.2" || literal == xhttpLanHost)
                         if (bootstrapDns != null) {
                             check(literal == "10.0.2.2")
                             if (leg === download) return downloadHostname
@@ -1057,12 +1090,15 @@ class RealityCoreSmokeRunner : Instrumentation() {
                         put("log", JSONObject().put("level", "debug").put("output", file.absolutePath).put("timestamp", true))
                     }
                 }.toString()
+                progress("case-$caseIndex-start-service")
                 context.startForegroundService(android.content.Intent(context, NovaVpnService::class.java)
                     .setAction(NovaVpnService.ACTION_START).putExtra(NovaVpnService.EXTRA_CONFIG, config)
                     .putExtra(NovaVpnService.EXTRA_PROFILE_NAME, "XHTTP $mode fixture"))
                 waitUntil("XHTTP $mode start") { VpnRuntime.state.value.connected || VpnRuntime.state.value.error != null }
                 check(VpnRuntime.state.value.connected) { VpnRuntime.state.value.error.orEmpty() }
+                progress("case-$caseIndex-first-probe")
                 val first = routedClientResult(ipv6 = xhttpIpv6First)
+                progress("case-$caseIndex-second-probe")
                 val second = routedClientResult(ipv6 = !xhttpIpv6First)
                 val ipv4 = if (xhttpIpv6First) second else first
                 val ipv6 = if (xhttpIpv6First) first else second
@@ -1081,6 +1117,7 @@ class RealityCoreSmokeRunner : Instrumentation() {
                     }
                     sendStatus(0, Bundle().apply { putString("stream", "XHTTP bootstrap $xhttpBootstrapCase: download=${dns.queriesFor(downloadHostname)} upload=${dns.queriesFor(uploadHostname)} PASS\n") })
                 }
+                progress("case-$caseIndex-stop-service")
                 context.startService(android.content.Intent(context, NovaVpnService::class.java).setAction(NovaVpnService.ACTION_STOP))
                 waitUntil("XHTTP stop") { !VpnRuntime.state.value.connected && !VpnRuntime.state.value.connecting }
             }
@@ -1093,11 +1130,15 @@ class RealityCoreSmokeRunner : Instrumentation() {
                 else "XHTTP Android/Xray interoperability passed: four modes, IPv4/IPv6, separate UID, real VpnService.\n")
             outcome = Activity.RESULT_OK
         } catch (error: Throwable) {
+            android.util.Log.e("NOVA_XHTTP_SMOKE", "Failure at ${stage.get()}", error)
             result.putString("stream", "XHTTP smoke failed: ${error.javaClass.simpleName}: ${error.message}\n")
         } finally {
+            progress("final-stop-service")
             runCatching { context.startService(android.content.Intent(context, NovaVpnService::class.java).setAction(NovaVpnService.ACTION_STOP)) }
             runCatching { waitUntil("XHTTP final stop") { !VpnRuntime.state.value.connected && !VpnRuntime.state.value.connecting } }
+            progress("finish-activity")
             activity?.let { window -> runOnMainSync { window.finish() } }
+            progress("collect-traces")
             traces.forEach { file ->
                 try {
                     if (file.exists()) sendStatus(0, Bundle().apply {
@@ -1108,6 +1149,8 @@ class RealityCoreSmokeRunner : Instrumentation() {
             bootstrapFixtures.forEach { it.close() }
             certificates.forEach { it.delete() }
         }
+        progress("finish-instrumentation")
+        watchdog.shutdownNow()
         finish(outcome, result)
     }
 

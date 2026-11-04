@@ -868,3 +868,27 @@ Both sing-box and Reality passed two Wi-Fi loss/return cycles, retaining
 the same TUN and restoring separate-UID IPv4 and IPv6 echo. Manual stop
 cancelled recovery on both engines. The phone reported no SIM in either
 slot, so cellular handover remains open.
+
+## Physical HTTP/3 downlink and negative-test diagnostics — 2026-11-04
+
+Official Xray 26.10.21 on the physical TECNO ARM64/API35 passed packet-up,
+stream-up and auto with imported download_settings, Android TUN and separate-UID
+IPv4/IPv6 echo. Server and VPN client ran on the same phone: this does not prove
+WAN/provider behavior or network handover. Preview native SHA256:
+190E69B354D8561FF31CDE57BDC0F528F273010C4382032524F555B80BF0080D.
+
+The subsequent TLS control/refusal/control run is INCOMPLETE: host observation
+timed out after100seconds while Android instrumentation remained active beyond
+seven minutes. No negative TLS pass is claimed. Native stack collection required
+root and was not performed. The test target was force-stopped, newly installed
+completionpreview packages uninstalled and the exact own phone fixture removed.
+Other apps and desktop VPN were not changed.
+
+Added test-only stage reporting and an independent daemon watchdog that logs
+Java thread stacks when a stage remains unchanged for30seconds. Security
+assertions and the tested product code are unchanged. Local offline task
+:app:compileRealitypreviewAndroidTestKotlin passed (29 tasks,80seconds).
+The new watchdog still needs an on-device run before diagnosis is complete.
+Evidence is retained in ../work/tecno-local-h3-20261104/VERIFICATION-STATUS.md,
+result/verification.json, build-identity.json and failure logs.
+Windows remains local-only; no push, publication or GitHub Actions.
