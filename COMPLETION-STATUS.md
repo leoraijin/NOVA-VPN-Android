@@ -922,3 +922,13 @@ passed 22 tests using direct JUnit against compiled Gradle classes. Gradle's tes
 worker bootstrap still fails independently; no device/TUN or release claim.
 See docs/diagnostic-dns-worker-progress-2026-11-06.md for evidence and reproduction.
 No phone, desktop VPN, GitHub or shared cache changes. Full plan remains open.
+
+## Complete current unit suite on Windows Unicode paths - 2026-11-06
+
+Optimized main-client compilation/runtime export passed; all 66 current unit
+test classes passed 350 tests via direct JUnit, including Robolectric. Inventory
+and source hashes retained. Preview run had one expected package-identity
+failure and remains recorded as failed. Gradle worker @argfile encoding was
+isolated with native-CP1251/direct/URI/UTF8 controls; shared Gradle is unpatched.
+See docs/full-unit-runtime-progress-2026-11-06.md for reproduction and limits.
+No ADB devices available; physical/TUN/Doze/battery and release gates stay open.

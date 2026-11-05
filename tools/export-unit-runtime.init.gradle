@@ -1,0 +1,18 @@
+import groovy.json.JsonOutput
+
+gradle.projectsEvaluated {
+    def p = gradle.rootProject.project(':app')
+    def variant = p.findProperty('novaRuntimeVariant') ?: 'optimized'
+    if (!(variant in ['optimized', 'realitypreview'])) throw new GradleException('Unsupported unit runtime variant')
+    def subject = p.tasks.named('test' + variant.capitalize() + 'UnitTest')
+    p.tasks.register('novaExportUnitRuntime') {
+        dependsOn { subject.get().taskDependencies.getDependencies(subject.get()) }
+        doLast {
+            def t = subject.get()
+            def destination = new File(p.findProperty('novaRuntimeOutput').toString())
+            if (destination.exists()) throw new GradleException('Fresh runtime metadata required')
+            def info = [schema:1, task:t.path, classpath:t.classpath.files.collect{it.absolutePath}, classes:t.testClassesDirs.files.collect{it.absolutePath}, workingDirectory:t.workingDir.absolutePath, systemProperties:t.systemProperties.findAll{k,v -> k in ['user.home','robolectric.dependency.repo.url']}, jvmArgs:t.jvmArgs, javaExecutable:t.executable]
+            destination.setText(JsonOutput.prettyPrint(JsonOutput.toJson(info)), 'UTF-8')
+        }
+    }
+}
