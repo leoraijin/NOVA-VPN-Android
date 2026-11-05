@@ -22,7 +22,7 @@ internal data class DiagnosticSnapshot(val text: String, val json: String, val a
         val nextAdvice = if (result.outcome == CheckOutcome.SUCCESS) DiagnosticAdvice("HTTPS через профиль подтверждён",
             "Успешных прикладных проверок: ${result.successes} из ${result.attempts}.", DiagnosticAction.CHECK_SERVERS, "Открыть серверы")
         else DiagnosticCatalog.advice(events.lastOrNull { it.code.contains("failed") || it.code.startsWith("core_") ||
-            it.code in setOf("engine_config_unsupported", "engine_unavailable") })
+            it.code in setOf("engine_config_unsupported", "engine_unavailable", "dns_system_lookup_busy", "dns_system_lookup_cancelled") })
         return copy(text = text.substringBefore("\nIsolated profile check:") + "\nIsolated profile check:\n" + detail.toString(2),
             json = org.json.JSONObject(json).put("isolated_check", detail).toString(2), advice = nextAdvice)
     }

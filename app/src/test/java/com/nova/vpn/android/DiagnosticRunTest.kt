@@ -4,6 +4,16 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class DiagnosticRunTest {
+    @Test fun dnsResourceStatusesProduceTheirOwnAdvice() {
+        for ((code, title) in listOf("dns_system_lookup_busy" to "Предыдущая проверка DNS ещё выполняется", "dns_system_lookup_cancelled" to "Проверка DNS отменена")) {
+            val event = DiagnosticEvent(1, DiagnosticStage.DNS, code, "sing_box", 0, "tcp", emptyMap())
+            val snapshot = DiagnosticSnapshot("Safe report", "{}", DiagnosticCatalog.advice(null)).withProbe(ServerCheckResult(CheckOutcome.FAILED, events = listOf(event)))
+            assertEquals(title, snapshot.advice.title)
+            assertTrue(snapshot.json.contains(code))
+            VpnDiagnostics.reset(); VpnDiagnostics.record(code)
+            assertEquals(title, VpnDiagnostics.advice().title)
+        }
+    }
     @Test fun unsupportedEngineKeepsItsIdentityAndOffersEngineSettings() {
         for (code in listOf("engine_config_unsupported", "engine_unavailable")) {
             val event = DiagnosticEvent(1, DiagnosticStage.SERVICE, code, "reality_core", 0, "tcp", emptyMap())

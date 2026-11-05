@@ -911,3 +911,14 @@ does not establish that its cause was fixed. The diagnostic watchdog was include
 and stages exercised, but no stall occurred to exercise stack dumping.
 The fixture reported PHONE_H3_STOPPED and its own temporary phone files and both
 new test packages were removed. No other application or desktop VPN was stopped.
+
+
+## Bounded diagnostic DNS worker — 2026-11-06
+
+Fixed worker accumulation when native DNS ignores cancellation; BUSY/CANCELLED
+have explicit live and isolated-check advice. Red regression observed 11 lookup
+callbacks; fixed DNS stress passed 120 checks and the current diagnostic suite
+passed 22 tests using direct JUnit against compiled Gradle classes. Gradle's test
+worker bootstrap still fails independently; no device/TUN or release claim.
+See docs/diagnostic-dns-worker-progress-2026-11-06.md for evidence and reproduction.
+No phone, desktop VPN, GitHub or shared cache changes. Full plan remains open.

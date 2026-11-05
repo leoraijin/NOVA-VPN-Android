@@ -50,7 +50,7 @@ internal object VpnDiagnostics {
 
     @Synchronized fun advice(): DiagnosticAdvice = DiagnosticCatalog.advice(log.snapshot().lastOrNull {
         it.code.contains("failed") || it.code.contains("error") || it.code.startsWith("core_") ||
-            it.code in setOf("vpn_permission_required", "configuration_rollback", "engine_config_unsupported", "engine_unavailable")
+            it.code in setOf("vpn_permission_required", "configuration_rollback", "engine_config_unsupported", "engine_unavailable", "dns_system_lookup_busy", "dns_system_lookup_cancelled")
     })
     @Synchronized fun exportEvents(): String = DiagnosticEventCodec.encode(log.snapshot())
 

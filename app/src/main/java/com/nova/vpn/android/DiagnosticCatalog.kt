@@ -11,7 +11,8 @@ internal object DiagnosticCatalog {
         "auto_check_failed", "auto_switch_limited", "auto_server_applied", "auto_server_not_applied", "network_changed",
         "vpn_permission_required", "vpn_permission_granted", "service_start", "underlay_ready", "underlay_missing",
         "probe_proxy_connected", "probe_target_tls_ready", "probe_proxy_connect_started", "probe_target_tls_started", "probe_https_response_started",
-        "dns_system_lookup_started", "dns_system_lookup_not_needed", "dns_system_lookup_ready", "dns_system_lookup_failed", "dns_system_lookup_timeout")
+        "dns_system_lookup_started", "dns_system_lookup_not_needed", "dns_system_lookup_ready", "dns_system_lookup_failed", "dns_system_lookup_timeout",
+        "dns_system_lookup_busy", "dns_system_lookup_cancelled")
     private val core = setOf("dns_lookup_failed", "dns_exchange_failed", "tls_certificate_failed", "tls_alpn_failed", "tls_handshake_failed",
         "grpc_service_not_found", "http_not_found", "remote_unauthorized", "remote_forbidden", "grpc_unavailable",
         "http2_transport_error", "timeout", "connection_refused", "connection_reset", "network_unreachable",
@@ -41,6 +42,10 @@ internal object DiagnosticCatalog {
         else -> DiagnosticStage.UNKNOWN
     }
     fun advice(event: DiagnosticEvent?): DiagnosticAdvice = when {
+        event?.code == "dns_system_lookup_busy" -> DiagnosticAdvice("Предыдущая проверка DNS ещё выполняется",
+            "Системный запрос ещё не завершился. Повторите диагностику немного позже.", DiagnosticAction.CHECK_SERVERS, "Открыть проверку серверов")
+        event?.code == "dns_system_lookup_cancelled" -> DiagnosticAdvice("Проверка DNS отменена",
+            "При необходимости запустите диагностику снова.", DiagnosticAction.CHECK_SERVERS, "Открыть проверку серверов")
         event?.code in setOf("engine_config_unsupported", "engine_unavailable") -> DiagnosticAdvice("Профиль несовместим с выбранным движком",
             "Проверьте доступность ядра, выберите совместимый движок или обновите подписку.", DiagnosticAction.SETTINGS, "Открыть настройки")
         else -> adviceForStage(event)
