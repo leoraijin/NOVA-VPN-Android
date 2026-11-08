@@ -10,6 +10,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.nova.vpn.android.data.AppPreferencesStore
@@ -54,7 +55,8 @@ internal fun ServersPage(
     onDeleteAll: () -> Unit,
     onToggleFavorite: (String) -> Unit,
     onOpenSubscriptions: () -> Unit,
-    onChooseBest: (List<ImportedProfile>) -> Unit
+    onChooseBest: (List<ImportedProfile>) -> Unit,
+    onOpenServerRoutes: (() -> Unit)? = null
 ) {
     val context = LocalContext.current.applicationContext
     val preferences = remember(context) { AppPreferencesStore(context) }
@@ -140,7 +142,12 @@ internal fun ServersPage(
       val controlsHeight = (maxHeight * if (compact) .25f else .45f)
           .coerceAtLeast(if (compact) 80.dp else 112.dp).coerceAtMost(maxHeight * .6f)
       Column(Modifier.fillMaxSize()) {
-       Column(Modifier.fillMaxWidth().heightIn(max = controlsHeight).verticalScroll(rememberScrollState())) {
+       onOpenServerRoutes?.let { open ->
+        Button(onClick = open, modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
+            Text("Второй VPN для приложений и сайтов")
+        }
+       }
+       Column(Modifier.fillMaxWidth().heightIn(max = controlsHeight).clipToBounds().verticalScroll(rememberScrollState())) {
         OutlinedTextField(value = query, onValueChange = { query = it }, singleLine = true,
             label = { Text("Поиск серверов") }, modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp))
         FlowRow(Modifier.fillMaxWidth().padding(horizontal = 16.dp),
@@ -208,7 +215,8 @@ internal fun ServersPage(
                 modifier = Modifier.padding(horizontal = 16.dp), style = MaterialTheme.typography.bodySmall)
         }
        }
-        Box(Modifier.weight(1f)) {
+        HorizontalDivider(Modifier.padding(vertical = 8.dp))
+        Box(Modifier.weight(1f).clipToBounds()) {
             CompositionLocalProvider(LocalToggleFavorite provides onToggleFavorite,
                 LocalEditServer provides { profile -> editingProfile = profile; personalName = profile.userSettings.personalName.orEmpty(); editError = null }) {
                 if (visible.isEmpty() && profiles.isNotEmpty()) Text("Ничего не найдено. Измените поиск или сбросьте фильтры.", Modifier.padding(16.dp))

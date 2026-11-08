@@ -859,6 +859,7 @@ private fun NovaAndroidApp(
                             transferBusy = profileTransferBusy,
                             onAdd = { importError = null; importText = ""; showImport = true },
                             onOpenSubscriptions = { showSubscriptions = true },
+                            onOpenServerRoutes = { page = Page.Routing },
                             onSelect = {selectManualProfile(it)},
                             onSendToWatch = { profile ->
                                 profileShareId = profile.id
@@ -1644,7 +1645,7 @@ internal fun RoutingPage(
                 Text("Назначений: ${settings.multiServer.rules.count { it.packageName!=null }} приложений · ${settings.multiServer.rules.count { it.domain!=null }} сайтов")
                 Text("Правила сайтов важнее приложений. Недоступный сервер не заменяется автоматически.")
                 if(!assignmentSupported) Text("Для этого режима нужны Android 10 или новее и ядро sing-box.")
-                Button(enabled=!assignmentBusy&&assignmentSupported,onClick={openAssignments()}) {Text("Настроить назначения серверов")}
+                Button(enabled=!assignmentBusy&&assignmentSupported,onClick={openAssignments()}) {Text("Изменить VPN для приложений и сайтов")}
                 if (activeRoutePreview != null) OutlinedButton(onClick = { showRoutePreview = true }) { Text("Проверить маршрут") }
                 if(settings.history?.single==null)Text("Прежняя схема не сохранена. Отключение вернёт обычный режим с текущими настройками; назначения останутся для повторного включения.")
                 OutlinedButton(enabled=!assignmentBusy,onClick={changeMode(com.nova.vpn.android.data.RoutingModeTransitions.disable(settings))}) {
@@ -1660,9 +1661,9 @@ internal fun RoutingPage(
     if(exitChecks.isNotEmpty())item { ExitHealthCard(exitChecks,profiles) }
     item { SoftCard {
         Text("Разные серверы для приложений и сайтов",fontWeight=FontWeight.SemiBold)
-        Text("Например, ChatGPT — через США, остальные приложения — через Францию.")
+        Text("Выберите основной сервер для остальных приложений, затем назначьте другой сервер нужному приложению или сайту. Например, ChatGPT — через США, остальные приложения — через Францию. После сохранения подключите VPN на главном экране.")
         if(!assignmentSupported) Text("Для этого режима нужны Android 10 или новее и ядро sing-box.")
-        Button(enabled=!assignmentBusy&&assignmentSupported&&profiles.isNotEmpty(),onClick={openAssignments()}) {Text("Настроить назначения")}
+        Button(enabled=!assignmentBusy&&assignmentSupported&&profiles.isNotEmpty(),onClick={openAssignments()}) {Text("Добавить второй VPN")}
         if(settings.history!=null) {
             OutlinedButton(enabled=!assignmentBusy&&assignmentSupported,onClick={openAssignments(true)}) {Text("Включить сохранённые назначения")}
             TextButton(enabled=!assignmentBusy,onClick={changeMode(com.nova.vpn.android.data.RoutingModeTransitions.forget(settings))}) {Text("Удалить сохранённые назначения")}
