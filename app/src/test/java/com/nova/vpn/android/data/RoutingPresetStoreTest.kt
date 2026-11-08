@@ -18,7 +18,7 @@ class RoutingPresetStoreTest {
         val prefs = context.getSharedPreferences("routing", 0)
         prefs.edit().putString("mode", "INCLUDE_SELECTED").putStringSet("packages", setOf("org.example.old")).commit()
         val before = prefs.all.toMap()
-        val store = AppRoutingStore(context)
+        val store = AppRoutingStore(context,atomicWrite={it()})
         val old = store.load()
         assertEquals(before, prefs.all)
         store.updatePresets { it.copy(presets = it.presets + RoutingPreset("new", "Новый", AppRoutingSettings())) }
@@ -33,7 +33,7 @@ class RoutingPresetStoreTest {
     }
 
     @Test fun cancellingPendingChangeKeepsOldRulesAndDoesNotCancelNewRequest() {
-        val store = AppRoutingStore(context)
+        val store = AppRoutingStore(context,atomicWrite={it()})
         val old = store.load()
         store.stage("my-routing", "old", old.copy(ipv6Enabled = true))
         store.stage("my-routing", "new", old.copy(ipv6Enabled = true))
@@ -52,7 +52,7 @@ class RoutingPresetStoreTest {
     }
 
     @Test fun supersedingStartOrStopClearsAStageWhoseStartWasNeverDelivered() {
-        val store = AppRoutingStore(context)
+        val store = AppRoutingStore(context,atomicWrite={it()})
         val original = store.load()
         store.stage("my-routing", "not-delivered", original.copy(ipv6Enabled = true))
         store.cancelPendingExcept("not-delivered")

@@ -17,7 +17,9 @@ data class VpnUiState(
     val recoveryStatus: String? = null,
     val recoveryAttempt: Int = 0,
     val sessionRevision: Long = 0,
-    val appliedConfiguration: AppliedConfiguration? = null
+    val appliedConfiguration: AppliedConfiguration? = null,
+    val exitChecks: Map<String,ExitCheckState> = emptyMap(),
+    val activeRoutePreview: ActiveRoutePreview? = null
 )
 
 /** In-process connection state shared by the activity and the VPN service. */
@@ -29,21 +31,37 @@ object VpnRuntime {
 
     fun attach(context: Context) { appContext = context.applicationContext }
 
-    fun setConnecting() = publish(VpnUiState(connecting = true))
-    fun setConnected(identity: AppliedConfiguration? = null) = publish(VpnUiState(connected = true,
-        sessionRevision = sessionSequence.incrementAndGet(), appliedConfiguration = identity))
-    fun setRecovery(waiting: Boolean, attempt: Int, tunPresent: Boolean) = publish(VpnUiState(
+    @Synchronized fun setConnecting() = publish(VpnUiState(connecting = true))
+    @Synchronized fun setConnected(identity: AppliedConfiguration? = null, preview: ActiveRoutePreview? = null) =
+        publish(VpnUiState(connected = true, sessionRevision = sessionSequence.incrementAndGet(),
+            appliedConfiguration = identity, activeRoutePreview = preview))
+    /** A rejected replacement never changed the native tunnel or this completed health evidence. */
+    @Synchronized internal fun restoreUntouchedConnection(previous: VpnUiState) {
+        check(previous.connected && previous.recoveryStatus == null && !previous.trafficChecking)
+        publish(previous)
+    }
+    @Synchronized fun setRecovery(waiting: Boolean, attempt: Int, tunPresent: Boolean) = publish(VpnUiState(
         connected = tunPresent, connecting = !tunPresent, recoveryStatus = if (waiting) "waiting_network" else "recovering",
         recoveryAttempt = attempt, sessionRevision = mutableState.value.sessionRevision,
         appliedConfiguration = mutableState.value.appliedConfiguration))
-    fun setTrafficChecking() { if (mutableState.value.connected) publish(mutableState.value.copy(trafficChecking = true, trafficVerified = false, trafficCheckFailed = false, warning = null)) }
-    fun setTrafficResult(success: Boolean) {
+    @Synchronized fun setTrafficChecking() { if (mutableState.value.connected && mutableState.value.exitChecks.isEmpty()) publish(mutableState.value.copy(trafficChecking = true, trafficVerified = false, trafficCheckFailed = false, warning = null)) }
+    @Synchronized fun setTrafficResult(success: Boolean) {
         val current = mutableState.value
-        if (current.connected) publish(ConnectionHealthReducer.probeResult(current, success))
+        if (current.connected && current.exitChecks.isEmpty()) publish(ConnectionHealthReducer.probeResult(current, success))
     }
-    fun setDisconnected() = publish(VpnUiState())
-    fun setFailure(message: String) = publish(VpnUiState(error = message))
-    fun setTransportWarning(message: String) {
+    @Synchronized internal fun beginExitChecks(bindings: RouteExitBindings,policy: RoutePolicyIdentity,unsupported: Set<String>) {
+        publish(ExitHealthReducer.begin(mutableState.value,bindings,policy,unsupported))
+    }
+    @Synchronized internal fun setExitChecking(revision: Long,id: String,fingerprint: String): Boolean {
+        val before=mutableState.value;val next=ExitHealthReducer.checking(before,revision,id,fingerprint)
+        publish(next);return next!=before
+    }
+    @Synchronized internal fun setExitResult(revision: Long,id: String,fingerprint: String,success: Boolean,millis: Int?) {
+        publish(ExitHealthReducer.result(mutableState.value,revision,id,fingerprint,success,millis))
+    }
+    @Synchronized fun setDisconnected() = publish(VpnUiState())
+    @Synchronized fun setFailure(message: String) = publish(VpnUiState(error = message))
+    @Synchronized fun setTransportWarning(message: String) {
         val current = mutableState.value
         if (current.connected && current.transportNotice != message) {
             publish(ConnectionHealthReducer.transportNotice(current, message))
@@ -56,7 +74,8 @@ object VpnRuntime {
         mutableState.value = next
         // A transport notice does not change the tile. Avoid waking SystemUI and
         // decrypting the profile vault again for every different core warning.
-        if (NovaTilePresentation.from(previous, null) != NovaTilePresentation.from(next, null)) {
+        if (previous.appliedConfiguration?.profileId != next.appliedConfiguration?.profileId ||
+            NovaTilePresentation.from(previous, null) != NovaTilePresentation.from(next, null)) {
             appContext?.let(NovaVpnTileService::requestRefresh)
         }
     }

@@ -61,10 +61,12 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
     private val serviceQueue = NATIVE_QUEUE
     private val serviceIdentity = SERVICE_SEQUENCE.incrementAndGet()
     private val commands = ConnectionCoordinator()
+    @Volatile private var sharedUidGuards = emptyList<com.nova.vpn.android.data.SharedUidExitGuard>()
     private data class Configuration(val config: String, val name: String, val engine: VpnEngine, val startId: Int,
-                                     val identity: AppliedConfiguration, val rollbackFor: String? = null)
+                                     val identity: AppliedConfiguration, val rollbackFor: String? = null, val exits: RouteExitBindings? = null,val commitBinding: RouteCommitBinding?=null,val automatic:Boolean=false,val catalogRetries:Int=0)
     @Volatile private var desiredConfiguration: Configuration? = null
-    private var appliedConfiguration: Configuration? = null
+    @Volatile private var appliedConfiguration: Configuration? = null
+    private var catalogRefresh:ActiveCatalogRefresh?=null
     private val recoveryQueue = Executors.newSingleThreadScheduledExecutor { r -> Thread(r, "nova-vpn-recovery").apply { isDaemon = true } }
     private val recoveryLock = Any()
     private var recoveryTask: java.util.concurrent.ScheduledFuture<*>? = null
@@ -86,10 +88,12 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
     private var realityHealthTask: java.util.concurrent.ScheduledFuture<*>? = null
     private val probeQueue = Executors.newSingleThreadExecutor { runnable -> Thread(runnable, "nova-vpn-check").apply { isDaemon = true } }
     @Volatile private var trafficProbe: AndroidTrafficProbe? = null
+    @Volatile private var exitHealthPlan: MultiExitHealthPlan? = null
+    private val exitProbeQueue = Executors.newFixedThreadPool(4) { r -> Thread(r,"nova-exit-check").apply { isDaemon=true } }
     private val notificationRefreshReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             if (intent?.action == ACTION_REFRESH_NOTIFICATION && VpnRuntime.state.value.connected) {
-                updateNotification(VpnRuntime.state.value.recoveryText() ?: "Туннель подключён")
+                updateNotification(VpnRuntime.state.value.recoveryText() ?: VpnRuntime.state.value.exitCheckSummary())
             }
         }
     }
@@ -114,19 +118,27 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
             @Suppress("DEPRECATION")
             registerReceiver(notificationRefreshReceiver, filter)
         }
+        catalogRefresh=ActiveCatalogRefresh(this,serviceIdentity) {
+            val active=appliedConfiguration
+            val state=VpnRuntime.state.value
+            if(active==null || desiredConfiguration!==active || !state.connected || state.appliedConfiguration!=active.identity ||
+                active.identity.policy==null || active.exits==null || active.commitBinding==null || commands.view().phase!=ConnectionCoordinator.Phase.ACTIVE) null
+            else ActiveCatalogSession(active.identity,active.exits,active.commitBinding)
+        }.also {it.start()}
         automaticServers = AutomaticServerController(this, serviceIdentity) {
             val view = commands.view()
             val desired = desiredConfiguration
             val profileId = desired?.identity?.profileId
             val network = physicalNetwork?.signature
             if (!view.wanted || !view.ready || view.phase == ConnectionCoordinator.Phase.CONNECTING ||
-                desired == null || profileId == null || network == null) null
+                desired == null || desired.identity.policy != null || profileId == null || network == null) null
             else AutoServerSession(desired.identity.requestId, profileId, network)
         }.also { it.start() }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (com.nova.vpn.android.data.RestoreRecoveryState.problem.value != null) {
+            intent?.getStringExtra(VpnUserRequests.EXTRA_REQUEST)?.let(VpnUserRequests::discardStart)
             if (intent?.action == ACTION_STOP && commands.view().wanted) stopTunnel(startId)
             else finishRejectedStart(startId)
             return START_NOT_STICKY
@@ -135,11 +147,17 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
         if (token != null) {
             var result = START_NOT_STICKY
             val accepted = VpnUserRequests.gate.accept(token) {
-                if (intent.getBooleanExtra(VpnUserRequests.EXTRA_AUTOMATIC, false) &&
+                val local=if(intent.action==ACTION_START)VpnUserRequests.consumeStart(intent) else intent
+                if (local?.getBooleanExtra(VpnUserRequests.EXTRA_AUTOMATIC, false) == true &&
                     !AutomaticProbePause.belongsTo(token, serviceIdentity)) {
+                    VpnUserRequests.discardStart(token)
                     serviceQueue.execute { AutomaticProbePause.settled(token) }
                     if (!commands.view().wanted) finishRejectedStart(startId)
-                } else result = handleStartCommand(intent, startId)
+                } else {
+                    // A duplicate command must not fail/cancel the original in-flight request.
+                    if(local!=null)result=handleStartCommand(local,startId)
+                    else if(!commands.view().wanted)finishRejectedStart(startId)
+                }
             }
             if (!accepted) {
                 // A superseded intent may arrive while an older native start is
@@ -162,13 +180,29 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
             return START_NOT_STICKY
         }
         fun identifier(key: String) = intent?.getStringExtra(key)?.takeIf { it.length in 1..128 }
+        val policy = runCatching { RoutePolicyIdentity.decode(intent?.getStringExtra(VpnUserRequests.EXTRA_POLICY)) }
+        val exits = runCatching {
+            RouteExitBindings.decode(intent?.getStringExtra(VpnUserRequests.EXTRA_EXITS)).also {
+                require((it!=null)==(policy.getOrNull()!=null))
+            }
+        }
+        val binding=runCatching {RouteCommitBinding.decode(intent?.getStringExtra(VpnUserRequests.EXTRA_COMMIT_BINDING))}
         val identity = AppliedConfiguration(identifier(VpnUserRequests.EXTRA_REQUEST) ?: java.util.UUID.randomUUID().toString(),
-            identifier(EXTRA_PROFILE_ID), identifier(EXTRA_ROUTING_PRESET_ID))
+            identifier(EXTRA_PROFILE_ID), identifier(EXTRA_ROUTING_PRESET_ID), policy.getOrNull())
         VpnApplyRequests.tracker.accepted(identity)
         // The previous START may have been superseded before delivery, so there
         // need not be a desiredConfiguration corresponding to its staged rules.
         AppRoutingStore(this).cancelPendingExcept(identity.requestId)
-        val config = intent?.getStringExtra(EXTRA_CONFIG)
+        val config = intent?.getStringExtra(EXTRA_CONFIG)?.takeIf { candidate ->
+            policy.isSuccess && exits.isSuccess && binding.isSuccess && runCatching {
+                exits.getOrNull()?.let { captured ->
+                    val referenced = requireNotNull(policy.getOrNull()).profileIds
+                    captured.validate(candidate, referenced)
+                    captured.validateCatalog(com.nova.vpn.android.data.ProfileVault(this).load(), referenced)
+                }
+                binding.getOrNull()?.let {it.validateConfig(candidate);require(it.profileId==identity.profileId)}
+            }.isSuccess
+        }
         if (config.isNullOrBlank()) {
             VpnApplyRequests.tracker.failed(identity.requestId)
             serviceQueue.execute { AutomaticProbePause.settled(identity.requestId) }
@@ -212,26 +246,29 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
             finishRejectedStart(startId)
             return START_NOT_STICKY
         }
-        val request = Configuration(config, requestedProfileName, AppPreferencesStore(this).vpnEngine(), startId, identity)
+        val request = Configuration(config, requestedProfileName, AppPreferencesStore(this).vpnEngine(), startId, identity, exits=exits.getOrNull(),commitBinding=binding.getOrNull(),automatic=intent?.getBooleanExtra(VpnUserRequests.EXTRA_AUTOMATIC,false)==true)
         desiredConfiguration = request
         cancelRecovery()
-        trafficProbe?.cancel()
+        cancelTrafficChecks()
         if (commands.current(ticket)) enqueueConfiguration(request, ticket, recovery = false)
         else publishRecovery(ticket, waiting = true)
         return START_NOT_STICKY
     }
 
-    private fun enqueueConfiguration(request: Configuration, ticket: ConnectionCoordinator.Ticket, recovery: Boolean) {
+    private fun enqueueConfiguration(original: Configuration, ticket: ConnectionCoordinator.Ticket, recovery: Boolean) {
         serviceQueue.execute {
             if (!commands.current(ticket)) return@execute
-            val config = request.config
+            var request = original
+            var config = request.config
             val startId = request.startId
             val previous = appliedConfiguration
+            val previousUi = VpnRuntime.state.value
             // Publish startup only after the serial queue accepted this request.
             // A second START may arrive before native start returns its handle;
             // rejecting that queued request must not erase the live tunnel state.
             if (!commands.accept(ticket) {
                 if (!recovery) VpnDiagnostics.reset()
+                if(request.catalogRetries>0)VpnDiagnostics.record("catalog_refresh_reprepared")
                 VpnDiagnostics.setTransportFromConfig(config)
                 VpnDiagnostics.setEngine(request.engine == VpnEngine.REALITY_CORE)
                 activeProfileName = request.name
@@ -239,6 +276,8 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
                 WearStatusSync.publish(this, "connecting")
             }) return@execute
             var stage = "vpn-permission"
+            var nativeReloaded = false
+            var nativeMutationStarted = false
             try {
                 Log.i(TAG, "VPN engine startup stage=$stage")
                 if (VpnService.prepare(this) != null) {
@@ -249,6 +288,13 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
                 val engine = request.engine
                 VpnDiagnostics.setEngine(engine == VpnEngine.REALITY_CORE)
                 check(activeEngine == null || activeEngine == engine) { "Перед сменой ядра отключите VPN." }
+                if(request.identity.policy!=null && engine!=VpnEngine.SING_BOX)throw InvalidConfiguration()
+                // Preparation may predate system consent or a network handover.
+                if(request.identity.policy!=null) {
+                    stage="config-validation"
+                    validateCatalog(request)
+                    FakeIpNetworkPreflight.validate(config,FakeIpNetworkPreflight.capture(this))
+                }
                 if (engine == VpnEngine.REALITY_CORE) {
                     stage = "reality-start"
                     startReality(request, ticket)
@@ -263,11 +309,33 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
                 stage = "config-validation"
                 VpnDiagnostics.record("config_validation")
                 Log.i(TAG, "VPN engine startup stage=$stage")
-                trafficProbe?.cancel()
-                val probe = runCatching { AndroidTrafficProbe.prepare(config) }.getOrNull()
-                trafficProbe = probe
-                val runtimeConfig = probe?.config ?: config
-                Libbox.checkConfig(runtimeConfig)
+                cancelTrafficChecks()
+                var healthPlan = request.identity.policy?.let { MultiExitHealthPlan.prepare(config, requireNotNull(request.exits), it) }
+                val probe = if (healthPlan == null) runCatching { AndroidTrafficProbe.prepare(config) }.getOrNull() else null
+                var runtimeConfig = healthPlan?.config ?: probe?.config ?: config
+                try {
+                    Libbox.checkConfig(runtimeConfig)
+                } catch (failure: Exception) {
+                    val isolated = isolateRejectedExits(request, ticket) ?: throw failure
+                    val rebuiltHealth = MultiExitHealthPlan.prepare(isolated.config, requireNotNull(isolated.exits),
+                        requireNotNull(isolated.identity.policy))
+                    Libbox.checkConfig(rebuiltHealth.config)
+                    var accepted = false
+                    if (!commands.accept(ticket) {
+                        if (desiredConfiguration === request) {
+                            desiredConfiguration = isolated
+                            accepted = true
+                        }
+                    } || !accepted) return@execute
+                    request = isolated
+                    config = isolated.config
+                    healthPlan = rebuiltHealth
+                    runtimeConfig = rebuiltHealth.config
+                }
+                val multi = healthPlan
+                trafficProbe = probe;exitHealthPlan=multi
+                val uidGuard = if (request.identity.policy != null)
+                    com.nova.vpn.android.data.SharedUidExitGuard.capture(config) else null
                 if (!commands.current(ticket)) return@execute
                 stage = "command-server-create"
                 Log.i(TAG, "VPN engine startup stage=$stage")
@@ -281,20 +349,45 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
                 // the running config without deliberately closing the VPN service first.
                 stage = "tunnel-start-or-reload"
                 Log.i(TAG, "VPN engine startup stage=$stage")
+                validateCatalog(request)
+                validateRoutingSnapshot(request)
+                if (!commands.current(ticket)) return@execute
+                // The old and new native configurations can both ask for an owner during reload.
+                val nextUidGuards = listOfNotNull(uidGuard)
+                sharedUidGuards = sharedUidGuards + nextUidGuards
+                nativeMutationStarted = true
                 server.startOrReloadService(runtimeConfig, OverrideOptions())
+                nativeReloaded = true
                 VpnDiagnostics.record("engine_started")
                 startDebugLogStream()
                 if (!commands.accept(ticket) {
-                    commitRouting(request)
+                    val preview = commitRouting(request)
+                    sharedUidGuards = nextUidGuards
                     commands.succeeded(ticket)
                     appliedConfiguration = request
                     VpnApplyRequests.tracker.applied(request.identity, request.rollbackFor)
-                    VpnRuntime.setConnected(request.identity)
+                    VpnRuntime.setConnected(request.identity, preview)
                     VpnDiagnostics.record("tunnel_active")
                     WearStatusSync.publish(this, "connected")
                     updateNotification("VPN подключён")
                 }) { closeEngine(keepTun = commands.view().wanted); return@execute }
                 AutomaticProbePause.settled(request.rollbackFor ?: request.identity.requestId)
+                if(multi!=null && commands.current(ticket)) {
+                    val revision=VpnRuntime.state.value.sessionRevision
+                    commands.accept(ticket) { VpnRuntime.beginExitChecks(multi.bindings,requireNotNull(request.identity.policy),multi.unsupported) }
+                    multi.probes.forEach { (id,channel)->exitProbeQueue.execute task@ {
+                        if(!commands.current(ticket)||exitHealthPlan!==multi)return@task
+                        val fingerprint=multi.bindings.entries.getValue(id).profileSha256
+                        var checking=false
+                        commands.accept(ticket) { if(exitHealthPlan===multi)checking=VpnRuntime.setExitChecking(revision,id,fingerprint) }
+                        if(!checking)return@task
+                        val success=channel.check()
+                        commands.accept(ticket) { if(exitHealthPlan===multi) {
+                            VpnRuntime.setExitResult(revision,id,fingerprint,success,channel.responseMillis)
+                            updateNotification(VpnRuntime.state.value.exitCheckSummary())
+                        } }
+                    } }
+                }
                 if (probe != null && commands.current(ticket)) {
                     commands.accept(ticket) { VpnRuntime.setTrafficChecking() }
                     probeQueue.execute {
@@ -307,10 +400,31 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
                 }
             } catch (error: Throwable) {
                 if (!commands.current(ticket)) { closeEngine(keepTun = commands.view().wanted); return@execute }
+                // Keep the owned automatic request and rebuild its exact assignments even
+                // if the catalog changed during native reload, before durable commit.
+                if (error is CatalogChanged && previous != null &&
+                    reprepareCatalogRequest(request, ticket, recovery, nativeReloaded)) return@execute
                 VpnDiagnostics.record("startup_failed")
-                trafficProbe?.cancel(); trafficProbe = null
+                cancelTrafficChecks(); trafficProbe = null
                 Log.e(TAG, "VPN start failed at stage=$stage", error)
-                if (previous != null && previous.config != request.config && previous.engine == request.engine) {
+                // A failed durable write may already have a recoverable pre-image,
+                // or may have failed before preparing one. Use the normal checked
+                // recovery before deciding whether the old native config can resume.
+                if(com.nova.vpn.android.data.RestoreRecoveryState.problem.value!=null) {
+                    runCatching { com.nova.vpn.android.data.FullTransfer.recoverPending(this) }
+                }
+                if(com.nova.vpn.android.data.RestoreRecoveryState.problem.value!=null) {
+                    val failed=commands.terminal(ticket)?:return@execute;closeEngine()
+                    commands.acceptTerminal(failed) {
+                        VpnApplyRequests.tracker.failed(request.rollbackFor?:request.identity.requestId)
+                        AutomaticProbePause.settled(request.rollbackFor?:request.identity.requestId)
+                        desiredConfiguration=null;VpnRuntime.setFailure("Не удалось подтвердить сохранение маршрутов. Сначала завершите восстановление настроек.")
+                        WearStatusSync.publish(this,"error");removeForeground();stopSelfResult(startId)
+                    }
+                } else if (!recovery && !nativeMutationStarted && stage == "config-validation" &&
+                    previous != null && retainUntouchedConfiguration(previous, previousUi, request, ticket)) {
+                    return@execute
+                } else if (previous != null && previous.config != request.config && previous.engine == request.engine) {
                     closeEngine(keepTun = true)
                     var rollback: ConnectionCoordinator.Ticket? = null
                     commands.accept(ticket) {
@@ -319,7 +433,7 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
                         VpnDiagnostics.record("configuration_rollback")
                     }
                     rollback?.let { scheduleRecovery(it, 0) }
-                } else if (error is InvalidConfiguration || stage in setOf("vpn-permission", "config-validation")) {
+                } else if (error is InvalidConfiguration || error is StaleRoutingSnapshot || stage in setOf("vpn-permission", "config-validation")) {
                     val failedTicket = commands.terminal(ticket) ?: return@execute
                     closeEngine()
                     commands.acceptTerminal(failedTicket) {
@@ -347,6 +461,7 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
     }
 
     override fun onDestroy() {
+        catalogRefresh?.close();catalogRefresh=null
         automaticServers?.close(); automaticServers = null
         commands.stop()
         val interrupted = desiredConfiguration
@@ -359,8 +474,9 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
         physicalMonitor?.close(); physicalMonitor = null
         recoveryQueue.shutdownNow()
         runCatching { unregisterReceiver(notificationRefreshReceiver) }
-        trafficProbe?.cancel(); trafficProbe = null
+        cancelTrafficChecks(); trafficProbe = null
         probeQueue.shutdownNow()
+        exitProbeQueue.shutdownNow()
         realityHealthQueue.shutdownNow()
         interfacePublications.clear()
         fun finishDestroy() {
@@ -387,7 +503,7 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
         runCatching { desiredConfiguration?.let { AppRoutingStore(this).cancelPending(it.rollbackFor ?: it.identity.requestId) } }
         desiredConfiguration = null
         cancelRecovery()
-        trafficProbe?.cancel(); trafficProbe = null
+        cancelTrafficChecks(); trafficProbe = null
         serviceQueue.execute {
             closeEngine()
             AutomaticProbePause.serviceClosed(serviceIdentity)
@@ -410,8 +526,13 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
         }
     }
 
-    private fun closeEngine(keepTun: Boolean = false) {
+    private fun cancelTrafficChecks() {
         trafficProbe?.cancel()
+        exitHealthPlan?.cancel();exitHealthPlan=null
+    }
+
+    private fun closeEngine(keepTun: Boolean = false) {
+        cancelTrafficChecks()
         trafficProbe = null
         realityHealthTask?.cancel(false)
         realityHealthTask = null
@@ -426,6 +547,7 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
         runCatching { commandServer?.closeService() }
         runCatching { commandServer?.close() }
         commandServer = null
+        sharedUidGuards = emptyList()
         if (!keepTun) {
             runCatching { tunDescriptor?.close() }
             tunDescriptor = null
@@ -462,8 +584,9 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
         val policyKey = TunReusePolicy.reality(prepared.includedPackages, prepared.excludedPackages) { name ->
             runCatching { packageManager.getApplicationInfo(name, 0).uid }.getOrElse { throw InvalidConfiguration() }
         }
+        validateRoutingSnapshot(request)
         val retainedTun = tunDescriptor.takeIf { tunPolicyKey == policyKey }
-        trafficProbe?.cancel()
+        cancelTrafficChecks()
         closeEngine(keepTun = true)
         if (!commands.current(ticket)) return
         activeEngine = VpnEngine.REALITY_CORE
@@ -527,7 +650,7 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
         realityHealthTask = realityHealthQueue.scheduleWithFixedDelay({
             runCatching { serviceQueue.execute {
                 if (commands.current(ticket) && realityHandle != 0L && !RealityCoreBridge.isAlive(realityHandle)) {
-                    trafficProbe?.cancel(); trafficProbe = null
+                    cancelTrafficChecks(); trafficProbe = null
                     closeEngine(keepTun = true)
                     VpnDiagnostics.record("reality_terminal_failure")
                     retryAfterFailure(ticket)
@@ -550,7 +673,7 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
         } }
         if (commands.view().wanted) runCatching { recoveryQueue.execute {
             commands.accept(ticket, requireNetwork = false) {
-                trafficProbe?.cancel()
+                cancelTrafficChecks()
                 VpnDiagnostics.record(if (snapshot.network == null) "recovery_wait_network" else "recovery_network_changed")
                 publishRecovery(ticket, waiting = snapshot.network == null)
                 if (snapshot.network != null) scheduleRecovery(ticket, 350)
@@ -676,10 +799,130 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
         }
     }
 
-    private fun commitRouting(request: Configuration) {
+    private class CatalogChanged(cause:IllegalArgumentException):IllegalArgumentException("Каталог серверов изменился",cause)
+    private fun validateCatalog(request: Configuration) {
+        if(request.exits==null)return
+        val profiles=com.nova.vpn.android.data.ProfileVault(this).load()
+        try {request.exits?.validateCatalog(profiles,requireNotNull(request.identity.policy).profileIds)}
+        catch(error:IllegalArgumentException) {throw CatalogChanged(error)}
+    }
+
+    private fun reprepareCatalogRequest(request: Configuration, ticket: ConnectionCoordinator.Ticket,
+        recovery: Boolean, nativeReloaded: Boolean): Boolean {
+        if(!request.automatic || request.rollbackFor!=null || request.catalogRetries>=3 || !commands.current(ticket))return false
+        var next:Configuration?=null
+        try {
+            VpnUserRequests.gate.accept(request.identity.requestId) {
+                if(!commands.current(ticket) || !AutomaticProbePause.belongsTo(request.identity.requestId,serviceIdentity))return@accept
+                synchronized(com.nova.vpn.android.data.ProfileVault.lock) {
+                    val pending=AppRoutingStore(this).loadPresets().pending?:return@synchronized
+                    if(pending.requestId!=request.identity.requestId || pending.presetId!=request.identity.routingPresetId ||
+                        request.commitBinding?.matches(pending.settings,request.identity.profileId)!=true ||
+                        RoutePolicyIdentity.capture(pending.settings)!=request.identity.policy ||
+                        AppPreferencesStore(this).vpnEngine()!=request.engine)return@synchronized
+                    val profiles=com.nova.vpn.android.data.ProfileVault(this).load()
+                    val anchor=PreparedVpnConfiguration.selectedPrimary(profiles,pending.settings,request.identity.profileId)?:return@synchronized
+                    val fresh=PreparedVpnConfiguration.prepare(this,anchor,pending.settings,pending.presetId,quarantineUnsupported=true)
+                    check(fresh.profileId==request.identity.profileId && fresh.policy==request.identity.policy)
+                    next=request.copy(config=fresh.config,name=fresh.name,exits=fresh.exits,commitBinding=fresh.commitBinding,catalogRetries=request.catalogRetries+1)
+                    desiredConfiguration=next
+                }
+            }
+        } catch(_:Exception) {return false}
+        val refreshed=next?:return false
+        // A candidate rejected at commit may already be routing traffic. Close it
+        // before the next queued attempt, keeping the TUN to contain traffic.
+        if (nativeReloaded) closeEngine(keepTun = true)
+        VpnDiagnostics.record("catalog_refresh_reprepared")
+        enqueueConfiguration(refreshed,ticket,recovery)
+        return true
+    }
+
+    private fun retainUntouchedConfiguration(previous: Configuration, previousUi: VpnUiState,
+        rejected: Configuration, ticket: ConnectionCoordinator.Ticket): Boolean {
+        if (previous.identity.policy == null || previous.exits == null || previous.commitBinding == null ||
+            previous.engine != VpnEngine.SING_BOX || rejected.engine != previous.engine || rejected.rollbackFor != null ||
+            !previousUi.connected || previousUi.appliedConfiguration != previous.identity ||
+            previousUi.recoveryStatus != null || previousUi.trafficChecking) return false
+        var retained = false
+        commands.accept(ticket) {
+            if (desiredConfiguration !== rejected || appliedConfiguration !== previous || activeEngine != previous.engine ||
+                commandServer == null || tunDescriptor == null || RUNTIME_OWNER.get() != serviceIdentity) return@accept
+            synchronized(com.nova.vpn.android.data.ProfileVault.lock) {
+                try {
+                    validateCatalog(previous)
+                    val store = AppRoutingStore(this)
+                    RouteCommitBinding.requireCurrent(store.loadPresets(), previous.identity, previous.commitBinding, allowStaged = false)
+                    store.cancelPending(rejected.identity.requestId)
+                } catch (_: Exception) {
+                    return@synchronized
+                }
+                if (!VpnApplyRequests.tracker.applied(previous.identity, rollbackFor = rejected.identity.requestId)) return@synchronized
+                val active = previous.copy(startId = rejected.startId, rollbackFor = null)
+                desiredConfiguration = active
+                appliedConfiguration = active
+                activeProfileName = active.name
+                commands.succeeded(ticket)
+                VpnRuntime.restoreUntouchedConnection(previousUi)
+                VpnDiagnostics.record("configuration_rollback")
+                AutomaticProbePause.settled(rejected.identity.requestId)
+                WearStatusSync.publish(this, "connected")
+                updateNotification(previousUi.exitCheckSummary())
+                retained = true
+            }
+        }
+        return retained
+    }
+
+    private fun isolateRejectedExits(request: Configuration, ticket: ConnectionCoordinator.Ticket): Configuration? {
+        val bindings = request.exits ?: return null
+        if (request.rollbackFor != null || request.commitBinding == null) return null
+        val document = AppRoutingStore(this).loadPresets()
+        val pending = document.pending
+        // Saved settings and automatic catalog updates can degrade per exit.
+        // Explicit editor changes still need the complete candidate to pass.
+        if (pending != null && (!request.automatic || pending.requestId != request.identity.requestId)) return null
+        RouteCommitBinding.requireCurrent(document, request.identity, request.commitBinding, allowStaged = request.automatic)
+        val settings = pending?.settings ?: document.active.settings
+        val isolated = NativeExitIsolation.rebuild(request.config, bindings, settings, packageName,
+            current = { commands.current(ticket) && desiredConfiguration === request },
+            accepts = { candidate ->
+                try {
+                    Libbox.checkConfig(candidate)
+                    true
+                } catch (_: Exception) {
+                    false
+                }
+            }) ?: return null
+        return request.copy(config = isolated.config, exits = isolated.bindings,
+            commitBinding = request.commitBinding.copy(configSha256 = RouteExitBindings.hash(isolated.config)))
+    }
+
+    private fun validateRoutingSnapshot(request: Configuration) {
+        if (request.identity.policy == null && request.commitBinding == null) return
+        RouteCommitBinding.requireCurrent(AppRoutingStore(this).loadPresets(), request.identity,
+            request.commitBinding, allowStaged = request.rollbackFor == null)
+    }
+
+    // The writer uses this same lock: a provider update cannot land between the
+    // final catalog check and the durable routing/selection transaction.
+    private fun commitRouting(request: Configuration) = synchronized(com.nova.vpn.android.data.ProfileVault.lock) {
+        validateCatalog(request)
         val store = AppRoutingStore(this)
-        if (request.rollbackFor != null) store.cancelPending(request.rollbackFor)
-        else request.identity.routingPresetId?.let { store.commitPending(request.identity.requestId, it) }
+        if (request.rollbackFor != null) {
+            validateRoutingSnapshot(request)
+            store.cancelPending(request.rollbackFor)
+        } else request.identity.routingPresetId?.let { presetId ->
+            val committed=store.commitPending(request.identity.requestId,presetId,request.identity.policy,request.identity.profileId,request.commitBinding)
+            if (!committed) RouteCommitBinding.requireCurrent(store.loadPresets(), request.identity, request.commitBinding, allowStaged = false)
+        }
+        val policy = request.identity.policy
+        val exits = request.exits
+        if (policy == null || exits == null) null else runCatching {
+            val active = store.loadPresets().active
+            if (active.id != request.identity.routingPresetId) null
+            else ActiveRoutePreview.capture(active.settings, policy, exits, request.config)
+        }.getOrNull()
     }
 
     private fun startForegroundCompat() {
@@ -845,11 +1088,17 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
                     InetSocketAddress(destinationAddress, destinationPort))
                 if (uid >= 0) {
                     val packages = packageManager.getPackagesForUid(uid).orEmpty().toList()
+                    val routedPackages = if (sharedUidGuards.any { it.conflicts(packages) })
+                        listOf(com.nova.vpn.android.data.SharedUidExitGuard.CONFLICT_PACKAGE) else packages
                     userId = uid
-                    userName = packages.firstOrNull().orEmpty()
-                    setAndroidPackageNames(StringArrayIterator(packages))
+                    userName = routedPackages.firstOrNull().orEmpty()
+                    setAndroidPackageNames(StringArrayIterator(routedPackages))
                 }
             }
+        }
+        if((userId<0 || userName.isBlank()) && sourceAddress!=null && destinationAddress!=null)runCatching {
+            UnknownOwnerObservations.audit.record(serviceIdentity,ipProtocol,sourceAddress,sourcePort,destinationAddress,destinationPort,
+                if(userId<0)UnknownOwnerAudit.Reason.UID_UNAVAILABLE else UnknownOwnerAudit.Reason.PACKAGES_UNAVAILABLE)
         }
     }
 
@@ -990,4 +1239,6 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
         @Volatile private var libboxReady = false
     }
 }
+
+
 

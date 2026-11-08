@@ -117,7 +117,7 @@ internal fun OneUIHome(profiles: List<ImportedProfile>, selectedId: String, prof
     }
     OneUIFrame("Подключение", status, icon = Icons.Rounded.Shield) {
         item {
-            val control = if (profile == null && !state.connected) Modifier.clickable(role = Role.Button, onClick = onManage)
+            val control = if (profile == null && !state.connected && !state.connecting) Modifier.clickable(role = Role.Button, onClick = onManage)
                 else Modifier.toggleable(state.connected, role = Role.Switch, onValueChange = { onToggle() })
             Surface(Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp)).then(control)
                 .then(if (LocalTutorialStep.current == TutorialStep.Connect) Modifier.border(2.dp, c.primary, RoundedCornerShape(24.dp)) else Modifier),
@@ -125,12 +125,12 @@ internal fun OneUIHome(profiles: List<ImportedProfile>, selectedId: String, prof
                 shape = RoundedCornerShape(24.dp)) {
                 Row(Modifier.padding(24.dp).heightIn(min = 40.dp), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
-                        Text(if (profile == null && !state.connected) "Добавить сервер" else if (state.connecting) "Отменить подключение" else if (state.connected) "Включено" else "Выключено", fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
-                        Text(if (profile == null && !state.connected) "Для первого подключения" else if (state.connected) "Нажмите, чтобы отключить" else "Нажмите, чтобы подключить", fontSize = 13.sp, modifier = Modifier.padding(top = 4.dp))
+                        Text(if (profile == null && !state.connected && !state.connecting) "Добавить сервер" else if (state.connecting) "Отменить подключение" else if (state.connected) "Включено" else "Выключено", fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
+                        Text(if (profile == null && !state.connected && !state.connecting) "Для первого подключения" else if (state.connected) "Нажмите, чтобы отключить" else "Нажмите, чтобы подключить", fontSize = 13.sp, modifier = Modifier.padding(top = 4.dp))
                     }
                     Spacer(Modifier.width(12.dp))
                     if (state.connecting) CircularProgressIndicator(Modifier.size(26.dp), strokeWidth = 2.dp)
-                    else if (profile == null && !state.connected) Icon(Icons.Rounded.Add, null, Modifier.size(28.dp))
+                    else if (profile == null && !state.connected && !state.connecting) Icon(Icons.Rounded.Add, null, Modifier.size(28.dp))
                     else Switch(state.connected, null, colors = SwitchDefaults.colors(checkedThumbColor = c.primary, checkedTrackColor = c.onPrimary,
                         uncheckedTrackColor = c.outlineVariant, uncheckedBorderColor = Color.Transparent, uncheckedThumbColor = Color.White))
                 }
@@ -147,7 +147,7 @@ internal fun OneUIHome(profiles: List<ImportedProfile>, selectedId: String, prof
         }
         item {
             OneUIGroup {
-                OneUIRow("Сервер", profile?.name ?: "Не выбран", Icons.Rounded.Public, Color(0xFF3478C9),
+                OneUIRow("Сервер", ConnectionProfileSelection.name(state, profile, "Не выбран"), Icons.Rounded.Public, Color(0xFF3478C9),
                     { if (profiles.isEmpty()) onManage() else choose = !choose }, expanded = if (profiles.isEmpty()) null else choose)
                 AnimatedVisibility(choose) {
                     Column(Modifier.selectableGroup()) {

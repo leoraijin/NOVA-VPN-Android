@@ -36,7 +36,7 @@ internal class TestTlsFixture(context: Context) {
             .chunked(64).joinToString("\n") + "\n-----END CERTIFICATE-----\n")
     }.path
 
-    fun serverSocket(): SSLServerSocket {
+    fun serverSocket(port: Int = 0): SSLServerSocket {
         val password = "ephemeral-only".toCharArray()
         val store = KeyStore.getInstance("PKCS12").apply {
             load(null, null)
@@ -44,7 +44,10 @@ internal class TestTlsFixture(context: Context) {
         }
         val managers = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm()).apply { init(store, password) }
         val tls = SSLContext.getInstance("TLS").apply { init(managers.keyManagers, null, null) }
-        return tls.serverSocketFactory.createServerSocket(0, 8, java.net.InetAddress.getByName("127.0.0.1")) as SSLServerSocket
+        return (tls.serverSocketFactory.createServerSocket() as SSLServerSocket).apply {
+            reuseAddress = true
+            bind(java.net.InetSocketAddress("127.0.0.1", port), 8)
+        }
     }
 
     private fun der(tag: Int, vararg parts: ByteArray): ByteArray {

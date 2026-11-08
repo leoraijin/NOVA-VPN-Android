@@ -46,11 +46,7 @@ class NovaVpnTileService : TileService() {
         val request = VpnUserRequests.gate.begin()
         tileScope.launch {
             runCatching {
-                val profiles = withContext(Dispatchers.IO) { ProfileVault(appContext).load() }
-                val selectedId = withContext(Dispatchers.IO) { SelectedProfileStore(appContext).load() }
-                val profile = profiles.firstOrNull { it.id == selectedId } ?: profiles.firstOrNull()
-                    ?: error("Сначала добавьте VPN-конфигурацию в NOVA VPN.")
-                withContext(Dispatchers.Default) { PreparedVpnConfiguration.prepare(appContext, profile) }
+                withContext(Dispatchers.Default) {PreparedVpnConfiguration.prepareSelected(appContext)}
             }.onSuccess { prepared ->
                 withContext(Dispatchers.Main) {
                     if (!VpnUserRequests.gate.isCurrent(request)) return@withContext
@@ -91,14 +87,23 @@ class NovaVpnTileService : TileService() {
         updateTile(vpnState, null)
         refreshJob?.cancel()
         refreshJob = tileScope.launch {
-            val profileName = withContext(Dispatchers.IO) {
+            val catalog = withContext(Dispatchers.IO) {
                 runCatching {
-                    val profiles = ProfileVault(applicationContext).load()
-                    val selectedId = SelectedProfileStore(applicationContext).load()
-                    (profiles.firstOrNull { it.id == selectedId } ?: profiles.firstOrNull())?.name?.take(28)
+                    synchronized(ProfileVault.lock) {
+                        val profiles=ProfileVault(applicationContext).load()
+                        Triple(profiles,
+                            SelectedProfileStore(applicationContext).resolveId(profiles),
+                            AppRoutingStore(applicationContext).loadPresets().active.settings.multiServer?.defaultProfileId)
+                    }
                 }.getOrNull()
             }
-            withContext(Dispatchers.Main) { updateTile(VpnRuntime.state.value, profileName) }
+            withContext(Dispatchers.Main) {
+                // Resolve AFTER IO against the current acknowledged session, not the state before loading.
+                val current = VpnRuntime.state.value
+                val id = ConnectionProfileSelection.id(current, catalog?.second, catalog?.third)
+                val name = catalog?.first?.firstOrNull { it.id == id }?.displayName?.take(28)
+                updateTile(current, name)
+            }
         }
     }
 

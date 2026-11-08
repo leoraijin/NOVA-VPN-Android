@@ -3,4 +3,10 @@
     <queries>
         <package android:name="com.nova.vpn.android.identitypreview.test" />
     </queries>
+    <application>
+        <service android:name="com.nova.vpn.android.StartTransportTestService" android:exported="false" />
+        <activity android:name="com.nova.vpn.android.StorageTestActivity"
+            android:exported="false" android:excludeFromRecents="true"
+            android:theme="@android:style/Theme.Material.Light.NoActionBar" />
+    </application>
 </manifest>

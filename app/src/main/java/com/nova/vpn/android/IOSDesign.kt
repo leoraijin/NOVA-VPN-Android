@@ -67,8 +67,7 @@ internal fun HomePage(profiles: List<ImportedProfile>, selectedProfileId: String
         else -> "Не подключено"
     }
     val statusColor by animateColorAsState(if (vpnState.warning != null) c.error else if (vpnState.trafficVerified) c.secondary else c.onSurface, label = "ios-status")
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(20.dp, 20.dp, 20.dp,
-        if (LocalConfiguration.current.screenHeightDp >= 480) 124.dp else 20.dp),
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(20.dp),
         verticalArrangement = Arrangement.spacedBy(24.dp)) {
         item {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -92,7 +91,7 @@ internal fun HomePage(profiles: List<ImportedProfile>, selectedProfileId: String
                         .then(if (LocalTutorialStep.current == TutorialStep.Connect) Modifier.border(2.dp, c.primary, CircleShape) else Modifier)
                         .clickable(interactionSource = interactions, indication = null,
                             role = Role.Button, onClickLabel = if (vpnState.connecting) "Отменить подключение" else if (vpnState.connected) "Отключить VPN" else if (profile == null) "Добавить сервер" else "Подключить VPN",
-                            onClick = if (profile == null && !vpnState.connected) onManageProfiles else onToggle), contentAlignment = Alignment.Center) {
+                            onClick = if (profile == null && !vpnState.connected && !vpnState.connecting) onManageProfiles else onToggle), contentAlignment = Alignment.Center) {
                         if (vpnState.connecting) CircularProgressIndicator(Modifier.size(42.dp), color = c.primary, strokeWidth = 2.dp)
                         else Icon(Icons.Rounded.PowerSettingsNew, if (vpnState.connected) "Отключить VPN" else if (profile == null) "Добавить сервер" else "Подключить VPN", tint = c.primary, modifier = Modifier.size(48.dp))
                     }
@@ -116,7 +115,7 @@ internal fun HomePage(profiles: List<ImportedProfile>, selectedProfileId: String
         item {
             IOSSection("СЕРВЕР") {
                 IOSGroup {
-                    IOSRow(Icons.Rounded.Public, profile?.name ?: "Добавить сервер", profile?.protocol?.uppercase() ?: "Ссылка, QR-код или файл",
+                    IOSRow(Icons.Rounded.Public, ConnectionProfileSelection.name(vpnState, profile, "Добавить сервер"), profile?.protocol?.uppercase() ?: "Ссылка, QR-код или файл",
                         onClick = { if (profiles.isEmpty()) onManageProfiles() else serversExpanded = !serversExpanded }, expanded = if (profiles.isEmpty()) null else serversExpanded)
                     AnimatedVisibility(serversExpanded) {
                         Column {
@@ -347,3 +346,4 @@ internal fun IOSRoutingTabs(selected: Int, labels: List<String> = listOf("Сай
         }
     }
 }
+

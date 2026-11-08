@@ -4,7 +4,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 /** Identifiers only. Configuration contents and user names never enter acknowledgements. */
-data class AppliedConfiguration(val requestId: String, val profileId: String? = null, val routingPresetId: String? = null)
+data class AppliedConfiguration(val requestId: String, val profileId: String? = null, val routingPresetId: String? = null, val policy: RoutePolicyIdentity? = null)
 
 internal enum class ApplyStatus { PENDING, APPLIED, ROLLED_BACK, FAILED, SUPERSEDED, CANCELLED }
 internal data class ConfigurationApplyResult(

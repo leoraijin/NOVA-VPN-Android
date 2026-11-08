@@ -24,6 +24,26 @@ internal object TransferCrashSmoke {
         val incoming = File(context.filesDir, INCOMING)
         val validJournal = File(context.filesDir, "restore-crash-valid-journal.bin")
         when {
+            phase.startsWith("routing-mode-")->RoutingModeJournalSmoke.run(instrumentation,phase)
+            phase.startsWith("delete-process-")->DeleteAllProfilesSmoke.runProcessCut(instrumentation,phase)
+            phase.startsWith("physical-restore-") -> runPhysical(instrumentation, phase.removePrefix("physical-restore-"))
+            phase == "active-tun-cleanup" -> {
+                check(context.packageName == "com.nova.vpn.android.usbtest.completionpreview")
+                val backup = File(context.filesDir, "active-tun-process-original.nova")
+                val receipt = File(context.filesDir, "active-tun-process-cut.json")
+                val password = "Synthetic-active-tun-process-2026"
+                val activity = instrumentation.startActivitySync(android.content.Intent(context, StorageTestActivity::class.java)
+                    .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
+                try {
+                    val original = FullTransfer.read(backup.readText(), password)
+                    FullTransfer.restore(context, original)
+                    check(comparable(FullTransfer.read(FullTransfer.export(context, password), password)) == comparable(original))
+                    check(backup.delete())
+                    if (receipt.exists()) check(receipt.delete())
+                } finally {
+                    instrumentation.runOnMainSync { activity.finish() }
+                }
+            }
             phase == "repair-test-baseline" -> {
                 if (journal.exists() && validJournal.exists()) java.io.FileOutputStream(journal).use {
                     it.write(validJournal.readBytes()); it.fd.sync()
@@ -293,7 +313,10 @@ internal object TransferCrashSmoke {
                     }
                     val hash = java.security.MessageDigest.getInstance("SHA-256").digest(journal.readBytes())
                         .joinToString("") { "%02x".format(it) }
+                    val stat = File("/proc/self/stat").readText()
                     val receipt = JSONObject().put("cut", cut).put("journal_checked", true)
+                        .put("pid", android.os.Process.myPid())
+                        .put("birthTicks", stat.substringAfterLast(") ").split(" ")[19])
                         .put("journal_sha256", hash).put("cleartext_markers_absent", true)
                         .put("damaged_profile_target", cut == 4)
                     if (cut == 4) java.io.FileOutputStream(File(context.filesDir, "profiles.vault")).use {
@@ -348,6 +371,50 @@ internal object TransferCrashSmoke {
                 repeat(8) { File(context.getExternalFilesDir(null), "restore-crash-$it.json").delete() }
             }
             else -> error("Unknown crash-test phase")
+        }
+    }
+
+    private fun runPhysical(instrumentation: Instrumentation, phase: String) {
+        val context = instrumentation.targetContext
+        check(context.packageName == "com.nova.vpn.android.usbtest.completionpreview")
+        val backup = File(context.filesDir, "restore-physical-original.nova")
+        val activity = instrumentation.startActivitySync(android.content.Intent(context, StorageTestActivity::class.java)
+            .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
+        instrumentation.waitForIdleSync()
+        try {
+            when (phase) {
+                "prepare" -> {
+                    check(!backup.exists() && !File(context.filesDir, ORIGINAL).exists() &&
+                        !File(context.filesDir, INCOMING).exists())
+                    java.io.FileOutputStream(backup).use { output ->
+                        output.write(FullTransfer.export(context, PASSWORD).toByteArray(Charsets.UTF_8))
+                        output.fd.sync()
+                    }
+                    if (ProfileVault(context).load().isEmpty()) {
+                        val fixture = ProfileLinkParser.parseText(
+                            "vless://11111111-1111-4111-8111-111111111111@fixture.example:443#PhysicalRestore"
+                        ).single()
+                        ProfileVault(context).restoreSnapshot(ProfileSnapshot.migrate(listOf(fixture)))
+                        SelectedProfileStore(context).save(fixture.id)
+                    }
+                    run(instrumentation, "prepare")
+                }
+                "cleanup" -> {
+                    val original = FullTransfer.read(backup.readText(), PASSWORD)
+                    FullTransfer.restore(context, original)
+                    val readBack = FullTransfer.read(FullTransfer.export(context, PASSWORD), PASSWORD)
+                    check(comparable(readBack) == comparable(original)) { "Physical fixture baseline did not restore" }
+                    run(instrumentation, "cleanup")
+                    check(backup.delete())
+                }
+                "verify", "cut-0", "cut-1", "cut-2", "cut-3", "cut-4", "cut-5", "cut-6", "cut-7" -> {
+                    check(backup.exists())
+                    run(instrumentation, phase)
+                }
+                else -> error("Unknown physical restore test phase")
+            }
+        } finally {
+            instrumentation.runOnMainSync { activity.finish() }
         }
     }
 

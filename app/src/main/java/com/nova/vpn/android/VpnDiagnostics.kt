@@ -48,14 +48,19 @@ internal object VpnDiagnostics {
         log.append(DiagnosticCatalog.stage(safe), safe, engine, networkGeneration, transport, metrics)
     }
 
-    @Synchronized fun advice(): DiagnosticAdvice = DiagnosticCatalog.advice(log.snapshot().lastOrNull {
-        it.code.contains("failed") || it.code.contains("error") || it.code.startsWith("core_") ||
-            it.code in setOf("vpn_permission_required", "configuration_rollback", "engine_config_unsupported", "engine_unavailable", "dns_system_lookup_busy", "dns_system_lookup_cancelled")
-    })
+    @Synchronized fun advice(): DiagnosticAdvice {
+        val events=log.snapshot()
+        DiagnosticCatalog.unresolvedCatalogFailure(events)?.let {return DiagnosticCatalog.advice(it)}
+        return DiagnosticCatalog.advice(events.lastOrNull {
+            it.code!="catalog_refresh_failed" && (it.code.contains("failed") || it.code.contains("error") || it.code.startsWith("core_") ||
+                it.code in setOf("vpn_permission_required", "configuration_rollback", "engine_config_unsupported", "engine_unavailable", "dns_system_lookup_busy", "dns_system_lookup_cancelled"))
+        })
+    }
     @Synchronized fun exportEvents(): String = DiagnosticEventCodec.encode(log.snapshot())
 
     @Synchronized fun snapshot(profile: ImportedProfile?, routing: AppRoutingSettings, sdk: Int, state: VpnUiState): DiagnosticSnapshot {
-        val advice = if (state.connected && state.trafficVerified) DiagnosticAdvice("HTTPS через VPN подтверждён",
+        val catalogFailure=DiagnosticCatalog.unresolvedCatalogFailure(log.snapshot())
+        val advice = if(catalogFailure!=null)DiagnosticCatalog.advice(catalogFailure) else if (state.connected && state.trafficVerified) DiagnosticAdvice("HTTPS через VPN подтверждён",
             "Последняя прикладная проверка прошла успешно. Подробности доступны в отчёте.", DiagnosticAction.CHECK_SERVERS, "Открыть проверку серверов") else advice()
         return DiagnosticSnapshot(report(profile, routing, sdk, state), reportJson(profile, routing, sdk, state), advice)
     }

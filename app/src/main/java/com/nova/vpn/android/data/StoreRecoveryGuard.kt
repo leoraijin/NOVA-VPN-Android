@@ -6,6 +6,7 @@ import android.content.Context
 internal object StoreRecoveryGuard {
     private var pending = false
     private var active = false
+    val inTransaction: Boolean get()=active
 
     fun beforeAccess(context: Context) {
         check(Thread.holdsLock(ProfileVault.lock))

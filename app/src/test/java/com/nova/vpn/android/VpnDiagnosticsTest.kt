@@ -9,6 +9,33 @@ import org.junit.Test
 class VpnDiagnosticsTest {
     @Before fun reset() { VpnDiagnostics.reset() }
 
+    @Test fun unresolvedCatalogFailureOverridesVerifiedHttpsAndSubmittedAttemptDoesNotClearIt() {
+        val state=VpnUiState(connected=true,trafficVerified=true)
+        VpnDiagnostics.record("catalog_refresh_failed")
+        VpnDiagnostics.record("catalog_refresh_submitted")
+        val snapshot=VpnDiagnostics.snapshot(null,AppRoutingSettings(),35,state)
+        assertEquals("Не удалось обновить активные маршруты",snapshot.advice.title)
+        assertEquals(DiagnosticAction.ROUTING,snapshot.advice.action)
+        assertTrue(snapshot.advice.detail.contains("остаётся прежним"))
+    }
+    @Test fun validatedCurrentCatalogClearsOnlyCatalogWarningAndNewFailureRestoresIt() {
+        VpnDiagnostics.record("catalog_refresh_failed")
+        VpnDiagnostics.record("catalog_refresh_current")
+        assertNotEquals("Не удалось обновить активные маршруты",VpnDiagnostics.advice().title)
+        val state=VpnUiState(connected=true,trafficVerified=true)
+        assertEquals("HTTPS через VPN подтверждён",VpnDiagnostics.snapshot(null,AppRoutingSettings(),35,state).advice.title)
+        VpnDiagnostics.record("catalog_refresh_failed")
+        assertEquals(DiagnosticAction.ROUTING,VpnDiagnostics.snapshot(null,AppRoutingSettings(),35,state).advice.action)
+        VpnDiagnostics.reset()
+        assertEquals("HTTPS через VPN подтверждён",VpnDiagnostics.snapshot(null,AppRoutingSettings(),35,state).advice.title)
+    }
+    @Test fun resolvedCatalogFailureDoesNotHideAnotherUnresolvedDiagnostic() {
+        VpnDiagnostics.record("catalog_refresh_failed")
+        VpnDiagnostics.record("vpn_permission_required")
+        VpnDiagnostics.record("catalog_refresh_current")
+        assertEquals(DiagnosticAction.VPN_PERMISSION,VpnDiagnostics.advice().action)
+        assertEquals("catalog_refresh_current",DiagnosticCatalog.code("catalog_refresh_current"))
+    }
     @Test fun httpFailuresDoNotInventGrpcTransport() {
         assertEquals("http_not_found", VpnDiagnostics.coreCode("xhttp response status 404"))
         assertEquals("http_not_found", VpnDiagnostics.coreCode("HTTP status 404"))

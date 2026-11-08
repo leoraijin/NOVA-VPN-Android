@@ -4,7 +4,7 @@ import android.content.Context
 import org.json.JSONArray
 import org.json.JSONObject
 
-class AppRoutingStore(context: Context) {
+class AppRoutingStore internal constructor(context: Context, private val atomicWrite: ((() -> Unit) -> Unit)? = null) {
     private val recoveryContext = context.applicationContext
     private val prefs = context.getSharedPreferences("routing", Context.MODE_PRIVATE)
 
@@ -35,19 +35,26 @@ class AppRoutingStore(context: Context) {
         }))
     }
 
-    internal fun updatePresets(transform: (RoutingPresets) -> RoutingPresets): RoutingPresets = synchronized(LOCK) {
+    internal fun updatePresets(selection: RoutingSelectionChange? = null,transform: (RoutingPresets) -> RoutingPresets): RoutingPresets = synchronized(LOCK) {
         val next = transform(readPresets())
-        persist(next)
+        persist(next,selection,transactional=selection!=null)
         next
     }
 
-    internal fun stage(presetId: String, requestId: String, settings: AppRoutingSettings? = null) =
-        updatePresets { it.stage(presetId, requestId, PROCESS_SESSION, settings) }
+    internal fun stage(presetId: String, requestId: String, settings: AppRoutingSettings? = null,selection: RoutingSelectionChange?=null,expected: AppRoutingSettings?=null) =
+        updatePresets { current ->
+            check(expected==null||current.presets.single {it.id==presetId}.settings==expected) {"Маршруты изменились. Откройте редактор заново."}
+            current.stage(presetId,requestId,PROCESS_SESSION,settings,selection)
+        }
 
-    internal fun commitPending(requestId: String, presetId: String): Boolean = synchronized(LOCK) {
+    internal fun commitPending(requestId: String, presetId: String, policy: com.nova.vpn.android.RoutePolicyIdentity? = null,profileId: String?=null,binding: com.nova.vpn.android.RouteCommitBinding?=null): Boolean = synchronized(LOCK) {
         val current = readPresets()
         if (current.pending?.requestId != requestId) return@synchronized false
-        persist(current.commit(requestId, presetId))
+        val pending=requireNotNull(current.pending)
+        if(pending.settings.history!=null||pending.selection!=null)require(binding!=null) {"Нет подтверждения снимка маршрутов"}
+        binding?.let {require(it.matches(pending.settings,profileId)) {"Подтверждён другой снимок маршрутов"}}
+        pending.selection?.let {require(it.profileId!=null&&it.profileId==profileId) {"Подтверждён другой сервер"}}
+        persist(current.commitPolicy(requestId, presetId, policy),pending.selection,transactional=true)
         true
     }
 
@@ -61,10 +68,21 @@ class AppRoutingStore(context: Context) {
         if (current.pending != null && current.pending.requestId != requestId) persist(current.copy(pending = null))
     }
 
-    private fun persist(document: RoutingPresets) {
+    internal fun selectProfile(selection: RoutingSelectionChange) = synchronized(LOCK) {
+        val document=readPresets();check(document.pending==null) {"Дождитесь применения маршрутов"}
+        val next=document.copy(presets=document.presets.map {preset ->
+            if(preset.id==document.activeId&&preset.settings.multiServer==null&&preset.settings.history?.single!=null)
+                preset.copy(settings=preset.settings.copy(history=preset.settings.history.withProfile(selection.profileId))) else preset
+        })
+        persist(next,selection)
+    }
+
+    private fun persist(document: RoutingPresets,selection: RoutingSelectionChange?=null,transactional: Boolean=false) {
         StoreRecoveryGuard.beforeAccess(recoveryContext)
-        document.validate()
+        document.validate();require(selection==null||document.pending==null)
+        val previous=readPresets()
         val settings = document.active.settings
+        val write: ()->Unit = {
         check(prefs.edit().putString(KEY_PRESETS, document.toJson().toString())
             .putString(KEY_MODE, settings.mode.name)
             .putBoolean("ipv6_enabled", settings.ipv6Enabled)
@@ -74,7 +92,12 @@ class AppRoutingStore(context: Context) {
                     put(JSONObject().put("domain", rule.domain).put("target", rule.target.name))
                 }
             }.toString())
+            .apply {selection?.let {putString(SelectedProfileStore.KEY_SELECTED,it.profileId?:"")}}
             .commit()) { "Не удалось сохранить настройки маршрутизации" }
+        }
+        if((transactional||document.hasModeHistory||previous.hasModeHistory)&&!StoreRecoveryGuard.inTransaction) {
+            atomicWrite?.invoke(write)?:FullTransfer.writeRoutingAtomically(recoveryContext,write)
+        } else write()
         revision.value = revision.value + 1
     }
 

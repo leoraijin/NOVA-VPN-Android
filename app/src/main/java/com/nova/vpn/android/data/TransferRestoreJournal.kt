@@ -14,12 +14,12 @@ import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 
 /** Durable encrypted pre-image. All access belongs to the main process store transaction. */
-internal class TransferRestoreJournal(context: Context) {
+internal class TransferRestoreJournal(context: Context) : RoutingJournalIO {
     private val file = AtomicFile(File(context.filesDir, "restore-pending.vault"))
     private val preferencesDirectory = File(context.dataDir, "shared_prefs")
     private fun exists() = file.baseFile.exists() || File(file.baseFile.path + ".bak").exists()
 
-    fun prepare(preimage: JSONObject) {
+    override fun prepare(preimage: JSONObject) {
         check(Thread.holdsLock(ProfileVault.lock))
         check(!exists()) { "Не завершено предыдущее восстановление" }
         val plain = preimage.toString().toByteArray(Charsets.UTF_8)
@@ -58,7 +58,7 @@ internal class TransferRestoreJournal(context: Context) {
         return JSONObject(String(cipher.doFinal(bytes.copyOfRange(16, bytes.size)), Charsets.UTF_8))
     }
 
-    fun clear() {
+    override fun clear() {
         check(Thread.holdsLock(ProfileVault.lock))
         // Commit all restored file names before making the rollback record disappear.
         if (preferencesDirectory.exists()) syncDirectory(preferencesDirectory)

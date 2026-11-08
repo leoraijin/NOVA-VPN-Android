@@ -319,6 +319,7 @@ private fun NovaAndroidApp(
             if (editingRoutingId != null && editing == null) editingRoutingId = null
             val target = editing ?: it.active
             routing = it.pending?.takeIf { change -> change.presetId == target.id }?.settings ?: target.settings
+            if(it.pending==null)selectedProfileId=withContext(Dispatchers.IO){selectedProfileStore.resolveId(profiles)}.orEmpty()
         }.onFailure { routingFailure = "Не удалось прочитать профили маршрутизации." }
     }
     LaunchedEffect(applyResults, routingRequest) {
@@ -493,55 +494,74 @@ private fun NovaAndroidApp(
         }
     }
 
-    fun applyRoutingPreset(presetId: String, settings: AppRoutingSettings? = null) {
+    fun applyRoutingPreset(presetId: String, settings: AppRoutingSettings? = null,selectionChange: com.nova.vpn.android.data.RoutingSelectionChange?=null,expected: AppRoutingSettings?=null) {
         if (routingPreparing || routingDocument.pending != null) return
         val request = VpnUserRequests.gate.begin()
         routingPreparing = true; routingFailure = null; routingRequest = request
         scope.launch {
             try {
                 val current = withContext(Dispatchers.IO) { routingStore.loadPresets() }
-                val candidate = settings ?: current.presets.single { it.id == presetId }.settings
+                val previous=current.presets.single {it.id==presetId}.settings
+                check(expected==null||previous==expected) {"Маршруты изменились. Откройте редактор заново."}
+                val candidate = settings ?: previous
+                val selection=selectionChange?:com.nova.vpn.android.data.RoutingModeTransitions.selectionFor(candidate)
+                val selectedTarget=if(selection!=null)selection.profileId else selectedProfileId
+                val multiPrepared = candidate.multiServer?.let { assignments ->
+                    withContext(Dispatchers.Default) {
+                        synchronized(ProfileVault.lock) {
+                            val catalog = ProfileVault(context).load()
+                            val primary = PreparedVpnConfiguration.primaryForRoutingEdit(catalog, previous, assignments.defaultProfileId)
+                                ?: error("Основной сервер недоступен.")
+                            PreparedVpnConfiguration.prepare(context, primary, candidate, presetId)
+                        }
+                    }
+                }
                 if (!vpnState.connected && !vpnState.connecting) {
-                    withContext(Dispatchers.IO) { VpnUserRequests.gate.accept(request) { routingStore.updatePresets { document ->
+                    withContext(Dispatchers.IO) { VpnUserRequests.gate.accept(request) { routingStore.updatePresets(selection) { document ->
+                        check(document.pending==null&&document.presets.single {it.id==presetId}.settings==previous)
                         document.copy(activeId = presetId, pending = null, presets = document.presets.map {
                             if (it.id == presetId) it.copy(settings = candidate) else it
                         })
                     } } }
                 } else {
-                    val profile = profiles.firstOrNull { it.id == selectedProfileId } ?: error("Нет выбранного сервера")
-                    val missing = withContext(Dispatchers.IO) { candidate.packages.filter { name ->
+                    val missing = withContext(Dispatchers.IO) { (candidate.packages + candidate.multiServer?.rules.orEmpty().mapNotNull { it.packageName }).filter { name ->
                         runCatching { context.packageManager.getApplicationInfo(name, 0) }.isFailure
                     } }
                     if (missing.isNotEmpty()) {
                         routingFailure = "В профиле есть удалённые приложения. Уберите отмеченные записи из правил."
                         return@launch
                     }
-                    val config = withContext(Dispatchers.Default) { SingBoxConfigFactory.build(profile, candidate, context.packageName) }
+                    val prepared = multiPrepared ?: withContext(Dispatchers.Default) {
+                        val profile = PreparedVpnConfiguration.selectedPrimary(profiles, candidate, selectedTarget)
+                            ?: error("Прежний сервер недоступен. Отключите VPN и восстановите правила, затем выберите сервер вручную.")
+                        PreparedVpnConfiguration.prepare(context, profile, candidate, presetId)
+                    }
                     if (!VpnUserRequests.gate.isCurrent(request)) return@launch
-                    withContext(Dispatchers.IO) { routingStore.stage(presetId, request, candidate) }
-                    if (!VpnUserRequests.start(context, config, profile.name, request, profile.id, presetId)) {
+                    withContext(Dispatchers.IO) { routingStore.stage(presetId, request, candidate,selection,previous) }
+                    if (!VpnUserRequests.start(context, prepared, request)) {
                         withContext(Dispatchers.IO) { routingStore.cancelPending(request) }
                     }
                 }
             } catch (cancelled: kotlinx.coroutines.CancellationException) {
                 withContext(kotlinx.coroutines.NonCancellable + Dispatchers.IO) { routingStore.cancelPending(request) }
                 throw cancelled
-            } catch (_: Exception) {
+            } catch (error: Exception) {
                 withContext(Dispatchers.IO) { routingStore.cancelPending(request) }
-                routingFailure = "Не удалось применить профиль. Прежние правила сохранены."
+                routingFailure = if(error is com.nova.vpn.android.data.SharedUidRoutingException) error.message else "Не удалось применить профиль. Прежние правила сохранены."
             } finally { routingPreparing = false }
         }
     }
 
-    fun saveRoutingRules(settings: AppRoutingSettings) {
+    fun saveRoutingRules(settings: AppRoutingSettings,selection: com.nova.vpn.android.data.RoutingSelectionChange?=null,expected: AppRoutingSettings?=null) {
         val target = editingRoutingId ?: routingDocument.activeId
-        if (target == routingDocument.activeId) { applyRoutingPreset(target, settings); return }
+        if (target == routingDocument.activeId) { applyRoutingPreset(target, settings,selection,expected); return }
         if (routingPreparing || routingDocument.pending != null) return
         routingPreparing = true; routingFailure = null
         scope.launch {
             try {
                 withContext(Dispatchers.IO) { routingStore.updatePresets { document ->
                     check(document.pending == null && document.activeId != target && document.presets.any { it.id == target })
+                    check(expected==null||document.presets.single {it.id==target}.settings==expected)
                     document.copy(presets = document.presets.map { if (it.id == target) it.copy(settings = settings) else it })
                 } }
             } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
@@ -590,15 +610,22 @@ private fun NovaAndroidApp(
         }
     }
 
+    fun selectManualProfile(id: String) {
+        if(routingDocument.active.settings.multiServer!=null){page=Page.Routing;return}
+        if(routingPreparing||routingDocument.pending!=null){profileError="Дождитесь применения маршрутов.";return}
+        if(runCatching {AutoServerSettingsStore.pin(context)}.isFailure){profileError="Не удалось закрепить ручной выбор сервера.";return}
+        val baseline=routingDocument.active.settings
+        val candidate=baseline.copy(history=baseline.history?.withProfile(id))
+        applyRoutingPreset(routingDocument.activeId,candidate,com.nova.vpn.android.data.RoutingSelectionChange(id),baseline)
+    }
+
     val vaultRevision by ProfileVault.changes.collectAsStateWithLifecycle()
     LaunchedEffect(vault, vaultRevision) {
         runCatching { withContext(Dispatchers.IO) { vault.load() } }
             .onSuccess { stored ->
                 profiles = stored
                 if (!profilesLoaded || stored.none { it.id == selectedProfileId }) {
-                    selectedProfileId = runCatching { selectedProfileStore.load() }.getOrNull()
-                        ?.takeIf { id -> stored.any { it.id == id } }
-                        ?: stored.firstOrNull()?.id.orEmpty()
+                    selectedProfileId = runCatching {selectedProfileStore.resolveId(stored)}.getOrNull().orEmpty()
                 }
             }
             .onFailure { importError = "Не удалось открыть защищённое хранилище профилей." }
@@ -612,25 +639,25 @@ private fun NovaAndroidApp(
         onTileConnectHandled()
         val request = tileRequestToken ?: return@LaunchedEffect
         if (!VpnUserRequests.gate.isCurrent(request)) return@LaunchedEffect
-        val selected = profiles.firstOrNull { it.id == selectedProfileId } ?: profiles.firstOrNull()
+        val selected = PreparedVpnConfiguration.selectedPrimary(profiles, routingDocument.active.settings, selectedProfileId)
         if (selected == null) {
             connectError = "Сначала добавьте VPN-конфигурацию в NOVA VPN."
             return@LaunchedEffect
         }
         runCatching {
-            withContext(Dispatchers.Default) { PreparedVpnConfiguration.prepare(context, selected) }
+            withContext(Dispatchers.Default) { PreparedVpnConfiguration.prepareSelected(context) }
         }.onSuccess { config -> requestVpnStart(config, request) }
             .onFailure { error -> connectError = error.message ?: "Не удалось подготовить конфигурацию VPN." }
     }
-    LaunchedEffect(profiles, selectedProfileId, autoConnect, sharedText) {
-        if (tileConnectFlow || autoConnectAttempted || !autoConnect || profiles.isEmpty() || !sharedText.isNullOrBlank()) return@LaunchedEffect
+    LaunchedEffect(profiles, selectedProfileId, routingDocument.active.settings.multiServer?.defaultProfileId, autoConnect, sharedText) {
+        if (tileConnectFlow || autoConnectAttempted || !autoConnect || !sharedText.isNullOrBlank()) return@LaunchedEffect
+        if (PreparedVpnConfiguration.selectedPrimary(profiles, routingDocument.active.settings, selectedProfileId) == null) return@LaunchedEffect
         autoConnectAttempted = true
         if (vpnState.connected || vpnState.connecting) return@LaunchedEffect
-        val selected = profiles.firstOrNull { it.id == selectedProfileId } ?: return@LaunchedEffect
         val request = VpnUserRequests.gate.begin()
         runCatching {
             withContext(Dispatchers.Default) {
-                PreparedVpnConfiguration.prepare(context, selected)
+                PreparedVpnConfiguration.prepareSelected(context)
             }
         }.onSuccess { config -> requestVpnStart(config, request) }
             .onFailure { error -> connectError = error.message ?: "Не удалось подготовить автоподключение." }
@@ -731,9 +758,8 @@ private fun NovaAndroidApp(
                         start = insets.calculateLeftPadding(LocalLayoutDirection.current),
                         end = insets.calculateRightPadding(LocalLayoutDirection.current),
                         top = insets.calculateTopPadding(),
-                        // Reserve the dock in short windows so server rows remain actionable.
-                        bottom = if (designPreset == DesignStyle.IOS_LIQUID_GLASS && configuration.screenHeightDp >= 480)
-                            0.dp else insets.calculateBottomPadding()
+                        // Scaffold measures the complete dock, including scaled labels and system insets.
+                        bottom = insets.calculateBottomPadding()
                     ))
             ) {
               val tutorialAvailableHeight = maxHeight
@@ -757,26 +783,20 @@ private fun NovaAndroidApp(
                           }
                           Box(Modifier.weight(1f)) { HomePage(
                             profiles = profiles,
-                            selectedProfileId = selectedProfileId,
-                            profile = profiles.firstOrNull { it.id == selectedProfileId },
+                            selectedProfileId = routingDocument.active.settings.multiServer?.defaultProfileId ?: selectedProfileId,
+                            profile = profiles.firstOrNull { it.id == ConnectionProfileSelection.id(vpnState, selectedProfileId,
+                                routingDocument.active.settings.multiServer?.defaultProfileId) },
                             vpnState = vpnState,
                             error = connectError ?: vpnState.error,
                             onCopyDiagnostics = {
-                                val profileId = vpnState.appliedConfiguration?.profileId ?: selectedProfileId
+                                val profileId = ConnectionProfileSelection.id(vpnState, selectedProfileId,
+                                    routingDocument.active.settings.multiServer?.defaultProfileId)
                                 diagnosticChecks.reset()
                                 diagnosticProfile = profiles.firstOrNull { it.id == profileId }
                                 diagnosticSnapshot = VpnDiagnostics.snapshot(diagnosticProfile, routingDocument.active.settings,
                                     Build.VERSION.SDK_INT, vpnState)
                             },
-                            onSelectProfile = {
-                              if (runCatching { AutoServerSettingsStore.pin(context) }.isSuccess) {
-                                selectedProfileId = it
-                                scope.launch(Dispatchers.IO) {
-                                    runCatching { selectedProfileStore.save(it) }
-                                }
-                                applyLiveConfiguration(it)
-                              } else profileError = "Не удалось закрепить ручной выбор сервера."
-                            },
+                            onSelectProfile = {selectManualProfile(it)},
                             onManageProfiles = { page = Page.Servers },
                             onToggle = {
                                 if (vpnState.connected || vpnState.connecting) {
@@ -786,13 +806,13 @@ private fun NovaAndroidApp(
                                         VpnUserRequests.stop(context)
                                     }.onFailure { connectError = it.message ?: "Не удалось отключить VPN" }
                                 } else {
-                                    val selected = profiles.firstOrNull { it.id == selectedProfileId }
+                                    val selected = PreparedVpnConfiguration.selectedPrimary(profiles, routingDocument.active.settings, selectedProfileId)
                                     if (selected == null) {
                                         connectError = "Сначала импортируйте VPN-конфигурацию."
                                     } else {
                                         val request = VpnUserRequests.gate.begin()
                                         runCatching {
-                                            PreparedVpnConfiguration.prepare(context, selected)
+                                            PreparedVpnConfiguration.prepareSelected(context)
                                         }.onSuccess { config -> requestVpnStart(config, request) }.onFailure { error ->
                                             connectError = error.message ?: "Конфигурация не прошла подготовку."
                                         }
@@ -804,19 +824,18 @@ private fun NovaAndroidApp(
                         }
                         Page.Servers -> ServersPage(
                             profiles = profiles,
-                            selectedId = selectedProfileId,
+                            selectedId = routingDocument.active.settings.multiServer?.defaultProfileId?:selectedProfileId,
                             vpnState = vpnState,
                             checks = serverCheckState,
                             onCheck = { serverChecks.start(profiles) },
                             onChooseBest = { candidates ->
-                              if (runCatching { AutoServerSettingsStore.pin(context) }.isSuccess) {
+                              if(routingDocument.active.settings.multiServer!=null)page=Page.Routing
+                              else if (runCatching { AutoServerSettingsStore.pin(context) }.isSuccess) {
                                 val request = VpnUserRequests.gate.begin()
                                 serverChecks.start(candidates) { best ->
                                     val current = profiles.firstOrNull { it.id == best.id && it.configurationKey() == best.configurationKey() }
                                     current != null && VpnUserRequests.gate.accept(request) {
-                                            selectedProfileId = current.id
-                                            scope.launch(Dispatchers.IO) { runCatching { selectedProfileStore.save(current.id) } }
-                                            applyLiveConfiguration(current.id)
+                                            selectManualProfile(current.id)
                                     }
                                 }
                               } else profileError = "Не удалось закрепить ручной выбор сервера."
@@ -824,11 +843,11 @@ private fun NovaAndroidApp(
                             onCancelCheck = { serverChecks.cancel() },
                             onConnect = {
                                 serverChecks.cancel()
-                                val selected = profiles.firstOrNull { it.id == selectedProfileId }
+                                val selected = PreparedVpnConfiguration.selectedPrimary(profiles, routingDocument.active.settings, selectedProfileId)
                                 if (selected != null) {
                                     val request = VpnUserRequests.gate.begin()
                                     scope.launch {
-                                    runCatching { withContext(Dispatchers.Default) { PreparedVpnConfiguration.prepare(context, selected) } }
+                                    runCatching { withContext(Dispatchers.Default) { PreparedVpnConfiguration.prepareSelected(context) } }
                                         .onSuccess { requestVpnStart(it, request) }
                                         .onFailure { connectError = "Не удалось подготовить подключение." }
                                 }
@@ -840,16 +859,7 @@ private fun NovaAndroidApp(
                             transferBusy = profileTransferBusy,
                             onAdd = { importError = null; importText = ""; showImport = true },
                             onOpenSubscriptions = { showSubscriptions = true },
-                            onSelect = {
-                              if (runCatching { AutoServerSettingsStore.pin(context) }.isSuccess) {
-                                serverChecks.cancel()
-                                selectedProfileId = it
-                                scope.launch(Dispatchers.IO) {
-                                    runCatching { selectedProfileStore.save(it) }
-                                }
-                                applyLiveConfiguration(it)
-                              } else profileError = "Не удалось закрепить ручной выбор сервера."
-                            },
+                            onSelect = {selectManualProfile(it)},
                             onSendToWatch = { profile ->
                                 profileShareId = profile.id
                                 profileTransferBusy = true
@@ -885,6 +895,13 @@ private fun NovaAndroidApp(
                             onSettingsChanged = { next ->
                                 saveRoutingRules(next)
                             },
+                            profiles = profiles, selectedProfileId = selectedProfileId,
+                            onModeChanged={change->saveRoutingRules(change.settings,change.selection,change.baseline)},
+                            previousProfileId=if((editingRoutingId?:routingDocument.activeId)==routingDocument.activeId&&(vpnState.connected||vpnState.connecting))
+                                vpnState.appliedConfiguration?.profileId?:selectedProfileId else selectedProfileId,
+                            assignmentBusy = routingPreparing || routingDocument.pending != null,
+                            exitChecks = vpnState.exitChecks,
+                            activeRoutePreview = vpnState.activeRoutePreview,
                             presetsContent = { RoutingPresetPicker(routingDocument, routingPreparing, routingFailure,
                                 editingId = editingRoutingId, onEndEdit = { editingRoutingId = null }, onManage = { showRoutingPresets = true }) }
                         )
@@ -1192,7 +1209,7 @@ private fun NovaAndroidApp(
                         scope.launch {
                             runCatching {
                                 withContext(Dispatchers.IO) {
-                                    remaining = vault.update { current -> current.filterNot { it.id == deleting.id } }
+                                    remaining = vault.deleteProfile(deleting.id)
                                     nextSelected = if (deletingSelected) remaining.firstOrNull()?.id.orEmpty() else selectedProfileId
                                     if (nextSelected.isBlank()) selectedProfileStore.clear()
                                     else if (deletingSelected) selectedProfileStore.save(nextSelected)
@@ -1211,7 +1228,7 @@ private fun NovaAndroidApp(
                                     }
                                 }
                             }.onFailure {
-                                profileError = "Не удалось удалить профиль из защищённого хранилища."
+                                profileError = if(it is com.nova.vpn.android.data.ProfileDeletionGuard.InUse)it.message else "Не удалось удалить профиль из защищённого хранилища."
                             }
                         }
                     }) { Text("Удалить") }
@@ -1246,7 +1263,7 @@ internal fun PageFrame(title: String, subtitle: String, tutorialTargetIndex: Int
         state = listState,
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 22.dp,
-            bottom = if (ios && LocalConfiguration.current.screenHeightDp >= 480) 120.dp else 22.dp),
+            bottom = 22.dp),
         verticalArrangement = Arrangement.spacedBy(if (ios) 20.dp else 16.dp)
     ) {
         item(contentType = "page-header") {
@@ -1306,7 +1323,7 @@ internal fun StandardHomePage(
             fontSize = 22.sp, lineHeight = 28.sp, fontWeight = FontWeight.SemiBold,
             color = MaterialTheme.colorScheme.onSurface
         )
-        Text(profile?.name ?: "Выберите сервер для подключения", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(ConnectionProfileSelection.name(vpnState, profile, "Выберите сервер для подключения"), fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Surface(
             shape = RoundedCornerShape(50),
             color = when {
@@ -1405,7 +1422,7 @@ internal fun StandardHomePage(
             Text("Добавьте VPN-конфигурацию во вкладке «Серверы», и она появится здесь.", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         } else {
             val quickProfiles = remember(profiles, selectedProfileId) {
-                val selected = profiles.firstOrNull { it.id == selectedProfileId }
+                val selected = profiles.firstOrNull {it.id==selectedProfileId}
                 buildList {
                     if (selected != null) add(selected)
                     for (profile in profiles) {
@@ -1536,8 +1553,16 @@ internal fun RoutingPage(
     failed: Boolean,
     settings: AppRoutingSettings,
     onSettingsChanged: (AppRoutingSettings) -> Unit,
+    profiles: List<ImportedProfile> = emptyList(),
+    selectedProfileId: String? = null,
+    assignmentBusy: Boolean = false,
+    exitChecks: Map<String,ExitCheckState> = emptyMap(),
+    activeRoutePreview: ActiveRoutePreview? = null,
+    onModeChanged: ((com.nova.vpn.android.data.RoutingModeChange)->Unit)?=null,
+    previousProfileId: String?=selectedProfileId,
     presetsContent: (@Composable () -> Unit)? = null
 ) {
+    fun publishSettings(next: AppRoutingSettings){onModeChanged?.invoke(com.nova.vpn.android.data.RoutingModeChange(settings,next))?:onSettingsChanged(next)}
     val materialRouting = LocalDesignPreset.current == DesignStyle.MATERIAL_YOU
     val iosRouting = LocalDesignPreset.current == DesignStyle.IOS_LIQUID_GLASS
     val oneUIRouting = LocalDesignPreset.current == DesignStyle.ONE_UI
@@ -1584,7 +1609,7 @@ internal fun RoutingPage(
                 TextButton(enabled = editedDomain.isNotBlank(), onClick = {
                     val next = try { SiteRuleEditor.rename(settings, original, editedDomain) }
                     catch (error: IllegalArgumentException) { editError = error.message; return@TextButton }
-                    onSettingsChanged(next)
+                    publishSettings(next)
                     editingDomain = null
                     editError = null
                 }) { Text("Сохранить") }
@@ -1593,9 +1618,58 @@ internal fun RoutingPage(
         )
     }
 
+    var showAssignments by remember { mutableStateOf(false) }
+    var showRoutePreview by remember(activeRoutePreview) { mutableStateOf(false) }
+    if (showRoutePreview && activeRoutePreview != null) {
+        ActiveRoutePreviewDialog(activeRoutePreview, profiles, apps) { showRoutePreview = false }
+    }
+    var assignmentBaseline by remember {mutableStateOf<AppRoutingSettings?>(null)}
+    var resumeAssignments by remember {mutableStateOf(false)}
+    fun openAssignments(resume: Boolean=false){assignmentBaseline=settings;resumeAssignments=resume;showAssignments=true}
+    fun changeMode(change: com.nova.vpn.android.data.RoutingModeChange){onModeChanged?.invoke(change)?:publishSettings(change.settings)}
+    val assignmentContext = LocalContext.current
+    val assignmentSupported = android.os.Build.VERSION.SDK_INT >= 29 &&
+        AppPreferencesStore(assignmentContext).vpnEngine() == com.nova.vpn.android.data.VpnEngine.SING_BOX
+    if(showAssignments) {
+        val baseline=assignmentBaseline?:settings
+        MultiServerRoutingDialog(baseline,profiles,apps,selectedProfileId,assignmentBusy,
+            onApply={next->changeMode(com.nova.vpn.android.data.RoutingModeChange(baseline,next))},onDismiss={showAssignments=false},resuming=resumeAssignments,previousProfileId=previousProfileId)
+    }
+    if(settings.multiServer!=null) {
+        PageFrame("Маршрутизация","Разные приложения и сайты — через выбранные серверы") {
+            presetsContent?.let { panel -> item { panel() } }
+            if(exitChecks.isNotEmpty())item { ExitHealthCard(exitChecks,profiles) }
+            item { SoftCard {
+                Text("Основной сервер: "+(profiles.firstOrNull { it.id==settings.multiServer.defaultProfileId }?.displayName?:"Недоступен"))
+                Text("Назначений: ${settings.multiServer.rules.count { it.packageName!=null }} приложений · ${settings.multiServer.rules.count { it.domain!=null }} сайтов")
+                Text("Правила сайтов важнее приложений. Недоступный сервер не заменяется автоматически.")
+                if(!assignmentSupported) Text("Для этого режима нужны Android 10 или новее и ядро sing-box.")
+                Button(enabled=!assignmentBusy&&assignmentSupported,onClick={openAssignments()}) {Text("Настроить назначения серверов")}
+                if (activeRoutePreview != null) OutlinedButton(onClick = { showRoutePreview = true }) { Text("Проверить маршрут") }
+                if(settings.history?.single==null)Text("Прежняя схема не сохранена. Отключение вернёт обычный режим с текущими настройками; назначения останутся для повторного включения.")
+                OutlinedButton(enabled=!assignmentBusy,onClick={changeMode(com.nova.vpn.android.data.RoutingModeTransitions.disable(settings))}) {
+                    Text(if(settings.history?.single!=null)"Вернуть прежнюю маршрутизацию" else "Отключить назначения")
+                }
+            } }
+        }
+        return
+    }
     PageFrame(if (tabbedRouting) "Маршруты" else "Маршрутизация", "Исключённые приложения используют обычную сеть Android",
         tutorialTargetIndex = if (tabbedRouting) 2 else if (LocalTutorialStep.current == TutorialStep.Apps) 2 + settings.sites.size else 1) {
     presetsContent?.let { panel -> item { panel() } }
+    if(exitChecks.isNotEmpty())item { ExitHealthCard(exitChecks,profiles) }
+    item { SoftCard {
+        Text("Разные серверы для приложений и сайтов",fontWeight=FontWeight.SemiBold)
+        Text("Например, ChatGPT — через США, остальные приложения — через Францию.")
+        if(!assignmentSupported) Text("Для этого режима нужны Android 10 или новее и ядро sing-box.")
+        Button(enabled=!assignmentBusy&&assignmentSupported&&profiles.isNotEmpty(),onClick={openAssignments()}) {Text("Настроить назначения")}
+        if(settings.history!=null) {
+            OutlinedButton(enabled=!assignmentBusy&&assignmentSupported,onClick={openAssignments(true)}) {Text("Включить сохранённые назначения")}
+            TextButton(enabled=!assignmentBusy,onClick={changeMode(com.nova.vpn.android.data.RoutingModeTransitions.forget(settings))}) {Text("Удалить сохранённые назначения")}
+            val previousId=settings.history.single?.profileId
+            if(previousId!=null&&profiles.none {it.id==previousId&&!it.retiredFromSubscription})Text("Прежний сервер недоступен. Выберите сервер вручную перед подключением.")
+        }
+    } }
     if (iosRouting) item { IOSRoutingTabs(iosRoutingTab) { iosRoutingTab = it } }
     if (materialRouting) item { MaterialRouteTabs(iosRoutingTab) { iosRoutingTab = it } }
     if (windowsRouting) item { WindowsRouteTabs(iosRoutingTab) { iosRoutingTab = it } }
@@ -1623,7 +1697,7 @@ internal fun RoutingPage(
                             domain == null -> siteError = "Введите домен, например youtube.com, без адреса страницы."
                             settings.sites.any { it.domain == domain } -> siteError = "Это правило уже добавлено."
                             else -> {
-                                onSettingsChanged(settings.copy(sites = settings.sites + SiteRoutingRule(domain)))
+                                publishSettings(settings.copy(sites = settings.sites + SiteRoutingRule(domain)))
                                 siteInput = ""
                                 siteError = null
                             }
@@ -1650,7 +1724,7 @@ internal fun RoutingPage(
                     Icon(Icons.Rounded.Edit, contentDescription = "Редактировать домен ${rule.domain}", tint = MaterialTheme.colorScheme.primary)
                 }
                 IconButton(onClick = {
-                    onSettingsChanged(settings.copy(sites = settings.sites.filterNot { it.domain == rule.domain }))
+                    publishSettings(settings.copy(sites = settings.sites.filterNot { it.domain == rule.domain }))
                 }) {
                     Icon(Icons.Rounded.DeleteOutline, contentDescription = "Удалить правило ${rule.domain}", tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
@@ -1658,12 +1732,12 @@ internal fun RoutingPage(
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 FilterChip(
                     selected = rule.target == SiteRoutingTarget.VPN,
-                    onClick = { onSettingsChanged(settings.copy(sites = settings.sites.map { if (it.domain == rule.domain) it.copy(target = SiteRoutingTarget.VPN) else it })) },
+                    onClick = { publishSettings(settings.copy(sites = settings.sites.map { if (it.domain == rule.domain) it.copy(target = SiteRoutingTarget.VPN) else it })) },
                     label = { Text("Через VPN") }
                 )
                 FilterChip(
                     selected = rule.target == SiteRoutingTarget.DIRECT,
-                    onClick = { onSettingsChanged(settings.copy(sites = settings.sites.map { if (it.domain == rule.domain) it.copy(target = SiteRoutingTarget.DIRECT) else it })) },
+                    onClick = { publishSettings(settings.copy(sites = settings.sites.map { if (it.domain == rule.domain) it.copy(target = SiteRoutingTarget.DIRECT) else it })) },
                     label = { Text("Напрямую") }
                 )
             }
@@ -1675,22 +1749,22 @@ internal fun RoutingPage(
         SoftCard(tutorialTarget = TutorialStep.Apps) {
             Text(if (tabbedRouting) "Выбранные приложения" else "Режим списка", fontWeight = FontWeight.SemiBold)
             if (windowsRouting) WindowsRouteMode(if (settings.mode == AppRoutingMode.INCLUDE_SELECTED) 0 else 1) {
-                onSettingsChanged(settings.copy(mode = if (it == 0) AppRoutingMode.INCLUDE_SELECTED else AppRoutingMode.EXCLUDE_SELECTED))
+                publishSettings(settings.copy(mode = if (it == 0) AppRoutingMode.INCLUDE_SELECTED else AppRoutingMode.EXCLUDE_SELECTED))
             } else if (oneUIRouting) OneUIRouteMode(if (settings.mode == AppRoutingMode.INCLUDE_SELECTED) 0 else 1) {
-                onSettingsChanged(settings.copy(mode = if (it == 0) AppRoutingMode.INCLUDE_SELECTED else AppRoutingMode.EXCLUDE_SELECTED))
+                publishSettings(settings.copy(mode = if (it == 0) AppRoutingMode.INCLUDE_SELECTED else AppRoutingMode.EXCLUDE_SELECTED))
             } else if (materialRouting) MaterialRouteMode(if (settings.mode == AppRoutingMode.INCLUDE_SELECTED) 0 else 1) {
-                onSettingsChanged(settings.copy(mode = if (it == 0) AppRoutingMode.INCLUDE_SELECTED else AppRoutingMode.EXCLUDE_SELECTED))
+                publishSettings(settings.copy(mode = if (it == 0) AppRoutingMode.INCLUDE_SELECTED else AppRoutingMode.EXCLUDE_SELECTED))
             } else if (iosRouting) IOSRoutingTabs(if (settings.mode == AppRoutingMode.INCLUDE_SELECTED) 0 else 1, labels = listOf("Через VPN", "Напрямую")) {
-                onSettingsChanged(settings.copy(mode = if (it == 0) AppRoutingMode.INCLUDE_SELECTED else AppRoutingMode.EXCLUDE_SELECTED))
+                publishSettings(settings.copy(mode = if (it == 0) AppRoutingMode.INCLUDE_SELECTED else AppRoutingMode.EXCLUDE_SELECTED))
             } else {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(
-                    onClick = { onSettingsChanged(settings.copy(mode = AppRoutingMode.INCLUDE_SELECTED)) },
+                    onClick = { publishSettings(settings.copy(mode = AppRoutingMode.INCLUDE_SELECTED)) },
                     colors = ButtonDefaults.buttonColors(containerColor = if (settings.mode == AppRoutingMode.INCLUDE_SELECTED) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant),
                     modifier = Modifier.weight(1f).heightIn(min = 52.dp)
                 ) { Text("Выбранные через VPN", color = if (settings.mode == AppRoutingMode.INCLUDE_SELECTED) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface, fontSize = 12.sp) }
                 Button(
-                    onClick = { onSettingsChanged(settings.copy(mode = AppRoutingMode.EXCLUDE_SELECTED)) },
+                    onClick = { publishSettings(settings.copy(mode = AppRoutingMode.EXCLUDE_SELECTED)) },
                     colors = ButtonDefaults.buttonColors(containerColor = if (settings.mode == AppRoutingMode.EXCLUDE_SELECTED) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant),
                     modifier = Modifier.weight(1f).heightIn(min = 52.dp)
                 ) { Text("Выбранные напрямую", color = if (settings.mode == AppRoutingMode.EXCLUDE_SELECTED) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface, fontSize = 12.sp) }
@@ -1711,7 +1785,7 @@ internal fun RoutingPage(
                         fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 Switch(checked = settings.ipv6Enabled,
-                    onCheckedChange = { onSettingsChanged(settings.copy(ipv6Enabled = it)) })
+                    onCheckedChange = { publishSettings(settings.copy(ipv6Enabled = it)) })
             }
         }
     }
@@ -1756,7 +1830,7 @@ internal fun RoutingPage(
                         val next = settings.packages.toMutableSet().apply {
                             if (checked) remove(app.packageName) else add(app.packageName)
                         }
-                        onSettingsChanged(settings.copy(packages = next))
+                        publishSettings(settings.copy(packages = next))
                     },
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -1776,7 +1850,7 @@ internal fun RoutingPage(
                         val next = settings.packages.toMutableSet().apply {
                             if (enabled) add(app.packageName) else remove(app.packageName)
                         }
-                        onSettingsChanged(settings.copy(packages = next))
+                        publishSettings(settings.copy(packages = next))
                     }
                 )
             }
@@ -1894,4 +1968,5 @@ private fun SettingRow(icon: ImageVector, title: String, detail: String) {
         }
     }
 }
+
 

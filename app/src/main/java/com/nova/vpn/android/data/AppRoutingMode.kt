@@ -9,7 +9,9 @@ data class AppRoutingSettings(
     val mode: AppRoutingMode = AppRoutingMode.EXCLUDE_SELECTED,
     val packages: Set<String> = emptySet(),
     val sites: List<SiteRoutingRule> = emptyList(),
-    val ipv6Enabled: Boolean = false
+    val ipv6Enabled: Boolean = false,
+    val multiServer: MultiServerSettings? = null,
+    val history: MultiServerRoutingHistory? = null
 )
 
 enum class SiteRoutingTarget { VPN, DIRECT }

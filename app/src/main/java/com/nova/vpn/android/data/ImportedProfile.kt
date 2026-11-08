@@ -14,7 +14,9 @@ data class ImportedProfile(
     val fullConfigJson: String? = null,
     val subscriptionUrl: String? = null,
     val latencyMillis: Int? = null,
-    val userSettings: ProfileUserSettings = ProfileUserSettings()
+    val userSettings: ProfileUserSettings = ProfileUserSettings(),
+    // Derived from schema2 ownership at vault read/commit; never persisted or trusted on import.
+    val retiredFromSubscription: Boolean = false
 ) {
     val displayName: String get() = userSettings.personalName ?: name
 

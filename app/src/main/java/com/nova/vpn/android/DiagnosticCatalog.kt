@@ -4,7 +4,7 @@ internal enum class DiagnosticAction { CHECK_SERVERS, SUBSCRIPTIONS, SETTINGS, V
 internal data class DiagnosticAdvice(val title: String, val detail: String, val action: DiagnosticAction, val actionLabel: String)
 
 internal object DiagnosticCatalog {
-    private val fixed = setOf("session_start", "engine_sing_box", "engine_reality_core", "engine_setup", "config_validation",
+    private val fixed = setOf("catalog_refresh_reprepared", "catalog_refresh_current", "catalog_refresh_failed", "catalog_refresh_submitted", "session_start", "engine_sing_box", "engine_reality_core", "engine_setup", "config_validation",
         "engine_started", "engine_config_unsupported", "engine_unavailable", "tunnel_active", "startup_failed", "configuration_rollback", "network_monitor_failed",
         "recovery_wait_network", "recovery_network_changed", "underlay_interface_not_ready", "reality_revision_994ce4ef",
         "reality_protect_failed", "reality_terminal_failure", "probe_start", "probe_success", "probe_invalid_response",
@@ -37,11 +37,17 @@ internal object DiagnosticCatalog {
         code.startsWith("probe_") && ("https_response" in code || code in setOf("probe_success", "probe_invalid_response")) -> DiagnosticStage.INTERNET
         "http" in code || "grpc" in code -> DiagnosticStage.TRANSPORT
         "connection_" in code || "proxy_connect" in code -> DiagnosticStage.SERVER
-        code == "configuration_rollback" -> DiagnosticStage.ROUTING
+        code == "configuration_rollback" || code.startsWith("catalog_refresh_") -> DiagnosticStage.ROUTING
         code.startsWith("engine_") || code in setOf("session_start", "startup_failed", "config_validation", "tunnel_active", "service_start") -> DiagnosticStage.SERVICE
         else -> DiagnosticStage.UNKNOWN
     }
+    /** A submitted attempt is not proof of recovery. Only validated current catalog or log reset clears it. */
+    fun unresolvedCatalogFailure(events:List<DiagnosticEvent>):DiagnosticEvent? = events.lastOrNull {
+        it.code=="catalog_refresh_failed" || it.code=="catalog_refresh_current"
+    }?.takeIf {it.code=="catalog_refresh_failed"}
     fun advice(event: DiagnosticEvent?): DiagnosticAdvice = when {
+        event?.code == "catalog_refresh_failed" -> DiagnosticAdvice("Не удалось обновить активные маршруты",
+            "Новый каталог не удалось применить. Если VPN подключён, активный снимок серверов остаётся прежним. Проверьте подписку и маршруты. При активном подключении клиент повторит попытку.", DiagnosticAction.ROUTING, "Открыть маршрутизацию")
         event?.code == "dns_system_lookup_busy" -> DiagnosticAdvice("Предыдущая проверка DNS ещё выполняется",
             "Системный запрос ещё не завершился. Повторите диагностику немного позже.", DiagnosticAction.CHECK_SERVERS, "Открыть проверку серверов")
         event?.code == "dns_system_lookup_cancelled" -> DiagnosticAdvice("Проверка DNS отменена",

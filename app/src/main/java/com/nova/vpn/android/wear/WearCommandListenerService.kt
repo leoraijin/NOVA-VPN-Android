@@ -46,11 +46,7 @@ class WearCommandListenerService : WearableListenerService() {
         }
         if (VpnService.prepare(this) != null) return "permission_required"
         val request = VpnUserRequests.gate.begin()
-        val profiles = ProfileVault(this).load()
-        val selectedId = SelectedProfileStore(this).load()
-        val profile = profiles.firstOrNull { it.id == selectedId } ?: profiles.firstOrNull()
-            ?: return "profile_required"
-        val prepared = PreparedVpnConfiguration.prepare(this, profile)
+        val prepared=try {PreparedVpnConfiguration.prepareSelected(this)}catch(_: com.nova.vpn.android.MissingSelectedProfile){return "profile_required"}
         return if (VpnUserRequests.start(this, prepared, request)) "connecting" else "superseded"
     }
 

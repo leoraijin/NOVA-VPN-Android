@@ -72,20 +72,27 @@ internal data class ProfileSnapshot(
         return withProfiles(merged).copy(manuallyOwned = manuallyOwned + merged.filter { it.configurationKey() in keys }.map { it.id })
     }
 
-    /** Compatibility entry point for manual import/delete/favorite operations. */
+    /** Availability comes from ownership, never the legacy URL hint or a serialized flag. */
+    fun withAvailability(): ProfileSnapshot {
+        val owned=manuallyOwned+memberships.map { it.profileId }
+        return copy(profiles=profiles.map { it.copy(retiredFromSubscription=it.id !in owned) })
+    }
+
+    /** Metadata edits must not silently recreate a removed subscription membership. */
     fun withProfiles(next: List<ImportedProfile>): ProfileSnapshot {
-        val migrated = migrate(next)
-        val ids = next.map { it.id }.toSet()
-        val existingUrls = subscriptions.map { it.url }.toSet()
-        val newSources = migrated.subscriptions.filter { it.url !in existingUrls }
-        val sources = subscriptions + newSources
-        val sourceByUrl = sources.associateBy { it.url }
-        val links = memberships.filter { it.profileId in ids }.toMutableSet()
-        next.forEach { profile ->
-            profile.subscriptionUrl?.let { sourceByUrl[it] }?.let { links += SubscriptionMembership(profile.id, it.id) }
+        val existing=profiles.map { it.id }.toSet()
+        val added=next.filter { it.id !in existing }
+        val migrated=migrate(added)
+        val ids=next.map { it.id }.toSet()
+        val existingUrls=subscriptions.map { it.url }.toSet()
+        val sources=subscriptions+migrated.subscriptions.filter { it.url !in existingUrls }
+        val sourceByUrl=sources.associateBy { it.url }
+        val links=memberships.filter { it.profileId in ids }.toMutableSet()
+        added.forEach { profile ->
+            profile.subscriptionUrl?.let { sourceByUrl[it] }?.let { links+=SubscriptionMembership(profile.id,it.id) }
         }
-        return copy(profiles = next, subscriptions = sources, memberships = links,
-            manuallyOwned = (manuallyOwned.intersect(ids) + migrated.manuallyOwned))
+        return copy(profiles=next,subscriptions=sources,memberships=links,
+            manuallyOwned=manuallyOwned.intersect(ids)+migrated.manuallyOwned)
     }
 
     companion object {

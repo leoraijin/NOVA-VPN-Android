@@ -105,6 +105,10 @@ internal class AndroidTrafficProbe private constructor(
     }
     companion object {
         internal const val TAG = "nova-local-health"
+        internal fun channel(config: String,port: Int,user: String,password: String): AndroidTrafficProbe {
+            require(port in 1..65535 && user.length in 1..128 && password.length in 1..128)
+            return AndroidTrafficProbe(config,port,user,password)
+        }
         internal fun validTrace(response: String): Boolean =
             response.lineSequence().firstOrNull()?.matches(Regex("HTTP/1\\.[01] 200(?: .*)?")) == true &&
                 response.contains("\n\n") && response.substringAfter("\n\n").lineSequence().any { it.startsWith("ip=") && it.length > 3 }

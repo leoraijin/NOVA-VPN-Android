@@ -13,6 +13,9 @@ internal class SubscriptionRepository(context: Context,
     private val request: ((Subscription, String?, SubscriptionIdentity?) -> SubscriptionFetcher.Response)? = null) {
     private val context = context.applicationContext
     private val vault = ProfileVault(this.context)
+    private fun retainedProfileIds(): Set<String> = ProfileRoutingReferences.forSubscription(
+        AppRoutingStore(context).loadPresets(),SelectedProfileStore(context).load(),
+        com.nova.vpn.android.VpnRuntime.state.value.appliedConfiguration)
 
     fun importReport(url: String, sendDeviceId: Boolean, report: ProfileLinkParser.ImportResult,
         expectedGeneration: Long? = null): ProfileSnapshot = vault.updateSnapshot(expectedGeneration) { state ->
@@ -21,7 +24,7 @@ internal class SubscriptionRepository(context: Context,
         source.validate()
         val changes = SubscriptionReconciler.reconcile(state.catalog(), source.id,
             report.profiles.map { it.copy(subscriptionUrl = url) }, report.warnings.isEmpty(),
-            setOfNotNull(SelectedProfileStore(context).load()))
+            retainedProfileIds())
         val now = System.currentTimeMillis()
         state.copy(profiles = changes.catalog.profiles, memberships = changes.catalog.memberships,
             manuallyOwned = changes.catalog.manuallyOwned, subscriptions = state.subscriptions.filterNot { it.id == source.id } +
@@ -47,7 +50,7 @@ internal class SubscriptionRepository(context: Context,
         val owned = state.memberships.filter { it.subscriptionId == id }.map { it.profileId }.toSet()
         val links = state.memberships.filterNot { it.subscriptionId == id }.toSet()
         val retained = links.map { it.profileId }.toSet() + state.manuallyOwned +
-            if (keepServers) owned else setOfNotNull(SelectedProfileStore(context).load())
+            if (keepServers) owned else retainedProfileIds()
         val profiles = state.profiles.filter { it.id !in owned || it.id in retained }.map { profile ->
             if (profile.subscriptionUrl == source.url) profile.copy(subscriptionUrl = null) else profile
         }
@@ -89,7 +92,7 @@ internal class SubscriptionRepository(context: Context,
                         ?: return@updateIfCurrent current
                     val incoming = report.profiles.map { it.copy(subscriptionUrl = source.url) }
                     val changes = SubscriptionReconciler.reconcile(current.catalog(), id, incoming,
-                        complete = report.warnings.isEmpty(), retainIds = setOfNotNull(SelectedProfileStore(context).load()))
+                        complete = report.warnings.isEmpty(), retainIds = retainedProfileIds())
                     current.copy(profiles = changes.catalog.profiles, memberships = changes.catalog.memberships,
                         manuallyOwned = changes.catalog.manuallyOwned, subscriptions = current.subscriptions.map {
                             if (it.id != id) it else it.copy(lastAttempt = now, lastSuccess = now,

@@ -120,11 +120,11 @@ internal fun MaterialHome(profiles: List<ImportedProfile>, selectedId: String, p
                 val interactions = remember { MutableInteractionSource() }
                 val pressed by interactions.collectIsPressedAsState()
                 val radius by animateDpAsState(if (pressed) 16.dp else 28.dp, spring(.75f, 450f), label = "material-connect-shape")
-                Button(onClick = if (profile == null && !state.connected) onManage else onToggle,
+                Button(onClick = if (profile == null && !state.connected && !state.connecting) onManage else onToggle,
                     interactionSource = interactions, shape = RoundedCornerShape(radius),
                     modifier = Modifier.fillMaxWidth().heightIn(min = 60.dp)) {
                     if (state.connecting) CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
-                    else Icon(if (profile == null && !state.connected) Icons.Rounded.Add else Icons.Rounded.PowerSettingsNew, null)
+                    else Icon(if (profile == null && !state.connected && !state.connecting) Icons.Rounded.Add else Icons.Rounded.PowerSettingsNew, null)
                     Spacer(Modifier.width(12.dp))
                     Text(if (state.connecting) "Отменить" else if (state.connected) "Отключить" else if (profile == null) "Добавить сервер" else "Подключить", fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
                 }
@@ -134,7 +134,7 @@ internal fun MaterialHome(profiles: List<ImportedProfile>, selectedId: String, p
         item {
             MaterialPanel {
                 Text("Точка подключения", style = MaterialTheme.typography.titleMedium)
-                MaterialActionRow(Icons.Rounded.Public, profile?.name ?: "Сервер не выбран", profile?.protocol?.uppercase() ?: "Ссылка, QR-код или файл",
+                MaterialActionRow(Icons.Rounded.Public, ConnectionProfileSelection.name(state, profile, "Сервер не выбран"), profile?.protocol?.uppercase() ?: "Ссылка, QR-код или файл",
                     onClick = { if (profiles.isEmpty()) onManage() else choose = !choose }, expanded = if (profiles.isEmpty()) null else choose)
                 AnimatedVisibility(choose) {
                     Column(Modifier.selectableGroup()) {

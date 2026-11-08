@@ -7,7 +7,32 @@ import org.json.JSONObject
 
 /** Produces the minimum full-tunnel sing-box config for a single selected profile. */
 object SingBoxConfigFactory {
-    fun build(profile: ImportedProfile, routing: AppRoutingSettings = AppRoutingSettings(), ownPackage: String? = null): String {
+    fun build(profile: ImportedProfile, routing: AppRoutingSettings = AppRoutingSettings(), ownPackage: String? = null, profileSnapshot: List<ImportedProfile>? = null, cachePath: String? = null, quarantinedIds:Set<String> = emptySet()): String {
+        routing.multiServer?.let { settings ->
+            require(routing.packages.isEmpty() && routing.sites.isEmpty()) { "Перенесите прежние правила в назначения серверов." }
+            val snapshot = profileSnapshot?.toList() ?: error("Нет снимка серверов для маршрутизации")
+            require(snapshot.map { it.id }.distinct().size == snapshot.size) { "Повторяющиеся ID серверов" }
+            val referenced = MultiServerPolicy(settings.revision,settings.defaultProfileId,settings.rules,snapshot.map { it.id }.toSet()).referencedProfileIds
+            val available=snapshot.filter { !it.retiredFromSubscription && it.id in referenced }
+            require(quarantinedIds.all {id->available.any {it.id==id && MultiServerProfileAdapter.problem(it)!=null}})
+            val selected = available.filter {it.id !in quarantinedIds}
+            val prepared = selected.associate { it.id to MultiServerProfileAdapter.prepare(it) }
+            val normalized = selected.associate { entry ->
+                val generated = JSONObject(build(prepared.getValue(entry.id), AppRoutingSettings(ipv6Enabled=routing.ipv6Enabled),ownPackage))
+                val outbounds = generated.getJSONArray("outbounds")
+                entry.id to (0 until outbounds.length()).map(outbounds::getJSONObject).single { it.optString("tag") == PROXY_TAG }
+            }
+            val baseProfile = selected.firstOrNull { it.id == settings.defaultProfileId } ?: selected.firstOrNull()
+            // All pinned exits may retire together. Build a TUN shell without reading
+            // retired credentials; the multi compiler rejects unavailable assignments.
+            val base = if(baseProfile==null) ensureVpnInbound(defaultConfig(JSONObject().put("type","direct").put("tag",PROXY_TAG)),
+                AppRoutingSettings(ipv6Enabled=routing.ipv6Enabled),ownPackage,managedDns=true)
+                else JSONObject(build(prepared.getValue(baseProfile.id),AppRoutingSettings(ipv6Enabled=routing.ipv6Enabled),ownPackage))
+            return MultiServerConfigFactory.build(base,settings,normalized,requireNotNull(ownPackage),routing.ipv6Enabled,
+                requireNotNull(cachePath) { "Нет приватного пути DNS-кэша" }).toString()
+        }
+        require(quarantinedIds.isEmpty())
+        require(!profile.retiredFromSubscription) { "Сервер удалён из подписки. Назначьте доступный сервер или явно импортируйте конфиг заново." }
         val config = profile.fullConfigJson?.let {
             val json = JSONObject(it)
             ensureVpnInbound(json, routing, ownPackage, managedDns = !json.has("dns"))
@@ -312,3 +337,4 @@ object SingBoxConfigFactory {
     private val IPV4_LITERAL = Regex("(?:[0-9]{1,3}\\.){3}[0-9]{1,3}")
     private const val BOOTSTRAP_DNS_TAG = "nova-bootstrap-dns"
 }
+

@@ -108,15 +108,15 @@ internal fun WindowsHome(profiles: List<ImportedProfile>, selectedId: String, pr
                         state.connected -> "Доступ через VPN пока не подтверждён."
                         else -> "Подключитесь, чтобы направить трафик через выбранный сервер."
                     }, fontSize = 13.sp, lineHeight = 19.sp, color = c.onSurfaceVariant)
-                    NovaButton(if (profile == null && !state.connected) onManage else onToggle,
+                    NovaButton(if (profile == null && !state.connected && !state.connecting) onManage else onToggle,
                         Modifier.fillMaxWidth()) {
-                        Text(if (profile == null && !state.connected) "Добавить подключение" else if (state.connecting) "Отменить" else if (state.connected) "Отключить" else "Подключить")
+                        Text(if (profile == null && !state.connected && !state.connecting) "Добавить подключение" else if (state.connecting) "Отменить" else if (state.connected) "Отключить" else "Подключить")
                     }
                 }
                 HorizontalDivider(color = c.outlineVariant)
                 Row(Modifier.fillMaxWidth().background(c.surfaceVariant).padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Outlined.Public, null, Modifier.size(18.dp), tint = c.onSurfaceVariant)
-                    Text(profile?.name ?: "Подключение не настроено", Modifier.weight(1f).padding(start = 10.dp), fontSize = 12.sp, lineHeight = 18.sp)
+                    Text(ConnectionProfileSelection.name(state, profile, "Подключение не настроено"), Modifier.weight(1f).padding(start = 10.dp), fontSize = 12.sp, lineHeight = 18.sp)
                 }
             }
         }
@@ -126,7 +126,7 @@ internal fun WindowsHome(profiles: List<ImportedProfile>, selectedId: String, pr
         item { WindowsHeading("Параметры подключения") }
         item {
             WindowsCard {
-                WindowsRow("Выбранный сервер", profile?.name ?: "Добавьте конфигурацию", Icons.Outlined.Dns,
+                WindowsRow("Выбранный сервер", ConnectionProfileSelection.name(state, profile, "Добавьте конфигурацию"), Icons.Outlined.Dns,
                     { if (profiles.isEmpty()) onManage() else choose = !choose }, choose)
                 AnimatedVisibility(choose) {
                     Column(Modifier.selectableGroup().background(c.surfaceVariant)) {

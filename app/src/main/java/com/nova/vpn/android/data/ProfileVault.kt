@@ -27,7 +27,7 @@ class ProfileVault(context: Context) {
     /** Check and commit under the same lock: a pre-delete import cannot recreate the catalog. */
     internal fun updateSnapshot(expectedGeneration: Long?, transform: (ProfileSnapshot) -> ProfileSnapshot): ProfileSnapshot = synchronized(lock) {
         if (expectedGeneration != null && expectedGeneration != replacement) throw ReplacementSupersededException()
-        transform(readLocked()).also { writeLocked(it) }
+        transform(readLocked()).withAvailability().also { writeLocked(it) }
     }
 
     /** A checked recovery pre-image must also replace an unreadable crash-damaged target. */
@@ -37,16 +37,20 @@ class ProfileVault(context: Context) {
     fun update(transform: (List<ImportedProfile>) -> List<ImportedProfile>): List<ImportedProfile> = synchronized(lock) {
         val previous = readLocked()
         val next = transform(previous.profiles)
-        writeLocked(previous.withProfiles(next))
-        next
+        val updated=previous.withProfiles(next).withAvailability()
+        writeLocked(updated)
+        updated.profiles
+    }
+
+    /** Check live and durable references under the same writer lock as removal. */
+    internal fun deleteProfile(profileId:String):List<ImportedProfile> = synchronized(lock) {
+        ProfileDeletionGuard.requireAllowed(profileId,AppRoutingStore(recoveryContext).loadPresets(),
+            com.nova.vpn.android.VpnRuntime.state.value.appliedConfiguration)
+        update {profiles->profiles.filterNot {it.id==profileId}}
     }
 
     /** Remove sources too, so scheduled or already-running refreshes cannot restore servers. */
-    internal fun deleteAllConfigurations() = synchronized(lock) {
-        readLocked() // Respect recovery/corruption guards before replacing user data.
-        writeLocked(ProfileSnapshot())
-        invalidatePendingUpdates()
-    }
+    internal fun deleteAllConfigurations() = FullTransfer.deleteAllConfigurations(recoveryContext)
 
     private fun readLocked(): ProfileSnapshot {
         StoreRecoveryGuard.beforeAccess(recoveryContext)
@@ -59,7 +63,7 @@ class ProfileVault(context: Context) {
         val cipher = Cipher.getInstance(TRANSFORMATION)
         cipher.init(Cipher.DECRYPT_MODE, getOrCreateKey(), GCMParameterSpec(128, iv))
         // Legacy arrays migrate on the next successful write; load never rewrites a vault.
-        return ProfileDocument.decodeSnapshot(String(cipher.doFinal(encrypted), Charsets.UTF_8))
+        return ProfileDocument.decodeSnapshot(String(cipher.doFinal(encrypted), Charsets.UTF_8)).withAvailability()
     }
 
     fun save(profiles: List<ImportedProfile>) = synchronized(lock) { writeLocked(readLocked().withProfiles(profiles)) }
