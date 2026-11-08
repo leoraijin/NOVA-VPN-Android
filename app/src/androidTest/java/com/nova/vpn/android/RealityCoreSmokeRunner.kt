@@ -102,7 +102,9 @@ class RealityCoreSmokeRunner : Instrumentation() {
     private var serverLibraryFontScale: Float? = null
     private var serverLibraryTheme = ThemeMode.DARK
     private var diagnosticsTheme = ThemeMode.LIGHT
+    private var dualUiSeed = false
     override fun onCreate(arguments: Bundle?) {
+        dualUiSeed = arguments?.getString("dualUiSeed") == "true"
         multiQuarantineOnly=arguments?.getString("multiQuarantineOnly")=="true"
         multiTuicQuarantineOnly=arguments?.getString("multiTuicQuarantineOnly")=="true"
         check(!multiTuicQuarantineOnly || multiQuarantineOnly)
@@ -225,6 +227,35 @@ class RealityCoreSmokeRunner : Instrumentation() {
         super.onCreate(arguments); start()
     }
     override fun onStart() {
+        if (dualUiSeed) {
+            val result = Bundle()
+            try {
+                check(targetContext.packageName == "com.nova.vpn.android.usbtest.completionpreview")
+                val vault = ProfileVault(targetContext)
+                check(vault.load().isEmpty()) { "Fresh isolated test package required" }
+                val profiles = listOf("France", "USA").mapIndexed { index, name ->
+                    ImportedProfile(id = "dual-ui-" + index, name = name, protocol = "vless",
+                        server = name.lowercase() + ".invalid", port = 443,
+                        outboundJson = org.json.JSONObject().put("type", "vless")
+                            .put("server", name.lowercase() + ".invalid").put("server_port", 443)
+                            .put("uuid", "11111111-1111-4111-8111-111111111111").toString())
+                }
+                vault.save(profiles)
+                SelectedProfileStore(targetContext).save(profiles.first().id)
+                AppPreferencesStore(targetContext).apply {
+                    dismissTutorial()
+                    markNotificationPermissionRequested()
+                    setAppearance(Appearance(DesignStyle.MATERIAL_YOU, ThemeMode.DARK))
+                }
+                result.putString("stream", "Dual config UI fixture prepared PASS\n")
+                finish(Activity.RESULT_OK, result)
+            } catch (error: Throwable) {
+                result.putString("stream", error.stackTraceToString())
+                finish(Activity.RESULT_CANCELED, result)
+            }
+            return
+        }
+
         if(http3PhysicalOnly) {
             val result=Bundle()
             try {

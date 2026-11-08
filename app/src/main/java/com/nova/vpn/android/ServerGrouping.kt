@@ -56,7 +56,8 @@ internal fun ServersPage(
     onToggleFavorite: (String) -> Unit,
     onOpenSubscriptions: () -> Unit,
     onChooseBest: (List<ImportedProfile>) -> Unit,
-    onOpenServerRoutes: (() -> Unit)? = null
+    onOpenServerRoutes: (() -> Unit)? = null,
+    dualActions: DualServerActions? = null
 ) {
     val context = LocalContext.current.applicationContext
     val preferences = remember(context) { AppPreferencesStore(context) }
@@ -217,7 +218,7 @@ internal fun ServersPage(
        }
         HorizontalDivider(Modifier.padding(vertical = 8.dp))
         Box(Modifier.weight(1f).clipToBounds()) {
-            CompositionLocalProvider(LocalToggleFavorite provides onToggleFavorite,
+            CompositionLocalProvider(LocalDualServerActions provides dualActions, LocalToggleFavorite provides onToggleFavorite,
                 LocalEditServer provides { profile -> editingProfile = profile; personalName = profile.userSettings.personalName.orEmpty(); editError = null }) {
                 if (visible.isEmpty() && profiles.isNotEmpty()) Text("Ничего не найдено. Измените поиск или сбросьте фильтры.", Modifier.padding(16.dp))
                 else UngroupedServersPage(visible, selectedId, vpnState, checks, onCheck, onCancelCheck, onConnect,
@@ -251,6 +252,14 @@ internal fun FavoriteServerButton(profile: ImportedProfile) {
     val toggle = LocalToggleFavorite.current
     val edit = LocalEditServer.current
     Column {
+    LocalDualServerActions.current?.let { actions ->
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FilterChip(selected = actions.primary == profile.id, enabled = !actions.busy,
+                onClick = { actions.select(profile.id, false) }, label = { Text("Основной VPN") })
+            FilterChip(selected = actions.secondary == profile.id, enabled = !actions.busy,
+                onClick = { actions.select(profile.id, true) }, label = { Text("VPN-2") })
+        }
+    }
     TextButton(onClick = { toggle(profile.id) }) {
         Text(if (profile.userSettings.favorite) "★ Убрать из избранного" else "☆ В избранное")
     }

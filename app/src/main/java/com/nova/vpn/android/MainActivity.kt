@@ -1,4 +1,5 @@
 package com.nova.vpn.android
+import com.nova.vpn.android.data.*
 
 import com.nova.vpn.android.data.Appearance
 import com.nova.vpn.android.data.DesignStyle
@@ -610,6 +611,35 @@ private fun NovaAndroidApp(
         }
     }
 
+    fun toggleDualMode(enabled: Boolean) {
+        val baseline = routingDocument.active.settings
+        if (routingPreparing || routingDocument.pending != null) return
+        runCatching {
+            if (!enabled) {
+                val change = RoutingModeTransitions.disable(baseline)
+                applyRoutingPreset(routingDocument.activeId, change.settings, change.selection, baseline)
+            } else {
+                require(Build.VERSION.SDK_INT >= 29 && AppPreferencesStore(context).vpnEngine() == VpnEngine.SING_BOX) {
+                    "Для двух конфигов выберите ядро sing-box. Нужен Android 10 или новее."
+                }
+                val primary = selectedProfileId.takeIf { id -> profiles.any { it.id == id } }
+                    ?: error("Сначала выберите основной конфиг в «Серверах»")
+                val saved = baseline.history?.savedAssignments
+                val rules = saved?.rules ?: (
+                    (if (baseline.mode == AppRoutingMode.EXCLUDE_SELECTED) baseline.packages
+                        else installedApps.map { it.packageName }.toSet() - baseline.packages)
+                        .map { MultiServerRule(packageName = it, target = ServerRouteTarget(ServerRouteKind.DIRECT)) } +
+                    baseline.sites.map { MultiServerRule(domain = it.domain, target = ServerRouteTarget(
+                        if (it.target == SiteRoutingTarget.DIRECT) ServerRouteKind.DIRECT else ServerRouteKind.DEFAULT)) })
+                val next = RoutingModeTransitions.enable(baseline, selectedProfileId,
+                    saved?.defaultProfileId ?: primary, rules, baseline.ipv6Enabled)
+                val multi = requireNotNull(next.multiServer).copy(secondaryProfileId = saved?.secondaryProfileId)
+                applyRoutingPreset(routingDocument.activeId, next.copy(multiServer = multi,
+                    history = MultiServerRoutingHistory(next.history?.single, multi)), expected = baseline)
+            }
+        }.onFailure { connectError = it.message ?: "Не удалось переключить режим" }
+    }
+
     fun selectManualProfile(id: String) {
         if(routingDocument.active.settings.multiServer!=null){page=Page.Routing;return}
         if(routingPreparing||routingDocument.pending!=null){profileError="Дождитесь применения маршрутов.";return}
@@ -821,6 +851,9 @@ private fun NovaAndroidApp(
                             }
                         )
                           }
+                          DualModeControl(routingDocument.active.settings,
+                              routingPreparing || routingDocument.pending != null, ::toggleDualMode,
+                              { page = Page.Servers }, profiles)
                         }
                         Page.Servers -> ServersPage(
                             profiles = profiles,
@@ -860,6 +893,18 @@ private fun NovaAndroidApp(
                             onAdd = { importError = null; importText = ""; showImport = true },
                             onOpenSubscriptions = { showSubscriptions = true },
                             onOpenServerRoutes = { page = Page.Routing },
+                            dualActions = routingDocument.active.settings.multiServer?.let { multi ->
+                                DualServerActions(multi.defaultProfileId, multi.secondaryProfileId,
+                                    routingPreparing || routingDocument.pending != null) { id, secondary ->
+                                    val baseline = routingDocument.active.settings
+                                    runCatching {
+                                        val profile = profiles.single { it.id == id }
+                                        require(MultiServerProfileAdapter.problem(profile) == null) { "Этот конфиг не поддерживает два VPN" }
+                                        val next = selectDualServer(baseline, id, secondary)
+                                        applyRoutingPreset(routingDocument.activeId, next, expected = baseline)
+                                    }.onFailure { profileError = it.message ?: "Не удалось выбрать конфиг" }
+                                }
+                            },
                             onSelect = {selectManualProfile(it)},
                             onSendToWatch = { profile ->
                                 profileShareId = profile.id
@@ -1619,39 +1664,12 @@ internal fun RoutingPage(
         )
     }
 
-    var showAssignments by remember { mutableStateOf(false) }
-    var showRoutePreview by remember(activeRoutePreview) { mutableStateOf(false) }
-    if (showRoutePreview && activeRoutePreview != null) {
-        ActiveRoutePreviewDialog(activeRoutePreview, profiles, apps) { showRoutePreview = false }
+    fun changeMode(change: RoutingModeChange) {
+        onModeChanged?.invoke(change) ?: publishSettings(change.settings)
     }
-    var assignmentBaseline by remember {mutableStateOf<AppRoutingSettings?>(null)}
-    var resumeAssignments by remember {mutableStateOf(false)}
-    fun openAssignments(resume: Boolean=false){assignmentBaseline=settings;resumeAssignments=resume;showAssignments=true}
-    fun changeMode(change: com.nova.vpn.android.data.RoutingModeChange){onModeChanged?.invoke(change)?:publishSettings(change.settings)}
-    val assignmentContext = LocalContext.current
-    val assignmentSupported = android.os.Build.VERSION.SDK_INT >= 29 &&
-        AppPreferencesStore(assignmentContext).vpnEngine() == com.nova.vpn.android.data.VpnEngine.SING_BOX
-    if(showAssignments) {
-        val baseline=assignmentBaseline?:settings
-        MultiServerRoutingDialog(baseline,profiles,apps,selectedProfileId,assignmentBusy,
-            onApply={next->changeMode(com.nova.vpn.android.data.RoutingModeChange(baseline,next))},onDismiss={showAssignments=false},resuming=resumeAssignments,previousProfileId=previousProfileId)
-    }
-    if(settings.multiServer!=null) {
-        PageFrame("Маршрутизация","Разные приложения и сайты — через выбранные серверы") {
-            presetsContent?.let { panel -> item { panel() } }
-            if(exitChecks.isNotEmpty())item { ExitHealthCard(exitChecks,profiles) }
-            item { SoftCard {
-                Text("Основной сервер: "+(profiles.firstOrNull { it.id==settings.multiServer.defaultProfileId }?.displayName?:"Недоступен"))
-                Text("Назначений: ${settings.multiServer.rules.count { it.packageName!=null }} приложений · ${settings.multiServer.rules.count { it.domain!=null }} сайтов")
-                Text("Правила сайтов важнее приложений. Недоступный сервер не заменяется автоматически.")
-                if(!assignmentSupported) Text("Для этого режима нужны Android 10 или новее и ядро sing-box.")
-                Button(enabled=!assignmentBusy&&assignmentSupported,onClick={openAssignments()}) {Text("Изменить VPN для приложений и сайтов")}
-                if (activeRoutePreview != null) OutlinedButton(onClick = { showRoutePreview = true }) { Text("Проверить маршрут") }
-                if(settings.history?.single==null)Text("Прежняя схема не сохранена. Отключение вернёт обычный режим с текущими настройками; назначения останутся для повторного включения.")
-                OutlinedButton(enabled=!assignmentBusy,onClick={changeMode(com.nova.vpn.android.data.RoutingModeTransitions.disable(settings))}) {
-                    Text(if(settings.history?.single!=null)"Вернуть прежнюю маршрутизацию" else "Отключить назначения")
-                }
-            } }
+    if (settings.multiServer != null) {
+        DualRoutingPage(settings, profiles, apps, assignmentBusy, presetsContent) { next ->
+            changeMode(RoutingModeChange(settings, next))
         }
         return
     }
@@ -1660,16 +1678,8 @@ internal fun RoutingPage(
     presetsContent?.let { panel -> item { panel() } }
     if(exitChecks.isNotEmpty())item { ExitHealthCard(exitChecks,profiles) }
     item { SoftCard {
-        Text("Разные серверы для приложений и сайтов",fontWeight=FontWeight.SemiBold)
-        Text("Выберите основной сервер для остальных приложений, затем назначьте другой сервер нужному приложению или сайту. Например, ChatGPT — через США, остальные приложения — через Францию. После сохранения подключите VPN на главном экране.")
-        if(!assignmentSupported) Text("Для этого режима нужны Android 10 или новее и ядро sing-box.")
-        Button(enabled=!assignmentBusy&&assignmentSupported&&profiles.isNotEmpty(),onClick={openAssignments()}) {Text("Добавить второй VPN")}
-        if(settings.history!=null) {
-            OutlinedButton(enabled=!assignmentBusy&&assignmentSupported,onClick={openAssignments(true)}) {Text("Включить сохранённые назначения")}
-            TextButton(enabled=!assignmentBusy,onClick={changeMode(com.nova.vpn.android.data.RoutingModeTransitions.forget(settings))}) {Text("Удалить сохранённые назначения")}
-            val previousId=settings.history.single?.profileId
-            if(previousId!=null&&profiles.none {it.id==previousId&&!it.retiredFromSubscription})Text("Прежний сервер недоступен. Выберите сервер вручную перед подключением.")
-        }
+        Text("Два VPN-конфига", fontWeight = FontWeight.SemiBold)
+        Text("Включите режим на главном экране, выберите основной VPN и VPN-2 в «Серверах». Здесь появятся маршруты через VPN-2.")
     } }
     if (iosRouting) item { IOSRoutingTabs(iosRoutingTab) { iosRoutingTab = it } }
     if (materialRouting) item { MaterialRouteTabs(iosRoutingTab) { iosRoutingTab = it } }
