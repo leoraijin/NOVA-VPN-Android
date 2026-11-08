@@ -656,36 +656,6 @@ private fun NovaAndroidApp(
         applyRoutingPreset(routingDocument.activeId,candidate,com.nova.vpn.android.data.RoutingSelectionChange(id),baseline)
     }
 
-    roleSelectionId?.let { id ->
-        val profile = profiles.firstOrNull { it.id == id }
-        val busy = routingPreparing || routingDocument.pending != null
-        fun assignRole(secondary: Boolean) {
-            val baseline = routingDocument.active.settings
-            runCatching {
-                requireNotNull(profile) { "Конфиг больше недоступен" }
-                require(MultiServerProfileAdapter.problem(profile) == null) { "Этот конфиг не поддерживает два VPN" }
-                val next = selectDualServer(baseline, id, secondary)
-                applyRoutingPreset(routingDocument.activeId, next, expected = baseline)
-                roleSelectionId = null
-            }.onFailure { roleSelectionError = it.message ?: "Не удалось выбрать конфиг" }
-        }
-        AlertDialog(
-            onDismissRequest = { roleSelectionId = null },
-            title = { Text("Использовать конфиг") },
-            text = {
-                Column {
-                    Text(profile?.displayName ?: "Конфиг недоступен")
-                    roleSelectionError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-                    Button(onClick = { assignRole(false) }, enabled = !busy && profile != null,
-                        modifier = Modifier.fillMaxWidth()) { Text("Основной VPN") }
-                    Button(onClick = { assignRole(true) }, enabled = !busy && profile != null,
-                        modifier = Modifier.fillMaxWidth()) { Text("VPN-2") }
-                }
-            },
-            confirmButton = { TextButton(onClick = { roleSelectionId = null }) { Text("Отмена") } }
-        )
-    }
-
     val vaultRevision by ProfileVault.changes.collectAsStateWithLifecycle()
     LaunchedEffect(vault, vaultRevision) {
         runCatching { withContext(Dispatchers.IO) { vault.load() } }
@@ -762,6 +732,36 @@ private fun NovaAndroidApp(
     val configuration = LocalConfiguration.current
     val colors = remember(appearance, configuration) { designColorScheme(designPreset, context, appearance.isDark, appearance.materialHue) }
     NovaTheme(appearance = appearance, colorScheme = colors) {
+        roleSelectionId?.let { id ->
+            val profile = profiles.firstOrNull { it.id == id }
+            val busy = routingPreparing || routingDocument.pending != null
+            fun assignRole(secondary: Boolean) {
+                val baseline = routingDocument.active.settings
+                runCatching {
+                    requireNotNull(profile) { "Конфиг больше недоступен" }
+                    require(MultiServerProfileAdapter.problem(profile) == null) { "Этот конфиг не поддерживает два VPN" }
+                    val next = selectDualServer(baseline, id, secondary)
+                    applyRoutingPreset(routingDocument.activeId, next, expected = baseline)
+                    roleSelectionId = null
+                }.onFailure { roleSelectionError = it.message ?: "Не удалось выбрать конфиг" }
+            }
+            AlertDialog(
+                onDismissRequest = { roleSelectionId = null },
+                title = { Text("Использовать конфиг") },
+                text = {
+                    Column {
+                        Text(profile?.displayName ?: "Конфиг недоступен")
+                        roleSelectionError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                        Button(onClick = { assignRole(false) }, enabled = !busy && profile != null,
+                            modifier = Modifier.fillMaxWidth()) { Text("Основной VPN") }
+                        Button(onClick = { assignRole(true) }, enabled = !busy && profile != null,
+                            modifier = Modifier.fillMaxWidth()) { Text("VPN-2") }
+                    }
+                },
+                confirmButton = { TextButton(onClick = { roleSelectionId = null }) { Text("Отмена") } }
+            )
+        }
+
         Scaffold(
             containerColor = colors.background,
             bottomBar = {

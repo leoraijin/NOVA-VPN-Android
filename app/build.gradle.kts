@@ -58,8 +58,8 @@ android {
         applicationId = "com.nova.vpn.android"
         minSdk = 24
         targetSdk = 35
-        versionCode = 66
-        versionName = "0.2.64"
+        versionCode = 67
+        versionName = "0.2.65"
         manifestPlaceholders["novaAppLabel"] = "NOVA VPN"
         buildConfigField("boolean", "REALITY_PREVIEW", "false")
         buildConfigField("boolean", "SKIP_CORE_LOG_STREAM_FOR_USB_TEST", (providers.gradleProperty("novaUsbTest").isPresent && providers.gradleProperty("novaSkipCoreLogStream").isPresent).toString())
