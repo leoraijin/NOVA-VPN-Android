@@ -135,14 +135,18 @@ internal fun ServersPage(
                 ServerSort.valueOf(sortName), names) { name -> map?.resolve(name)?.country }
         }
     }
-    BoxWithConstraints(Modifier.fillMaxSize()) {
-      // Keep a usable list viewport in landscape and with large fonts. Filters
-      // can scroll independently instead of consuming all available height.
-      val compact = maxHeight < 400.dp
-      val controlsHeight = (maxHeight * if (compact) .25f else .45f)
-          .coerceAtLeast(if (compact) 80.dp else 112.dp).coerceAtMost(maxHeight * .6f)
-      Column(Modifier.fillMaxSize()) {
-       Column(Modifier.fillMaxWidth().heightIn(max = controlsHeight).clipToBounds().verticalScroll(rememberScrollState())) {
+    var libraryMenuOpen by rememberSaveable { mutableStateOf(false) }
+    Column(Modifier.fillMaxSize()) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+            TextButton(onClick = { libraryMenuOpen = true }) { Text("Меню") }
+        }
+        if (libraryMenuOpen) {
+            AlertDialog(
+                onDismissRequest = { libraryMenuOpen = false },
+                title = { Text("Управление серверами") },
+                confirmButton = { TextButton(onClick = { libraryMenuOpen = false }) { Text("Готово") } },
+                text = {
+                    Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
         OutlinedTextField(value = query, onValueChange = { query = it }, singleLine = true,
             label = { Text("Поиск серверов") }, modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp))
         FlowRow(Modifier.fillMaxWidth().padding(horizontal = 16.dp),
@@ -216,7 +220,9 @@ internal fun ServersPage(
                 modifier = Modifier.padding(horizontal = 16.dp), style = MaterialTheme.typography.bodySmall)
         }
        }
-        HorizontalDivider(Modifier.padding(vertical = 8.dp))
+                }
+            )
+        }
         Box(Modifier.weight(1f).clipToBounds()) {
             CompositionLocalProvider(LocalDualServerActions provides dualActions, LocalToggleFavorite provides onToggleFavorite,
                 LocalEditServer provides { profile -> editingProfile = profile; personalName = profile.userSettings.personalName.orEmpty(); editError = null }) {
@@ -225,7 +231,6 @@ internal fun ServersPage(
                     error, shareStatus, shareProfileId, transferBusy, onAdd, onSelect, onSendToWatch, onDelete)
             }
         }
-      }
     }
 }
 

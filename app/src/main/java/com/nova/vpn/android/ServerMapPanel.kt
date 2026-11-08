@@ -248,7 +248,7 @@ private data class MapMarker(val members: List<LocatedProfile>, val selected: Lo
                 .clickable {
                     val current = marker.members.indexOfFirst { it.profile.id == selectedId }
                     val next = if(current < 0) marker.members.first() else marker.members[(current + 1) % marker.members.size]
-                    if (next.profile.id != selectedId) onSelect(next.profile.id)
+                    onSelect(next.profile.id)
                 })
         }
         Column(Modifier.align(Alignment.BottomEnd).padding(10.dp).background(colors.surface.copy(alpha = .94f), RoundedCornerShape(18.dp))) {

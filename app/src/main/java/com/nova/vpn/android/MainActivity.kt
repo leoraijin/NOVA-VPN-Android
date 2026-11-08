@@ -640,13 +640,50 @@ private fun NovaAndroidApp(
         }.onFailure { connectError = it.message ?: "Не удалось переключить режим" }
     }
 
+    var roleSelectionId by remember { mutableStateOf<String?>(null) }
+    var roleSelectionError by remember { mutableStateOf<String?>(null) }
+
     fun selectManualProfile(id: String) {
-        if(routingDocument.active.settings.multiServer!=null){page=Page.Routing;return}
+        if (routingDocument.active.settings.multiServer != null) {
+            roleSelectionError = null
+            roleSelectionId = id
+            return
+        }
         if(routingPreparing||routingDocument.pending!=null){profileError="Дождитесь применения маршрутов.";return}
         if(runCatching {AutoServerSettingsStore.pin(context)}.isFailure){profileError="Не удалось закрепить ручной выбор сервера.";return}
         val baseline=routingDocument.active.settings
         val candidate=baseline.copy(history=baseline.history?.withProfile(id))
         applyRoutingPreset(routingDocument.activeId,candidate,com.nova.vpn.android.data.RoutingSelectionChange(id),baseline)
+    }
+
+    roleSelectionId?.let { id ->
+        val profile = profiles.firstOrNull { it.id == id }
+        val busy = routingPreparing || routingDocument.pending != null
+        fun assignRole(secondary: Boolean) {
+            val baseline = routingDocument.active.settings
+            runCatching {
+                requireNotNull(profile) { "Конфиг больше недоступен" }
+                require(MultiServerProfileAdapter.problem(profile) == null) { "Этот конфиг не поддерживает два VPN" }
+                val next = selectDualServer(baseline, id, secondary)
+                applyRoutingPreset(routingDocument.activeId, next, expected = baseline)
+                roleSelectionId = null
+            }.onFailure { roleSelectionError = it.message ?: "Не удалось выбрать конфиг" }
+        }
+        AlertDialog(
+            onDismissRequest = { roleSelectionId = null },
+            title = { Text("Использовать конфиг") },
+            text = {
+                Column {
+                    Text(profile?.displayName ?: "Конфиг недоступен")
+                    roleSelectionError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                    Button(onClick = { assignRole(false) }, enabled = !busy && profile != null,
+                        modifier = Modifier.fillMaxWidth()) { Text("Основной VPN") }
+                    Button(onClick = { assignRole(true) }, enabled = !busy && profile != null,
+                        modifier = Modifier.fillMaxWidth()) { Text("VPN-2") }
+                }
+            },
+            confirmButton = { TextButton(onClick = { roleSelectionId = null }) { Text("Отмена") } }
+        )
     }
 
     val vaultRevision by ProfileVault.changes.collectAsStateWithLifecycle()
