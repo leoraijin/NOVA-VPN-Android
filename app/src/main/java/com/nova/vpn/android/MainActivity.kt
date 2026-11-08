@@ -892,7 +892,6 @@ private fun NovaAndroidApp(
                             transferBusy = profileTransferBusy,
                             onAdd = { importError = null; importText = ""; showImport = true },
                             onOpenSubscriptions = { showSubscriptions = true },
-                            onOpenServerRoutes = { page = Page.Routing },
                             dualActions = routingDocument.active.settings.multiServer?.let { multi ->
                                 DualServerActions(multi.defaultProfileId, multi.secondaryProfileId,
                                     routingPreparing || routingDocument.pending != null) { id, secondary ->

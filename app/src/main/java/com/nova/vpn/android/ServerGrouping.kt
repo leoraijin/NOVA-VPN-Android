@@ -56,7 +56,6 @@ internal fun ServersPage(
     onToggleFavorite: (String) -> Unit,
     onOpenSubscriptions: () -> Unit,
     onChooseBest: (List<ImportedProfile>) -> Unit,
-    onOpenServerRoutes: (() -> Unit)? = null,
     dualActions: DualServerActions? = null
 ) {
     val context = LocalContext.current.applicationContext
@@ -143,11 +142,6 @@ internal fun ServersPage(
       val controlsHeight = (maxHeight * if (compact) .25f else .45f)
           .coerceAtLeast(if (compact) 80.dp else 112.dp).coerceAtMost(maxHeight * .6f)
       Column(Modifier.fillMaxSize()) {
-       onOpenServerRoutes?.let { open ->
-        Button(onClick = open, modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
-            Text("Второй VPN для приложений и сайтов")
-        }
-       }
        Column(Modifier.fillMaxWidth().heightIn(max = controlsHeight).clipToBounds().verticalScroll(rememberScrollState())) {
         OutlinedTextField(value = query, onValueChange = { query = it }, singleLine = true,
             label = { Text("Поиск серверов") }, modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp))
@@ -173,11 +167,17 @@ internal fun ServersPage(
             }
             TextButton(onClick = { query = ""; favoritesOnly = false; chosen = null }) { Text("Сбросить") }
             TextButton(onClick = onOpenSubscriptions) { Text("Подписки") }
-        }
-        TextButton(onClick = onDeleteAll, enabled = profiles.isNotEmpty() || snapshot?.subscriptions?.isNotEmpty() == true,
-            modifier = Modifier.padding(horizontal = 16.dp)) {
-            Text("Удалить все конфиги VPN", color = if (profiles.isNotEmpty() || snapshot?.subscriptions?.isNotEmpty() == true)
-                MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface.copy(alpha = .38f))
+            Box {
+                var actionsOpen by remember { mutableStateOf(false) }
+                TextButton(onClick = { actionsOpen = true }) { Text("Ещё") }
+                DropdownMenu(expanded = actionsOpen, onDismissRequest = { actionsOpen = false }) {
+                    DropdownMenuItem(
+                        text = { Text("Удалить все конфиги VPN", color = MaterialTheme.colorScheme.error) },
+                        enabled = profiles.isNotEmpty() || snapshot?.subscriptions?.isNotEmpty() == true,
+                        onClick = { actionsOpen = false; onDeleteAll() }
+                    )
+                }
+            }
         }
         Text("Найдено: ${visible.size} из ${profiles.size}", modifier = Modifier.padding(horizontal = 16.dp))
         FilterChip(selected = autoOptions.enabled, enabled = autoOptions.enabled || visible.isNotEmpty(),
