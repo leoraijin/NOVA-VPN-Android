@@ -1,6 +1,7 @@
 @file:OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 package com.nova.vpn.android
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
@@ -151,7 +152,25 @@ internal fun DualRoutingPage(settings: AppRoutingSettings, profiles: List<Import
                 }.distinct()
                 val target = targets.singleOrNull() ?: ServerRouteTarget(ServerRouteKind.BLOCK)
                 SoftCard {
-                    Text(group.members.joinToString { it.label })
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        group.members.forEach { app ->
+                            key(app.packageName) {
+                                val appIcon by produceState(AppIconCache.peek(app.packageName), app.packageName) {
+                                    value = AppIconCache.load(context.packageManager, app.packageName)
+                                }
+                                Row(verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                                    Box(Modifier.size(44.dp)) {
+                                        appIcon?.let { bitmap ->
+                                            Image(bitmap = bitmap, contentDescription = null,
+                                                modifier = Modifier.fillMaxSize())
+                                        }
+                                    }
+                                    Text(app.label, modifier = Modifier.weight(1f))
+                                }
+                            }
+                        }
+                    }
                     group.unavailableReason?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                     if (tab == 2) {
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
