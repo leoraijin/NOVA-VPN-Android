@@ -749,7 +749,7 @@ private fun NovaAndroidApp(
                 onDismissRequest = { roleSelectionId = null },
                 title = { Text("Использовать конфиг") },
                 text = {
-                    Column {
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         Text(profile?.displayName ?: "Конфиг недоступен")
                         roleSelectionError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                         Button(onClick = { assignRole(false) }, enabled = !busy && profile != null,
