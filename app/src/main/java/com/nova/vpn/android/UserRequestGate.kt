@@ -45,9 +45,6 @@ internal data class PreparedVpnConfiguration(val config: String, val name: Strin
                 val multi = frozen.multiServer
                 if (multi != null) {
                     require(android.os.Build.VERSION.SDK_INT >= 29) { "Назначения серверов приложениям требуют Android 10 или новее." }
-                    require(com.nova.vpn.android.data.AppPreferencesStore(context).vpnEngine() == com.nova.vpn.android.data.VpnEngine.SING_BOX) {
-                        "Для назначений серверов выберите sing-box."
-                    }
                 }
                 if(multi!=null) com.nova.vpn.android.data.SharedUidRouting.validate(multi,
                     { name -> runCatching { context.packageManager.getApplicationInfo(name,0).uid }.getOrNull() },

@@ -6,7 +6,7 @@ $ErrorActionPreference = 'Stop'
 $WorkspaceRoot = (Resolve-Path -LiteralPath $WorkspaceRoot).Path
 $headerDirectory = Join-Path $PSScriptRoot 'reality-include'
 $headerHash = (Get-FileHash -LiteralPath (Join-Path $headerDirectory 'reality.h') -Algorithm SHA256).Hash.ToLowerInvariant()
-if ($headerHash -ne 'efdee71beccba21aa6a39d65435afbebfc83d97f5cd329dbaa6a71bc3f7969c4') { throw 'Unexpected pinned Reality FFI header' }
+if ($headerHash -ne 'e31987931037a5c757050d2164c0db934a2eb8a2615c29b4bb19bca3ccfeafb1') { throw 'Unexpected pinned Reality FFI header' }
 $clang = Join-Path $WorkspaceRoot 'toolchain/android-sdk/ndk/28.0.13004108/toolchains/llvm/prebuilt/windows-x86_64/bin/clang.exe'
 foreach ($abi in $Abis) {
     $target = switch ($abi) {

@@ -31,6 +31,12 @@ check(xhttpPreviewAar == null || (providers.gradleProperty("novaUsbTest").isPres
     "Local XHTTP cores require an isolated USB smoke build and a SHA-256 pin"
 }
 
+val realityDualSmoke = providers.gradleProperty("novaRealityDualSmoke").isPresent
+require(!realityDualSmoke || (providers.gradleProperty("novaUsbTest").isPresent &&
+    providers.gradleProperty("novaRealitySmoke").isPresent)) {
+    "Reality dual smoke requires an isolated USB test build"
+}
+
 android {
     namespace = "com.nova.vpn.android"
     compileSdk = 35
@@ -58,10 +64,11 @@ android {
         applicationId = "com.nova.vpn.android"
         minSdk = 24
         targetSdk = 35
-        versionCode = 68
-        versionName = "0.2.66"
+        versionCode = 69
+        versionName = "0.2.67"
         manifestPlaceholders["novaAppLabel"] = "NOVA VPN"
         buildConfigField("boolean", "REALITY_PREVIEW", "false")
+        buildConfigField("boolean", "REALITY_DUAL_SMOKE", realityDualSmoke.toString())
         buildConfigField("boolean", "SKIP_CORE_LOG_STREAM_FOR_USB_TEST", (providers.gradleProperty("novaUsbTest").isPresent && providers.gradleProperty("novaSkipCoreLogStream").isPresent).toString())
         buildConfigField("boolean", "XHTTP_DOWNLOAD_SUPPORTED", (xhttpPreviewAar != null).toString())
         buildConfigField("String", "LIBBOX_REVISION", if (xhttpPreviewAar == null)

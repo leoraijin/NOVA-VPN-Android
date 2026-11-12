@@ -36,6 +36,42 @@ class MultiExitHealthPlanTest {
    assertEquals(setOf("fr","us"),plan.probes.keys);assertTrue(plan.unsupported.isEmpty());assertFalse(source.contains(MultiExitHealthPlan.TAG))
   }finally{plan.cancel()}
  }
+ @Test fun realityPinsOneAuthenticatedListenerPerExit(){
+  val profiles = ExitHealthFixtures.profiles.map { profile ->
+   val outbound = JSONObject().put("type", "vless").put("server", profile.server)
+    .put("server_port", profile.port).put("uuid", "6b6218ed-70de-4b46-8f93-3d2d0cff2fa7")
+    .put("tls", JSONObject().put("enabled", true).put("server_name", "fixture.example"))
+   profile.copy(protocol = "vless", outboundJson = outbound.toString())
+  }
+  val config = ExitHealthFixtures.config(profiles)
+  val plan = MultiExitHealthPlan.prepare(config, ExitHealthFixtures.bindings(profiles, config),
+   ExitHealthFixtures.policy, separateListeners = true)
+  try {
+   val converted = RealityConfigFactory.prepare(plan.config, "org.example.nova", { 12001 }, managedDual = true)
+   val root = JSONObject(converted.config)
+   val inbounds = root.getJSONArray("inbounds")
+   val rules = root.getJSONObject("route").getJSONArray("rules")
+   val ports = mutableSetOf<Int>()
+   for (index in 0..1) {
+    val listener = inbounds.getJSONObject(inbounds.length() - 2 + index)
+    val tag = listener.getString("tag")
+    assertTrue(ports.add(listener.getInt("listen_port")))
+    assertEquals(1, listener.getJSONArray("users").length())
+    val resolve = rules.getJSONObject(index * 3)
+    val route = rules.getJSONObject(index * 3 + 1)
+    val reject = rules.getJSONObject(index * 3 + 2)
+    assertEquals(tag, resolve.getJSONArray("inbound").getString(0))
+    assertEquals(tag, route.getJSONArray("inbound").getString(0))
+    assertEquals(tag, reject.getJSONArray("inbound").getString(0))
+    assertFalse(route.has("auth_user"))
+    assertEquals("dns-nova-exit-$index", resolve.getString("server"))
+    assertEquals("nova-exit-$index", route.getString("outbound"))
+    assertEquals("reject", reject.getString("action"))
+   }
+   System.getenv("NOVA_REALITY_EXIT_FIXTURE")?.let { java.io.File(it).writeText(converted.config) }
+  } finally { plan.cancel() }
+ }
+
  @Test fun missingExitGetsNoCredentialOrAlternateChannel(){
   val nodes=ExitHealthFixtures.profiles.map { if(it.id=="us")it.copy(retiredFromSubscription=true) else it }
   val config=ExitHealthFixtures.config(nodes);val plan=MultiExitHealthPlan.prepare(config,ExitHealthFixtures.bindings(nodes,config),ExitHealthFixtures.policy)

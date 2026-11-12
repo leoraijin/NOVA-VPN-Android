@@ -180,7 +180,8 @@ class RealityCoreSmokeRunner : Instrumentation() {
         recoveryCycles = arguments?.getString("recoveryCycles")?.toInt() ?: 2
         check(recoveryCycles in 1..30 && (recoveryOnly || recoveryCycles == 2))
         isolatedEngine = arguments?.getString("isolatedEngine")?.let { VpnEngine.valueOf(it) }
-        check(isolatedEngine == null || recoveryOnly || bypassVisibilityOnly)
+        check(isolatedEngine == null || recoveryOnly || bypassVisibilityOnly ||
+            (BuildConfig.REALITY_DUAL_SMOKE && multiExitOnly && isolatedEngine == VpnEngine.REALITY_CORE))
         liveReloadOnly = arguments?.getString("liveReloadOnly") == "true"
         allowWifiToggle = arguments?.getString("allowWifiToggle") == "true"
         xhttpOnly = arguments?.getString("xhttpOnly") == "true"
@@ -486,6 +487,13 @@ class RealityCoreSmokeRunner : Instrumentation() {
                 targetContext.packageName == "com.nova.vpn.android.usbtest.completionpreview"))
             check(!(recoveryOnly || multiWifiRecoveryOnly) || allowWifiToggle) { "Recovery Wi-Fi test requires a wired device and explicit allowWifiToggle=true; TCP ADB may disconnect." }
             check(isIsolatedUsbTestPackage(targetContext.packageName)) { "JNI/TUN smoke requires an isolated USB package" }
+            if (BuildConfig.REALITY_DUAL_SMOKE && multiExitOnly && isolatedEngine == VpnEngine.REALITY_CORE) {
+                RealityCoreBridge.requireAvailable()
+                runVpnSmoke()
+                result.putString("stream", "Reality Core two-exit TUN smoke passed. Core ${RealityCoreBridge.version()}\n")
+                finish(Activity.RESULT_OK, result)
+                return
+            }
             if (isolatedEngine == VpnEngine.SING_BOX) {
                 runVpnSmoke()
                 result.putString("stream", "Isolated SING_BOX ${if (recoveryOnly) "recovery" else "routing"} smoke passed without Rust JNI initialization.\n")
@@ -617,8 +625,8 @@ class RealityCoreSmokeRunner : Instrumentation() {
         if(multiExitOnly)runOnMainSync { activity.window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) }
         val tlsFixture = TestTlsFixture(context)
         tlsFixture.serverSocket(previousCut?.getInt("firstPort") ?: 0).use { listener ->
-            val firstDoh=if(multiExitOnly)TestDohFixture(tlsFixture,multiQuicSiteOnly,"first".takeIf { multiTxtDnsOnly }) else null
-            val secondDoh=if(multiExitOnly)TestDohFixture(tlsFixture,multiQuicSiteOnly,"second".takeIf { multiTxtDnsOnly }) else null
+            val firstDoh=if(multiExitOnly)TestDohFixture(tlsFixture, multiQuicSiteOnly, "first".takeIf { multiTxtDnsOnly }, http2 = isolatedEngine == VpnEngine.REALITY_CORE) else null
+            val secondDoh=if(multiExitOnly)TestDohFixture(tlsFixture, multiQuicSiteOnly, "second".takeIf { multiTxtDnsOnly }, http2 = isolatedEngine == VpnEngine.REALITY_CORE) else null
             val quicUploads=java.util.concurrent.ConcurrentHashMap<String,AtomicInteger>()
             val quicDownloads=java.util.concurrent.ConcurrentHashMap<String,AtomicInteger>()
             val quicActive=AtomicInteger()
@@ -712,7 +720,8 @@ class RealityCoreSmokeRunner : Instrumentation() {
                                 java.io.DataOutputStream(socket.getOutputStream()).apply { writeShort(size);write(payload);flush() }
                                 return@peerUse
                             }
-                            if(multiExitOnly && type==1 && destination.contentEquals(byteArrayOf(203.toByte(),0,113,53)) && destinationPort==443) {
+                            if (multiExitOnly && destinationPort == 443 && (type == 1 && destination.contentEquals(byteArrayOf(203.toByte(), 0, 113, 53)) ||
+                                isolatedEngine == VpnEngine.REALITY_CORE && type == 2 && String(destination, Charsets.US_ASCII) == "localhost")) {
                                 val doh=if(endpoint===listener)requireNotNull(firstDoh) else requireNotNull(secondDoh)
                                 dnsExitPackets.computeIfAbsent(exitKey){AtomicInteger()}.incrementAndGet()
                                 java.net.Socket("127.0.0.1",doh.port).use { upstream ->
@@ -825,8 +834,9 @@ class RealityCoreSmokeRunner : Instrumentation() {
                 }
                 val testPackage = "${context.packageName}.test"
                 if(multiExitOnly) {
-                    check(isolatedEngine==VpnEngine.SING_BOX)
-                    AppPreferencesStore(context).setVpnEngine(VpnEngine.SING_BOX)
+                    check(isolatedEngine == VpnEngine.SING_BOX || (BuildConfig.REALITY_DUAL_SMOKE &&
+                        isolatedEngine == VpnEngine.REALITY_CORE))
+                    AppPreferencesStore(context).setVpnEngine(requireNotNull(isolatedEngine))
                     val second=profile.copy(id=if (processPhase != null) "fixture-process-second" else "fixture-second-exit",name="Second authenticated exit",port=requireNotNull(secondListener).localPort,
                         outboundJson=JSONObject(profile.outboundJson).put("server_port",secondListener.localPort).put("uuid","22222222-2222-4222-8222-222222222222").toString())
                     if (previousCut == null) {
@@ -849,10 +859,12 @@ class RealityCoreSmokeRunner : Instrumentation() {
                             }
                             val directFixture = multiTxtDnsOnly && tag == "dns-nova-direct"
                             if (!directFixture && !tag.startsWith("dns-nova-exit-")) continue
-                            server.put("server", if (directFixture) "127.0.0.1" else "203.0.113.53")
+                            server.put("server", if (directFixture) "127.0.0.1" else if (isolatedEngine == VpnEngine.REALITY_CORE) "localhost" else "203.0.113.53")
                                 .put("server_port", if (directFixture) requireNotNull(firstDoh).port else 443)
                                 .put("tls", JSONObject().put("enabled", true).put("server_name", "localhost")
-                                    .put("certificate_path", tlsFixture.certificatePath).put("alpn", org.json.JSONArray().put("http/1.1")))
+                                    .put("certificate_path", tlsFixture.certificatePath).apply {
+                                        if (isolatedEngine != VpnEngine.REALITY_CORE) put("alpn", JSONArray().put("http/1.1"))
+                                    })
                         }
                     }.toString()
 
@@ -1223,7 +1235,12 @@ class RealityCoreSmokeRunner : Instrumentation() {
                         check((endpointPackets[secondListener.localPort]?.get()?:0)-secondPortBefore==if(target==second.id)2 else 0)
                         val siteFirstBefore=count(firstKey);val siteSecondBefore=count(secondKey)
                         check(requireNotNull(firstDoh).queriesFor(siteHost)==0 && requireNotNull(secondDoh).queriesFor(siteHost)==0)
-                        check(routedClientResult(site=true,siteHost=siteHost)=="ok") {"Site override echo failed"}
+                        val siteResult = routedClientResult(site = true, siteHost = siteHost)
+                        check(siteResult == "ok") {
+                            "Site override echo failed: result=$siteResult firstDns=${firstDoh?.queriesFor(siteHost)} " +
+                                "secondDns=${secondDoh?.queriesFor(siteHost)} dnsConnections=$dnsExitPackets " +
+                                "DNS failures=${firstDoh?.failures}/${secondDoh?.failures} fixture=${fixtureFailure.get()}"
+                        }
                         check(count(firstKey)-siteFirstBefore==if(target==second.id)1 else 0) {"Site override chose wrong first exit"}
                         check(count(secondKey)-siteSecondBefore==if(target==profile.id)1 else 0) {"Site override chose wrong second exit"}
                         check((if(target==second.id)requireNotNull(firstDoh) else requireNotNull(secondDoh)).queriesFor(siteHost)>0) {"No HTTPS DNS response through site exit"}

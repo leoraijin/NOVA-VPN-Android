@@ -26,6 +26,47 @@ class RealityConfigFactoryTest {
         assertThrows(IllegalArgumentException::class.java) { prepare(json) }
     }
 
+    @Test fun managedDualKeepsExitAndDnsIdentityForEachApp() {
+        val base = generated()
+        val first = JSONObject(proxy(base).toString())
+        val second = JSONObject(first.toString()).put("server", "second.example")
+        val settings = MultiServerSettings(1, "primary", listOf(
+            MultiServerRule(packageName = "org.example.alpha",
+                target = ServerRouteTarget(ServerRouteKind.PROFILE, "secondary")),
+            MultiServerRule(packageName = "org.example.beta",
+                target = ServerRouteTarget(ServerRouteKind.DIRECT))
+        ), "secondary")
+        val dual = MultiServerConfigFactory.build(base, settings,
+            mapOf("primary" to first, "secondary" to second), own, false, "/data/local/nova.db")
+        val calls = mutableMapOf<String, Int>()
+        val prepared = RealityConfigFactory.prepare(dual.toString(), own, { pkg ->
+            calls[pkg] = (calls[pkg] ?: 0) + 1
+            if (pkg.endsWith("alpha")) 10001 else 10002
+        }, managedDual = true)
+        val output = JSONObject(prepared.config)
+        val route = rules(output)
+        val dns = dns(output)
+        assertEquals(listOf(own), prepared.excludedPackages)
+        assertTrue(prepared.includedPackages.isEmpty())
+        assertFalse(prepared.ipv6Enabled)
+        assertEquals(mapOf("org.example.alpha" to 1, "org.example.beta" to 1), calls)
+        val firstRule = route.getJSONObject(0)
+        assertEquals(RealityConfigFactory.CONFLICT_UID, firstRule.getJSONArray("user_id").getLong(0))
+        val routeItems = (0 until route.length()).map(route::getJSONObject)
+        val dnsRules = dns.getJSONArray("rules")
+        val dnsItems = (0 until dnsRules.length()).map(dnsRules::getJSONObject)
+        assertTrue(routeItems.any { it.optJSONArray("user_id")?.optInt(0) == 10001 &&
+            it.optString("outbound") == "nova-exit-1" })
+        assertTrue(dnsItems.any { it.optJSONArray("user_id")?.optInt(0) == 10001 &&
+            it.optString("server") == "dns-nova-exit-1" })
+        assertTrue(routeItems.any { it.optBoolean("owner_unknown") })
+        assertTrue(dnsItems.any { it.optBoolean("owner_unknown") })
+        assertEquals("nova-bootstrap-dns", dns.getString("bootstrap"))
+        assertThrows(IllegalArgumentException::class.java) {
+            RealityConfigFactory.prepare(dual.toString(), own, { 10001 }, managedDual = true)
+        }
+    }
+
     @Test fun generatedRealityPreservesTransportSecretsAndKeepsMetadataOutOfJson() {
         val source = generated()
         val original = source.toString()

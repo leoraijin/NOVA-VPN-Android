@@ -288,7 +288,6 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
                 val engine = request.engine
                 VpnDiagnostics.setEngine(engine == VpnEngine.REALITY_CORE)
                 check(activeEngine == null || activeEngine == engine) { "Перед сменой ядра отключите VPN." }
-                if(request.identity.policy!=null && engine!=VpnEngine.SING_BOX)throw InvalidConfiguration()
                 // Preparation may predate system consent or a network handover.
                 if(request.identity.policy!=null) {
                     stage="config-validation"
@@ -372,22 +371,7 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
                     updateNotification("VPN подключён")
                 }) { closeEngine(keepTun = commands.view().wanted); return@execute }
                 AutomaticProbePause.settled(request.rollbackFor ?: request.identity.requestId)
-                if(multi!=null && commands.current(ticket)) {
-                    val revision=VpnRuntime.state.value.sessionRevision
-                    commands.accept(ticket) { VpnRuntime.beginExitChecks(multi.bindings,requireNotNull(request.identity.policy),multi.unsupported) }
-                    multi.probes.forEach { (id,channel)->exitProbeQueue.execute task@ {
-                        if(!commands.current(ticket)||exitHealthPlan!==multi)return@task
-                        val fingerprint=multi.bindings.entries.getValue(id).profileSha256
-                        var checking=false
-                        commands.accept(ticket) { if(exitHealthPlan===multi)checking=VpnRuntime.setExitChecking(revision,id,fingerprint) }
-                        if(!checking)return@task
-                        val success=channel.check()
-                        commands.accept(ticket) { if(exitHealthPlan===multi) {
-                            VpnRuntime.setExitResult(revision,id,fingerprint,success,channel.responseMillis)
-                            updateNotification(VpnRuntime.state.value.exitCheckSummary())
-                        } }
-                    } }
-                }
+                if (multi != null && commands.current(ticket)) checkManagedExits(multi, request, ticket)
                 if (probe != null && commands.current(ticket)) {
                     commands.accept(ticket) { VpnRuntime.setTrafficChecking() }
                     probeQueue.execute {
@@ -561,11 +545,35 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
 
     private class InvalidConfiguration : IllegalArgumentException("Неподдерживаемая конфигурация VPN")
 
+    private fun checkManagedExits(multi: MultiExitHealthPlan, request: Configuration, ticket: ConnectionCoordinator.Ticket) {
+        val policy = requireNotNull(request.identity.policy)
+        val revision=VpnRuntime.state.value.sessionRevision
+        commands.accept(ticket) { VpnRuntime.beginExitChecks(multi.bindings,policy,multi.unsupported) }
+        multi.probes.forEach { (id,channel)->exitProbeQueue.execute task@ {
+            if(!commands.current(ticket)||exitHealthPlan!==multi)return@task
+            val fingerprint=multi.bindings.entries.getValue(id).profileSha256
+            var checking=false
+            commands.accept(ticket) { if(exitHealthPlan===multi)checking=VpnRuntime.setExitChecking(revision,id,fingerprint) }
+            if(!checking)return@task
+            val success=channel.check()
+            commands.accept(ticket) { if(exitHealthPlan===multi) {
+                VpnRuntime.setExitResult(revision,id,fingerprint,success,channel.responseMillis)
+                updateNotification(VpnRuntime.state.value.exitCheckSummary())
+            } }
+        } }
+    }
+
     private fun startReality(request: Configuration, ticket: ConnectionCoordinator.Ticket) {
         val config = request.config
         runCatching { RealityCoreBridge.requireAvailable() }.getOrElse { throw InvalidConfiguration() }
         // Conversion and native validation happen BEFORE closing an existing tunnel.
-        val probe = runCatching { AndroidTrafficProbe.prepare(config) }.getOrElse { throw InvalidConfiguration() }
+        val multi = request.identity.policy?.let { policy ->
+            runCatching { MultiExitHealthPlan.prepare(config, requireNotNull(request.exits), policy, separateListeners = true) }
+                .getOrElse { throw InvalidConfiguration() }
+        }
+        val probe = if (multi == null) {
+            runCatching { AndroidTrafficProbe.prepare(config) }.getOrElse { throw InvalidConfiguration() }
+        } else null
         val packageUid: ((String) -> Int)? = if (Build.VERSION.SDK_INT >= 29) { name ->
             val uid = runCatching { packageManager.getApplicationInfo(name, 0).uid }.getOrNull()
             require(uid != null && uid >= 0) { "Приложение недоступно. Обновите список приложений маршрутизации." }
@@ -576,7 +584,13 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
             }
             uid
         } else null
-        val prepared = runCatching { RealityConfigFactory.prepare(probe?.config ?: config, packageName, packageUid) }
+        val managedDual = request.identity.policy != null
+        val dualUidGuard = if (managedDual) runCatching {
+            com.nova.vpn.android.data.SharedUidExitGuard.capture(config)
+        }.getOrElse { throw InvalidConfiguration() } else null
+        val prepared = runCatching {
+            RealityConfigFactory.prepare(multi?.config ?: probe?.config ?: config, packageName, packageUid, managedDual)
+        }
             .getOrElse { throw InvalidConfiguration() }
         val runtimeConfig = prepared.config
         if (!runCatching { RealityCoreBridge.validate(runtimeConfig, filesDir.absolutePath) }.getOrDefault(false)) throw InvalidConfiguration()
@@ -591,7 +605,7 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
         if (!commands.current(ticket)) return
         activeEngine = VpnEngine.REALITY_CORE
         VpnDiagnostics.record("engine_reality_core")
-        VpnDiagnostics.record("reality_revision_994ce4ef")
+        VpnDiagnostics.record("reality_revision_16fe5dd")
         registerRealityNetworkMonitor()
         val builder = Builder().setSession("NOVA VPN · Reality Core").setMtu(1500)
             .addAddress("172.19.0.1", 30).addRoute("0.0.0.0", 0).addDnsServer("172.19.0.2")
@@ -617,26 +631,32 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
                 override fun coreWarning(message: String) { VpnDiagnostics.coreMessage(message) }
                 override fun connectionOwner(protocol: Int, source: String, destination: String): Long {
                     if (Build.VERSION.SDK_INT < 29) return -1L
-                    return ConnectionOwnerLookup.resolve(protocol, source, destination) { type, local, remote ->
+                    val uid = ConnectionOwnerLookup.resolve(protocol, source, destination) { type, local, remote ->
                         connectivity.getConnectionOwnerUid(type, local, remote)
                     }
+                    if (dualUidGuard == null || uid < 0) return uid
+                    val packages = packageManager.getPackagesForUid(uid.toInt()).orEmpty().toList()
+                    if (packages.isEmpty()) return -1L
+                    return if (dualUidGuard.conflicts(packages)) RealityConfigFactory.CONFLICT_UID else uid
                 }
             })
         check(realityHandle != 0L) { "Не удалось запустить Reality Core. Выберите sing-box или отправьте диагностический отчёт." }
         trafficProbe = probe
+        exitHealthPlan = multi
         VpnDiagnostics.record("engine_started")
         if (!commands.accept(ticket) {
-            commitRouting(request)
+            val preview = commitRouting(request)
             commands.succeeded(ticket)
             appliedConfiguration = request
             VpnApplyRequests.tracker.applied(request.identity, request.rollbackFor)
-            VpnRuntime.setConnected(request.identity)
+            VpnRuntime.setConnected(request.identity, preview)
             VpnDiagnostics.record("tunnel_active")
             WearStatusSync.publish(this, "connected")
             updateNotification("VPN подключён · Reality Core")
         }) { closeEngine(keepTun = commands.view().wanted); return }
         AutomaticProbePause.settled(request.rollbackFor ?: request.identity.requestId)
-        if (probe != null) {
+        if (multi != null && commands.current(ticket)) checkManagedExits(multi, request, ticket)
+        if (probe != null && commands.current(ticket)) {
             commands.accept(ticket) { VpnRuntime.setTrafficChecking() }
             probeQueue.execute {
                 val success = probe.check()

@@ -2,9 +2,9 @@
 set -euo pipefail
 # Build on Linux with Android NDK, Rust and cargo-ndk. No signing keys needed.
 root="$(cd "$(dirname "$0")/.." && pwd)"
-revision=994ce4ef5792c23a0298db755db9561eea6726e2
-# Exact integration of upstream PRs #34 and #35; neither is merged upstream yet.
-source_ref=refs/heads/integration/android-uid-routing
+revision=16fe5dd518652965fe2c469dc943054fb86f4b9c
+# Exact fork revision with independent application and site routing for two exits.
+source_ref=refs/heads/codex/dual-vpn-routing
 source_dir="$root/native/work/core"
 mkdir -p "$root/native/work"
 if [[ ! -d "$source_dir/.git" ]]; then

@@ -39,15 +39,18 @@ object RealityConfigFactory {
         val ipv6Enabled: Boolean
     )
 
-    fun prepare(config: String, ownPackage: String, packageUid: ((String) -> Int)? = null): Prepared = try {
+    fun prepare(config: String, ownPackage: String, packageUid: ((String) -> Int)? = null): Prepared =
+        prepare(config, ownPackage, packageUid, managedDual = false)
+
+    fun prepare(config: String, ownPackage: String, packageUid: ((String) -> Int)?, managedDual: Boolean): Prepared = try {
         require(PACKAGE.matches(ownPackage)) { "Некорректные параметры VPN-приложения." }
-        prepareJson(JSONObject(config), ownPackage, packageUid)
+        prepareJson(JSONObject(config), ownPackage, packageUid, managedDual)
     } catch (_: JSONException) {
         // org.json errors can include input fragments, credentials and server names.
         throw IllegalArgumentException("Некорректная конфигурация Reality Core.")
     }
 
-    private fun prepareJson(root: JSONObject, ownPackage: String, packageUid: ((String) -> Int)?): Prepared {
+    private fun prepareJson(root: JSONObject, ownPackage: String, packageUid: ((String) -> Int)?, managedDual: Boolean): Prepared {
         val outbounds = objects(root.getJSONArray("outbounds"))
         require(outbounds.isNotEmpty() && outbounds.all { it.opt("type") in PROTOCOLS }) {
             "Протокол подключения не поддерживается Reality Core. Выберите sing-box."
@@ -56,10 +59,10 @@ object RealityConfigFactory {
             require(!it.optBoolean("allow_insecure") && it.optJSONObject("tls")?.optBoolean("insecure") != true) {
                 "Reality Core требует проверки подлинности TLS. Выберите корректный профиль."
             }
-            removeBootstrapResolver(it, "domain_resolver")
+            removeBootstrapResolver(it, "domain_resolver", managedDual)
         }
         val route = root.getJSONObject("route")
-        removeBootstrapResolver(route, "default_domain_resolver")
+        removeBootstrapResolver(route, "default_domain_resolver", managedDual)
 
         val inbounds = objects(root.getJSONArray("inbounds"))
         val tuns = inbounds.filter { it.opt("type") == "tun" }
@@ -70,8 +73,11 @@ object RealityConfigFactory {
         prepareTun(tun)
 
         val dns = root.getJSONObject("dns")
-        prepareDns(dns, outbounds)
-        val (included, excluded) = preparePackages(route, dns, outbounds, ownPackage, packageUid)
+        prepareDns(dns, outbounds, managedDual)
+        val (included, excluded) = if (managedDual) {
+            prepareDualPackages(route, dns, ownPackage, packageUid)
+            emptyList<String>() to listOf(ownPackage)
+        } else preparePackages(route, dns, outbounds, ownPackage, packageUid)
         // Never silently ignore Builder filters or accept a custom filter that
         // disagrees with the validated generated application policy.
         require((requestedIncluded == null || requestedIncluded == included) &&
@@ -79,11 +85,15 @@ object RealityConfigFactory {
             !(requestedIncluded != null && requestedExcluded != null)) {
             "Правила приложений VPN-интерфейса не соответствуют маршрутизации."
         }
-        prepareSiteDns(route, dns, outbounds)
-        normalizeTerminalDirectRoute(route, dns, outbounds)
+        if (!managedDual) {
+            prepareSiteDns(route, dns, outbounds)
+            normalizeTerminalDirectRoute(route, dns, outbounds)
+        }
         // SingBoxConfigFactory always emits a DNS strategy for managed DNS. Full JSON
         // cannot convey the UI's IPv6 switch; only an explicit dual-stack strategy opts in.
-        val ipv6 = dns.opt("strategy") in setOf("prefer_ipv4", "prefer_ipv6", "ipv6_only")
+        val ipv6 = if (managedDual) objects(route.getJSONArray("rules")).none {
+            it.optInt("ip_version") == 6 && it.opt("action") == "reject"
+        } else dns.opt("strategy") in setOf("prefer_ipv4", "prefer_ipv6", "ipv6_only")
         return Prepared(root.toString(), included, excluded, ipv6)
     }
 
@@ -200,7 +210,11 @@ object RealityConfigFactory {
         tun.remove("include_package")
     }
 
-    private fun removeBootstrapResolver(obj: JSONObject, key: String) {
+    private fun removeBootstrapResolver(obj: JSONObject, key: String, managedDual: Boolean) {
+        if (managedDual && obj.opt(key) == BOOTSTRAP) {
+            obj.remove(key)
+            return
+        }
         val resolver = obj.optJSONObject(key) ?: return
         if (keys(resolver) == setOf("server", "strategy") &&
             resolver.opt("server") == BOOTSTRAP && resolver.opt("strategy") == "prefer_ipv4") {
@@ -208,7 +222,7 @@ object RealityConfigFactory {
         }
     }
 
-    private fun prepareDns(dns: JSONObject, outbounds: List<JSONObject>) {
+    private fun prepareDns(dns: JSONObject, outbounds: List<JSONObject>, managedDual: Boolean) {
         val servers = objects(dns.getJSONArray("servers"))
         servers.forEach { server ->
             if (server.opt("tag") == BOOTSTRAP && server.opt("type") == "local" &&
@@ -228,7 +242,11 @@ object RealityConfigFactory {
                 }
             }
             val tls = server.optJSONObject("tls")
-            if (server.opt("type") == "https" && server.opt("tag") == "remote-dns" &&
+            val tag = server.optString("tag")
+            val detour = server.optString("detour")
+            val generatedDualDns = managedDual && tag == "dns-$detour" &&
+                outbounds.any { it.opt("tag") == detour }
+            if (server.opt("type") == "https" && (tag == "remote-dns" || generatedDualDns) &&
                 server.opt("server") == "1.1.1.1" && server.opt("path") == "/dns-query" &&
                 server.opt("detour") is String &&
                 keys(server) == setOf("type", "tag", "server", "path", "tls", "detour") &&
@@ -251,6 +269,61 @@ object RealityConfigFactory {
             dns.put("bootstrap", BOOTSTRAP)
         }
     }
+
+    private fun prepareDualPackages(
+        route: JSONObject, dns: JSONObject, ownPackage: String, packageUid: ((String) -> Int)?
+    ) {
+        val firstRoute = route.getJSONArray("rules").optJSONObject(0)
+        if (firstRoute?.optJSONArray("package_name")?.optString(0) == SharedUidExitGuard.CONFLICT_PACKAGE) {
+            val existing = dns.getJSONArray("rules")
+            val guarded = JSONArray().put(JSONObject().put("action", "reject")
+                .put("package_name", JSONArray().put(SharedUidExitGuard.CONFLICT_PACKAGE)))
+            for (index in 0 until existing.length()) guarded.put(existing.getJSONObject(index))
+            dns.put("rules", guarded)
+        }
+        val uidByPackage = mutableMapOf<String, Int>()
+        val packageByUid = mutableMapOf<Int, String>()
+        for (section in listOf(route, dns)) {
+            for (rule in objects(section.getJSONArray("rules"))) {
+                if (rule.has("package_name_regex")) {
+                    require(keys(rule) == setOf("package_name_regex", "invert", "action") &&
+                        strings(rule.getJSONArray("package_name_regex")) == listOf(".+") &&
+                        rule.opt("invert") == true && rule.opt("action") == "reject") {
+                        "Неподдерживаемое правило определения приложения."
+                    }
+                    rule.remove("package_name_regex")
+                    rule.remove("invert")
+                    rule.put("owner_unknown", true)
+                }
+                if (!rule.has("package_name")) continue
+                val names = strings(rule.getJSONArray("package_name"))
+                require(names.isNotEmpty() && !rule.has("user_id"))
+                val uids = names.map { name ->
+                    if (name == SharedUidExitGuard.CONFLICT_PACKAGE) {
+                        require(names.size == 1 && rule.opt("action") == "reject")
+                        CONFLICT_UID
+                    } else {
+                        require(PACKAGE.matches(name) && name != ownPackage)
+                        uidByPackage.getOrPut(name) {
+                            val uid = requireNotNull(packageUid) {
+                                "Назначения приложений требуют Android 10 или новее."
+                            }.invoke(name)
+                            require(uid >= 0)
+                            val other = packageByUid.putIfAbsent(uid, name)
+                            require(other == null || other == name) {
+                                "Приложения с общим UID нельзя разделить между VPN."
+                            }
+                            uid
+                        }.toLong()
+                    }
+                }.distinct()
+                rule.remove("package_name")
+                rule.put("user_id", JSONArray(uids))
+            }
+        }
+    }
+
+    internal const val CONFLICT_UID = 4294967295L
 
     private fun preparePackages(
         route: JSONObject, dns: JSONObject, outbounds: List<JSONObject>, ownPackage: String,

@@ -6,7 +6,7 @@ internal data class DiagnosticAdvice(val title: String, val detail: String, val 
 internal object DiagnosticCatalog {
     private val fixed = setOf("catalog_refresh_reprepared", "catalog_refresh_current", "catalog_refresh_failed", "catalog_refresh_submitted", "session_start", "engine_sing_box", "engine_reality_core", "engine_setup", "config_validation",
         "engine_started", "engine_config_unsupported", "engine_unavailable", "tunnel_active", "startup_failed", "configuration_rollback", "network_monitor_failed",
-        "recovery_wait_network", "recovery_network_changed", "underlay_interface_not_ready", "reality_revision_994ce4ef",
+        "recovery_wait_network", "recovery_network_changed", "underlay_interface_not_ready", "reality_revision_16fe5dd",
         "reality_protect_failed", "reality_terminal_failure", "probe_start", "probe_success", "probe_invalid_response",
         "auto_check_failed", "auto_switch_limited", "auto_server_applied", "auto_server_not_applied", "network_changed",
         "vpn_permission_required", "vpn_permission_granted", "service_start", "underlay_ready", "underlay_missing",
