@@ -36,14 +36,18 @@ internal object SubscriptionReconciler {
         var updated = 0
         // Index the immutable pre-refresh catalog once. Re-parsing every saved
         // JSON for every incoming row is quadratic at the 2,000-server limit.
-        // Keep duplicate identity groups ambiguous rather than choosing an ID.
+        // Exact duplicates can reuse an existing ID without changing connection options.
         val exactConnections = current.profiles.groupBy(::matchingKey)
         val uniqueIncoming = incoming.distinctBy(::matchingKey)
         val incomingEndpoints = uniqueIncoming.groupBy(::endpointKey)
         val protectedIds = current.manuallyOwned + current.memberships.filter { it.subscriptionId != subscriptionId }.map { it.profileId }
         val oldEndpoints = current.profiles.filter { it.id in oldMembers && it.id !in protectedIds }.groupBy(::endpointKey)
         for (candidate in uniqueIncoming) {
-            val exact = exactConnections[matchingKey(candidate)]?.singleOrNull()
+            val exact = exactConnections[matchingKey(candidate)]?.minWithOrNull(
+                compareBy<ImportedProfile> { it.id !in retainIds }
+                    .thenBy { it.id !in oldMembers }
+                    .thenBy { it.retiredFromSubscription }
+                    .thenBy { !it.userSettings.favorite })
             // Key rotation is matched only when both sides have an unambiguous endpoint.
             // Never match a reused password or provider display name.
             val endpoint = endpointKey(candidate)
@@ -75,9 +79,10 @@ internal object SubscriptionReconciler {
 
     // JSON object order and a standalone outbound label are not connection identity.
     // Preserve every credential and option; full configurations remain opaque graphs.
-    private fun matchingKey(profile: ImportedProfile): String =
+    internal fun matchingKey(profile: ImportedProfile): String =
         if(profile.fullConfigJson != null) "full:${profile.configurationKey()}"
-        else "outbound:"+canonical(org.json.JSONObject(profile.outboundJson).also {it.remove("tag")})
+        else runCatching { "outbound:"+canonical(org.json.JSONObject(profile.outboundJson).also { it.remove("tag") }) }
+            .getOrElse { profile.configurationKey() }
 
     private fun endpointKey(profile: ImportedProfile): String {
         if (profile.fullConfigJson != null) return "full:${profile.configurationKey()}"

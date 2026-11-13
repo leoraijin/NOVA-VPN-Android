@@ -68,8 +68,8 @@ internal data class ProfileSnapshot(
 
     fun importManual(incoming: List<ImportedProfile>): ProfileSnapshot {
         val merged = ImportedProfile.merge(profiles, incoming)
-        val keys = incoming.map { it.configurationKey() }.toSet()
-        return withProfiles(merged).copy(manuallyOwned = manuallyOwned + merged.filter { it.configurationKey() in keys }.map { it.id })
+        val keys = incoming.map(SubscriptionReconciler::matchingKey).toSet()
+        return withProfiles(merged).copy(manuallyOwned = manuallyOwned + merged.filter { SubscriptionReconciler.matchingKey(it) in keys }.map { it.id })
     }
 
     /** Availability comes from ownership, never the legacy URL hint or a serialized flag. */

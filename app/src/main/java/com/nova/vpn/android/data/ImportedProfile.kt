@@ -42,18 +42,21 @@ data class ImportedProfile(
     companion object {
         /** Reimport attaches subscription provenance without changing saved IDs or selection. */
         fun merge(existing: List<ImportedProfile>, incoming: List<ImportedProfile>): List<ImportedProfile> {
-            val merged = existing.associateByTo(linkedMapOf(), ImportedProfile::configurationKey)
+            val merged = existing.associateByTo(linkedMapOf()) { it.id }
+            val byConnection = existing.sortedBy { it.retiredFromSubscription }
+                .distinctBy(SubscriptionReconciler::matchingKey).associateBy(SubscriptionReconciler::matchingKey).toMutableMap()
             incoming.forEach { profile ->
-                val key = profile.configurationKey()
-                val previous = merged[key]
-                merged[key] = if (previous != null) previous.copy(subscriptionUrl = profile.subscriptionUrl ?: previous.subscriptionUrl)
-                    else profile
+                val key = SubscriptionReconciler.matchingKey(profile)
+                val previous = byConnection[key]
+                val next = previous?.copy(subscriptionUrl = profile.subscriptionUrl ?: previous.subscriptionUrl) ?: profile
+                merged[next.id] = next
+                byConnection[key] = next
             }
             return merged.values.toList()
         }
 
         fun distinctByConfiguration(profiles: List<ImportedProfile>): List<ImportedProfile> =
-            profiles.distinctBy(ImportedProfile::configurationKey)
+            profiles.distinctBy(SubscriptionReconciler::matchingKey)
 
         fun fromJson(json: JSONObject) = ImportedProfile(
             id = json.optString("id").ifBlank { UUID.randomUUID().toString() },

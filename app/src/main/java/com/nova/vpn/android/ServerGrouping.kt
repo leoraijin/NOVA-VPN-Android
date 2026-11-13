@@ -125,7 +125,14 @@ internal fun ServersPage(
         }
     }
     val effective = chosen?.takeIf { groups.containsKey(it) }
-    val grouped = effective?.let { groups.getValue(it) } ?: profiles
+    val grouped = remember(effective, groups, profiles, selectedId, dualActions?.secondary) {
+        val candidates = effective?.let { groups.getValue(it) } ?: profiles
+        val preferred = candidates.sortedWith(compareBy<ImportedProfile> { it.retiredFromSubscription }
+            .thenBy { it.id != selectedId }.thenBy { it.id != dualActions?.secondary }
+            .thenBy { !it.userSettings.favorite })
+        val ids = ImportedProfile.distinctByConfiguration(preferred).map { it.id }.toSet()
+        candidates.filter { it.id in ids }
+    }
     val visible by produceState(grouped, grouped, query, favoritesOnly, sortName, map, snapshot) {
         value = withContext(Dispatchers.Default) {
             val sources = snapshot?.subscriptions.orEmpty().associate { it.id to it.name }

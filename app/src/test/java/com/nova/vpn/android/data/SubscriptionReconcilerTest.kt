@@ -144,13 +144,13 @@ class SubscriptionReconcilerTest {
             assertEquals(index%2==0,profile.userSettings.favorite)
         }
     }
-    @Test fun ambiguousSavedSemanticIdentityDoesNotDonateAnArbitraryAssignedId() {
+    @Test fun exactDuplicatesReuseAnAssignedIdWithoutAddingAThirdCopy() {
         val first=node("first","same")
         val second=node("second","same").copy(outboundJson="""{"uuid":"same","server_port":443,"server":"example.test","type":"vless"}""")
         val before=catalog(listOf(first,second),"first" to "A","second" to "A")
         val result=SubscriptionReconciler.reconcile(before,"A",listOf(node("new","same")),true,setOf("first","second"))
-        assertEquals(setOf("first","second","new"),result.catalog.profiles.map {it.id}.toSet())
-        assertEquals(setOf(SubscriptionMembership("new","A")),result.catalog.memberships)
+        assertEquals(setOf("first","second"),result.catalog.profiles.map {it.id}.toSet())
+        assertEquals(setOf(SubscriptionMembership("first","A")),result.catalog.memberships)
     }
 
     @Test fun sharedNodeSurvivesRemovalFromOneSubscription() {
