@@ -845,9 +845,6 @@ private fun NovaAndroidApp(
                 ) { selected ->
                     when (selected) {
                         Page.Home -> Column {
-                          TextButton(onClick = { showRoutingPresets = true }, modifier = Modifier.fillMaxWidth()) {
-                              Text("Маршруты: ${routingDocument.active.name}${if (routingDocument.pending != null) " · применяются" else ""}")
-                          }
                           Box(Modifier.weight(1f)) { HomePage(
                             profiles = profiles,
                             selectedProfileId = routingDocument.active.settings.multiServer?.defaultProfileId ?: selectedProfileId,
