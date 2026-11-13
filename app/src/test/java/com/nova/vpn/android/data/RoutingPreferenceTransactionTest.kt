@@ -41,4 +41,25 @@ class RoutingPreferenceTransactionTest {
         assertThrows(IOException::class.java){RoutingPreferenceTransaction.run(JSONObject(),{writes++},{error("no rollback needed")},journal)}
         assertEquals(0,writes);assertNotNull(journal.record)
     }
+    @Test fun sharedImportFailureRestoresKeysAndRoutesTogether() {
+        val journal=Journal();var keys="old-keys";var routes="old-routes"
+        val before=JSONObject().put("schema",3).put("profiles",keys).put("routing",JSONObject().put("value",routes))
+        assertThrows(IOException::class.java) {
+            RoutingPreferenceTransaction.runRecord(before, { keys="new-keys";routes="new-routes";throw IOException("write routes") }, {
+                keys=it.getString("profiles");routes=it.getJSONObject("routing").getString("value")
+            },journal)
+        }
+        assertEquals("old-keys",keys);assertEquals("old-routes",routes);assertNull(journal.record)
+    }
+    @Test fun sharedImportCrashKeepsOnlyKeysAndRoutesForReplay() {
+        val journal=Journal()
+        val before=JSONObject().put("schema",3).put("profiles","old-keys").put("routing",JSONObject().put("value","old-routes"))
+        assertThrows(AssertionError::class.java) {
+            RoutingPreferenceTransaction.runRecord(before,{throw AssertionError("process died after keys write")},{error("no in-process rollback")},journal)
+        }
+        val record=journal.record!!
+        assertEquals(3,record.getInt("schema"));assertEquals("old-keys",record.getString("profiles"))
+        assertEquals(setOf("schema","profiles","routing"),record.keys().asSequence().toSet())
+        assertEquals(0,journal.clears)
+    }
 }

@@ -164,6 +164,33 @@ object FullTransfer {
             StoreRecoveryGuard.completed()
         }
     }
+    /** Import shared keys/rules together; preserve local appearance, identities and old presets. */
+    internal fun restoreShared(context: Context, incoming: RoutingSharePackage, choices: Map<String,String>) {
+        com.nova.vpn.android.VpnUserRequests.gate.restoreWhenIdle(canRestore = {
+            val state=com.nova.vpn.android.VpnRuntime.state.value
+            !state.connected && !state.connecting && state.recoveryStatus==null
+        }) {
+            synchronized(ProfileVault.lock) {
+                recoverPending(context)
+                val vault=ProfileVault(context)
+                val oldProfiles=vault.loadSnapshot()
+                val plan=RoutingShare.plan(incoming,AppRoutingStore(context).loadPresets(),oldProfiles,choices)
+                if(!incoming.includesKeys) {
+                    writeRoutingAtomically(context) { AppRoutingStore(context).updatePresets(plan.selection) { plan.routing } }
+                } else {
+                    val before=JSONObject().put("schema",3).put("routing",snapshot(context).getJSONObject("routing"))
+                        .put("profiles",ProfileDocument.encodeSnapshot(oldProfiles))
+                    StoreRecoveryGuard.transaction {
+                        RoutingPreferenceTransaction.runRecord(before, {
+                            ProfileVault.invalidatePendingUpdates()
+                            vault.restoreSnapshot(plan.profiles)
+                            AppRoutingStore(context).updatePresets(plan.selection) { plan.routing }
+                        }, { replaySharedPreimage(context,it) }, TransferRestoreJournal(context), StoreRecoveryGuard::completed)
+                    }
+                }
+            }
+        }
+    }
     private val prefNames=listOf("app_preferences","routing","profile_selection")
     /** Startup retries this idempotent rollback until every pre-image has been restored. */
     internal fun recoverPending(context: Context): Boolean = synchronized(ProfileVault.lock) {
@@ -173,6 +200,9 @@ object FullTransfer {
         if(previous==null) { StoreRecoveryGuard.completed(); return@transaction false }
         if(previous.getInt("schema")==2) {
             replayRoutingPreimage(context,previous);journal.clear();StoreRecoveryGuard.completed();return@transaction true
+        }
+        if(previous.getInt("schema")==3) {
+            replaySharedPreimage(context,previous);journal.clear();StoreRecoveryGuard.completed();return@transaction true
         }
         require(previous.getInt("schema")==1)
         val preferences=previous.getJSONObject("preferences")
@@ -219,6 +249,15 @@ object FullTransfer {
     private fun validateRoutingPreimage(routing: JSONObject) {
         validateSnapshot(JSONObject().put("app_preferences",JSONObject()).put("routing",routing).put("profile_selection",JSONObject()))
         routing.optJSONObject("routing_presets_v1")?.let {require(it.getString("type")=="string");RoutingPresets.fromJson(JSONObject(it.getString("value")))}
+    }
+    private fun replaySharedPreimage(context: Context, record: JSONObject) {
+        check(Thread.holdsLock(ProfileVault.lock))
+        require(record.getInt("schema")==3)
+        val routing=record.getJSONObject("routing");validateRoutingPreimage(routing)
+        val profiles=ProfileDocument.decodeSnapshot(record.getString("profiles"))
+        ProfileVault.invalidatePendingUpdates()
+        ProfileVault(context).restoreSnapshot(profiles)
+        applyPreference(context,"routing",routing)
     }
     internal fun replayRoutingPreimage(context:Context,record:JSONObject) {
         check(Thread.holdsLock(ProfileVault.lock))

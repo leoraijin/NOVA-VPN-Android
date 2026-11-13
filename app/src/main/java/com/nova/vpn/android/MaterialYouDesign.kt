@@ -225,6 +225,7 @@ internal fun MaterialSettings(onTutorial: () -> Unit, onNotifications: () -> Uni
             }
         }
         item { EngineSettingsCard() }
+        item { SettingsTransferCard() }
     }
 }
 

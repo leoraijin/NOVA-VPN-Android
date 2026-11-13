@@ -250,6 +250,7 @@ internal fun SettingsPage(onStartTutorial: () -> Unit, onNotificationSettings: (
             }
         }
         item { EngineSettingsCard() }
+        item { SettingsTransferCard() }
     }
 }
 

@@ -2002,6 +2002,7 @@ internal fun StandardSettingsPage(
         Text("Отдельный мобильный проект", fontWeight = FontWeight.SemiBold)
         Text("Android-клиент отделён от Windows-версии. VPN телефона и часов работают независимо. Профиль с ключами передаётся на часы только вручную: Серверы → Передать на часы.", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
     } }
+    item { SettingsTransferCard() }
 }
 
 @Composable
