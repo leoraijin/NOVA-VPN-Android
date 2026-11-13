@@ -55,10 +55,14 @@ internal object VpnNotifications {
         val builder = if (Build.VERSION.SDK_INT >= 26) Notification.Builder(context, CHANNEL_ID)
             else Notification.Builder(context)
         val content = VpnNotificationPresentation.create(profileName, status)
+        val state = VpnRuntime.state.value
+        val lines = if (state.connected || state.connecting) state.exitLines(profileName) else emptyList()
+        val details = lines.joinToString("\n") { "${it.title}: ${it.status}" }
         return builder
             .setSmallIcon(R.drawable.ic_qs_vpn)
             .setContentTitle(content.title)
-            .setContentText(content.text)
+            .setContentText(if (lines.size > 1) lines.mapIndexed { index, line -> "VPN-${index + 1}: ${line.status}" }.joinToString(" · ") else content.text)
+            .setStyle(Notification.BigTextStyle().bigText(details.ifBlank { content.text }))
             .setContentIntent(openIntent)
             .setOngoing(true)
             .setAutoCancel(false)

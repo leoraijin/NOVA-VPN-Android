@@ -21,7 +21,7 @@ internal fun ExitHealthCard(checks: Map<String,ExitCheckState>,profiles: List<Im
     }
     SoftCard {
         Text("Выходы действующего подключения",style=MaterialTheme.typography.titleMedium)
-        Text("Однократная HTTPS-проверка активных снимков. Проверка не меняет выбранные серверы.",style=MaterialTheme.typography.bodySmall)
+        Text("HTTPS-проверка каждого активного конфига повторяется раз в минуту. Она не переключает серверы.",style=MaterialTheme.typography.bodySmall)
         checks.toSortedMap().forEach { (id,check)->
             val profile=byId[id]
             Column(Modifier.fillMaxWidth(),verticalArrangement=Arrangement.spacedBy(2.dp)) {

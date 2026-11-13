@@ -20,7 +20,7 @@ internal object ExitHealthReducer {
     }
     fun checking(state: VpnUiState,revision: Long,id: String,fingerprint: String): VpnUiState {
         val before=state.exitChecks[id]?:return state
-        if(!state.connected||state.recoveryStatus!=null||state.sessionRevision!=revision||before.profileSha256!=fingerprint||before.status!=ExitCheckStatus.QUEUED)return state
+        if(!state.connected||state.recoveryStatus!=null||state.sessionRevision!=revision||before.profileSha256!=fingerprint||before.status !in setOf(ExitCheckStatus.QUEUED, ExitCheckStatus.VERIFIED, ExitCheckStatus.FAILED))return state
         return aggregate(state,state.exitChecks+(id to before.copy(status=ExitCheckStatus.CHECKING)))
     }
     fun result(state: VpnUiState,revision: Long,id: String,fingerprint: String,success: Boolean,millis: Int?): VpnUiState {

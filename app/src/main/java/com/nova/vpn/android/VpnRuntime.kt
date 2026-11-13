@@ -19,6 +19,7 @@ data class VpnUiState(
     val sessionRevision: Long = 0,
     val appliedConfiguration: AppliedConfiguration? = null,
     val exitChecks: Map<String,ExitCheckState> = emptyMap(),
+    val exitNames: Map<String,String> = emptyMap(),
     val activeRoutePreview: ActiveRoutePreview? = null
 )
 
@@ -43,12 +44,14 @@ object VpnRuntime {
     @Synchronized fun setRecovery(waiting: Boolean, attempt: Int, tunPresent: Boolean) = publish(VpnUiState(
         connected = tunPresent, connecting = !tunPresent, recoveryStatus = if (waiting) "waiting_network" else "recovering",
         recoveryAttempt = attempt, sessionRevision = mutableState.value.sessionRevision,
-        appliedConfiguration = mutableState.value.appliedConfiguration))
+        appliedConfiguration = mutableState.value.appliedConfiguration,
+        exitNames = mutableState.value.exitNames))
     @Synchronized fun setTrafficChecking() { if (mutableState.value.connected && mutableState.value.exitChecks.isEmpty()) publish(mutableState.value.copy(trafficChecking = true, trafficVerified = false, trafficCheckFailed = false, warning = null)) }
     @Synchronized fun setTrafficResult(success: Boolean) {
         val current = mutableState.value
         if (current.connected && current.exitChecks.isEmpty()) publish(ConnectionHealthReducer.probeResult(current, success))
     }
+    @Synchronized internal fun setExitNames(names: Map<String,String>) { publish(mutableState.value.copy(exitNames = names.toMap())) }
     @Synchronized internal fun beginExitChecks(bindings: RouteExitBindings,policy: RoutePolicyIdentity,unsupported: Set<String>) {
         publish(ExitHealthReducer.begin(mutableState.value,bindings,policy,unsupported))
     }

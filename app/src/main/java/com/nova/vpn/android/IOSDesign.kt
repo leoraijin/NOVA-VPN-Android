@@ -38,6 +38,31 @@ import com.nova.vpn.android.data.*
 internal fun HomePage(profiles: List<ImportedProfile>, selectedProfileId: String, profile: ImportedProfile?,
     vpnState: VpnUiState, error: String?, onCopyDiagnostics: () -> Unit,
     onSelectProfile: (String) -> Unit, onToggle: () -> Unit, onManageProfiles: () -> Unit = {}) {
+    Column(Modifier.fillMaxSize()) {
+        if (vpnState.connected || vpnState.connecting) {
+            Column(Modifier.fillMaxWidth().heightIn(max = 200.dp).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                vpnState.exitLines(profile?.displayName ?: "Выбранный сервер").forEach { line ->
+                    Surface(color = if (line.failed) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.surfaceVariant,
+                        shape = MaterialTheme.shapes.medium, modifier = Modifier.fillMaxWidth()) {
+                        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text(line.title, style = MaterialTheme.typography.titleSmall)
+                            Text(line.status, style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                }
+            }
+        }
+        Box(Modifier.weight(1f)) {
+            ThemedHomePage(profiles, selectedProfileId, profile, vpnState, error, onCopyDiagnostics, onSelectProfile, onToggle, onManageProfiles)
+        }
+    }
+}
+
+@Composable
+private fun ThemedHomePage(profiles: List<ImportedProfile>, selectedProfileId: String, profile: ImportedProfile?,
+    vpnState: VpnUiState, error: String?, onCopyDiagnostics: () -> Unit,
+    onSelectProfile: (String) -> Unit, onToggle: () -> Unit, onManageProfiles: () -> Unit = {}) {
     if (LocalDesignPreset.current == DesignStyle.WINDOWS_11) {
         WindowsHome(profiles, selectedProfileId, profile, vpnState, error, onCopyDiagnostics, onSelectProfile, onToggle, onManageProfiles)
         return

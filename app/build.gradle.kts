@@ -64,8 +64,8 @@ android {
         applicationId = "com.nova.vpn.android"
         minSdk = 24
         targetSdk = 35
-        versionCode = 69
-        versionName = "0.2.67"
+        versionCode = 70
+        versionName = "0.2.68"
         manifestPlaceholders["novaAppLabel"] = "NOVA VPN"
         buildConfigField("boolean", "REALITY_PREVIEW", "false")
         buildConfigField("boolean", "REALITY_DUAL_SMOKE", realityDualSmoke.toString())
