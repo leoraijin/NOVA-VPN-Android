@@ -38,7 +38,9 @@ class NovaVpnTileService : TileService() {
         super.onClick()
         val state = VpnRuntime.state.value
         if (state.connected || state.connecting) {
-            VpnUserRequests.stop(this)
+            if (pendingStop?.let(VpnUserRequests.gate::isCurrent) == true) return
+            pendingStop = VpnUserRequests.stop(this)
+            refreshTile()
             return
         }
 
@@ -110,7 +112,14 @@ class NovaVpnTileService : TileService() {
     private fun updateTile(vpnState: VpnUiState, profileName: String?) {
         val tile = qsTile ?: return
         tile.icon = Icon.createWithResource(this, R.drawable.ic_qs_vpn)
-        val presentation = NovaTilePresentation.from(vpnState, profileName)
+        val stopping = (vpnState.connected || vpnState.connecting) &&
+            pendingStop?.let(VpnUserRequests.gate::isCurrent) == true
+        if (!stopping) pendingStop = null
+        val presentation = if (stopping) {
+            NovaTilePresentation(false, "Отключение…", "NOVA VPN. Отключение…")
+        } else {
+            NovaTilePresentation.from(vpnState, profileName)
+        }
         tile.state = if (presentation.active) Tile.STATE_ACTIVE else Tile.STATE_INACTIVE
         tile.contentDescription = presentation.description
         tile.label = "NOVA VPN"
@@ -121,6 +130,8 @@ class NovaVpnTileService : TileService() {
     }
 
     companion object {
+        private var pendingStop: String? = null
+
         const val ACTION_CONNECT_FROM_TILE = "com.nova.vpn.android.CONNECT_FROM_TILE"
 
         fun requestRefresh(context: android.content.Context) {

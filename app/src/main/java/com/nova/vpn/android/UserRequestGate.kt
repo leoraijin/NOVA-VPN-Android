@@ -122,12 +122,13 @@ internal object VpnUserRequests {
     }
     internal fun discardStart(token:String)=starts.discard(token)
 
-    fun stop(context: android.content.Context) {
+    fun stop(context: android.content.Context): String {
         val token = gate.begin()
         gate.accept(token) {
             context.startService(android.content.Intent(context, NovaVpnService::class.java)
                 .setAction(NovaVpnService.ACTION_STOP).putExtra(EXTRA_REQUEST, token))
         }
+        return token
     }
 }
 
