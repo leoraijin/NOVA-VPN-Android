@@ -1,6 +1,13 @@
 @file:OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 package com.nova.vpn.android
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.ExpandLess
+import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.items
@@ -36,23 +43,46 @@ internal fun selectDualServer(settings: AppRoutingSettings, id: String, secondar
 
 @Composable
 internal fun DualModeControl(settings: AppRoutingSettings, busy: Boolean, onToggle: (Boolean) -> Unit,
-    onServers: () -> Unit, profiles: List<ImportedProfile>) {
+    onServers: () -> Unit, profiles: List<ImportedProfile>, vpnState: VpnUiState) {
     val multi = settings.multiServer
-    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+    var expanded by rememberSaveable { mutableStateOf(false) }
+    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)) {
+        Row(Modifier.fillMaxWidth().heightIn(min = 56.dp)
+            .clickable(onClickLabel = if (expanded) "Свернуть настройки VPN" else "Развернуть настройки VPN") { expanded = !expanded },
+            horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text("Два VPN-конфига", style = MaterialTheme.typography.titleMedium)
-                Text(if (multi == null) "Второй сервер для выбранных приложений и сайтов"
-                    else "Основной VPN и VPN-2", style = MaterialTheme.typography.bodySmall)
+                Text(if (busy) "Применяются настройки…" else if (multi != null) "Режим включён" else "Режим выключен",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            Switch(checked = multi != null, onCheckedChange = onToggle, enabled = !busy)
+            Icon(if (expanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore, contentDescription = null)
         }
-        if (multi != null) {
-            fun name(id: String?) = if (id == null) "Выберите в «Серверах»"
-                else profiles.firstOrNull { it.id == id }?.displayName ?: "Конфиг недоступен"
-            Text("Основной VPN · ${name(multi.defaultProfileId)}", style = MaterialTheme.typography.bodySmall)
-            Text("VPN-2 · ${name(multi.secondaryProfileId)}", style = MaterialTheme.typography.bodySmall)
-            TextButton(onClick = onServers) { Text("Выбрать конфиги") }
+        AnimatedVisibility(expanded) {
+            Column(Modifier.fillMaxWidth().heightIn(max = 280.dp).verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("Использовать два конфига", modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                    Switch(checked = multi != null, onCheckedChange = onToggle, enabled = !busy)
+                }
+                if (vpnState.connected || vpnState.connecting) {
+                    val primaryName = profiles.firstOrNull { it.id == vpnState.appliedConfiguration?.profileId }?.displayName ?: "Выбранный сервер"
+                    vpnState.exitLines(primaryName).forEach { line ->
+                        Surface(color = if (line.failed) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.surfaceVariant,
+                            shape = MaterialTheme.shapes.medium, modifier = Modifier.fillMaxWidth()) {
+                            Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Text(line.title, style = MaterialTheme.typography.titleSmall)
+                                Text(line.status, style = MaterialTheme.typography.bodySmall)
+                            }
+                        }
+                    }
+                } else if (multi != null) {
+                    fun name(id: String?) = if (id == null) "Не выбран" else profiles.firstOrNull { it.id == id }?.displayName ?: "Конфиг недоступен"
+                    Text("Основной VPN · ${name(multi.defaultProfileId)} · отключён", style = MaterialTheme.typography.bodySmall)
+                    Text("VPN-2 · ${name(multi.secondaryProfileId)} · отключён", style = MaterialTheme.typography.bodySmall)
+                }
+                if (multi != null) TextButton(onClick = onServers) { Text("Выбрать конфиги") }
+            }
         }
     }
 }

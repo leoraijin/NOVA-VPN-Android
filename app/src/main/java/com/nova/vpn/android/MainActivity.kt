@@ -890,7 +890,7 @@ private fun NovaAndroidApp(
                           }
                           DualModeControl(routingDocument.active.settings,
                               routingPreparing || routingDocument.pending != null, ::toggleDualMode,
-                              { page = Page.Servers }, profiles)
+                              { page = Page.Servers }, profiles, vpnState)
                         }
                         Page.Servers -> ServersPage(
                             profiles = profiles,
