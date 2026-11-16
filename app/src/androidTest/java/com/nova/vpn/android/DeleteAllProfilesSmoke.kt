@@ -309,8 +309,13 @@ internal object DeleteAllProfilesSmoke {
             activity = instrumentation.startActivitySync(Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
             instrumentation.runOnMainSync { activity!!.window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) }
             instrumentation.waitForIdleSync()
+            fun openDeleteAll() {
+                if (find("Управление серверами") == null) click("Меню")
+                click("Ещё")
+                click("Удалить все конфиги VPN")
+            }
             click("Серверы")
-            click("Удалить все конфиги VPN")
+            openDeleteAll()
             await("confirmation") { find("Удалить все конфиги VPN?") != null }
             click("Отмена")
             val afterCancel=vault.loadSnapshot()
@@ -327,7 +332,7 @@ internal object DeleteAllProfilesSmoke {
             check(SelectedProfileStore(context).load() == subscribed.id)
             check(VpnUserRequests.gate.isCurrent(tokenBefore)) { "Cancel invalidated a connection request" }
             AutoServerSettingsStore(context).use { check(it.snapshot().enabled) }
-            click("Удалить все конфиги VPN")
+            openDeleteAll()
             click("Удалить всё")
             await("empty persisted catalog") { vault.loadSnapshot() == ProfileSnapshot() && SelectedProfileStore(context).load() == null }
             await("dismissed confirmation") { find("Удалить все конфиги VPN?") == null }
