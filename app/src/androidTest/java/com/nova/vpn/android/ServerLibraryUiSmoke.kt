@@ -234,9 +234,14 @@ internal object ServerLibraryUiSmoke {
                 setServerListOptions(ServerSort.MANUAL.name, false)
             }
             AutoServerSettingsStore(context).use { it.save(false, emptySet()) }
-            val fixture = ProfileLinkParser.parseText("vless://11111111-1111-4111-8111-111111111111@fixture.example:443?type=xhttp#Fixture").single()
-            val profiles = List(2000) { index -> fixture.copy(id = "library-$index", name = "Узел %04d".format(index),
-                userSettings = ProfileUserSettings(favorite = index % 2 == 0, order = index.toLong())) }
+            val profiles = List(2000) { index ->
+                val fixture = ProfileLinkParser.parseText(
+                    "vless://11111111-1111-4111-8111-111111111111@fixture.example:${20000 + index}?type=xhttp#Fixture"
+                ).single()
+                fixture.copy(id = "library-$index", name = "Узел %04d".format(index),
+                    userSettings = ProfileUserSettings(favorite = index % 2 == 0, order = index.toLong()))
+            }
+            check(profiles.distinctBy { it.configurationKey() }.size == profiles.size)
             vault.updateSnapshot { ProfileSnapshot.migrate(profiles) }
             SelectedProfileStore(context).save("library-0")
             instrumentation.startActivitySync(Intent(context, MainActivity::class.java)
