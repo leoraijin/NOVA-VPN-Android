@@ -25,6 +25,7 @@ data class VpnUiState(
 
 /** In-process connection state shared by the activity and the VPN service. */
 object VpnRuntime {
+    @Volatile internal var clientVisible = false
     @Volatile private var appContext: Context? = null
     private val mutableState = MutableStateFlow(VpnUiState())
     private val sessionSequence = java.util.concurrent.atomic.AtomicLong()
@@ -60,7 +61,7 @@ object VpnRuntime {
         publish(next);return next!=before
     }
     @Synchronized internal fun setExitResult(revision: Long,id: String,fingerprint: String,success: Boolean,millis: Int?) {
-        publish(ExitHealthReducer.result(mutableState.value,revision,id,fingerprint,success,millis))
+        publish(ExitHealthReducer.result(mutableState.value,revision,id,fingerprint,success,millis,System.currentTimeMillis()))
     }
     @Synchronized fun setDisconnected() = publish(VpnUiState())
     @Synchronized fun setFailure(message: String) = publish(VpnUiState(error = message))

@@ -11,6 +11,7 @@ import androidx.compose.material.icons.rounded.ExpandLess
 import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -50,10 +51,20 @@ internal fun DualModeControl(settings: AppRoutingSettings, busy: Boolean, onTogg
     var removingSlot by remember { mutableStateOf<Int?>(null) }
     var slotError by remember { mutableStateOf<String?>(null) }
     choosingSlot?.let { slot ->
+        var query by remember(slot) { mutableStateOf("") }
+        val candidates by produceState(emptyList<ImportedProfile>(), profiles) {
+            value = withContext(Dispatchers.Default) {
+                profiles.filter { !it.retiredFromSubscription && MultiServerProfileAdapter.problem(it) == null }
+            }
+        }
+        val visible = remember(candidates, query) { candidates.filter { it.displayName.contains(query.trim(), ignoreCase = true) } }
         AlertDialog(onDismissRequest = { choosingSlot = null }, title = { Text("Выбрать VPN-$slot") },
-            text = { Column(Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                slotError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-                profiles.filter { !it.retiredFromSubscription && MultiServerProfileAdapter.problem(it) == null }.forEach { profile ->
+            text = { LazyColumn(Modifier.heightIn(max = 420.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                item {
+                    OutlinedTextField(query, { query = it }, label = { Text("Поиск сервера") }, singleLine = true)
+                    slotError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                }
+                items(visible, key = { it.id }) { profile ->
                     TextButton(enabled = !busy && profile.id != multi?.defaultProfileId && multi?.slots?.none { it.key != slot && it.value == profile.id } == true,
                         onClick = { runCatching { onChange(selectVpnSlot(settings, profile.id, slot)); choosingSlot = null }
                             .onFailure { slotError = it.message } }) { Text(profile.displayName) }
@@ -157,10 +168,13 @@ internal fun DualRoutingPage(settings: AppRoutingSettings, profiles: List<Import
     var input by rememberSaveable { mutableStateOf("") }
     var search by rememberSaveable { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
-    val groups by produceState<List<RoutingAppGroup>?>(null, apps, multi.rules.mapNotNull { it.packageName }.toSet()) {
+    val packageRules = remember(multi.rules) { multi.rules.filter { it.packageName != null }.groupBy { it.packageName!! } }
+    val siteRules = remember(multi.rules) { multi.rules.filter { it.domain != null } }
+    val siteNames = remember(siteRules) { siteRules.mapNotNull { it.domain }.toSet() }
+    val assignedPackages = packageRules.keys
+    val groups by produceState<List<RoutingAppGroup>?>(null, apps, assignedPackages) {
         value = withContext(Dispatchers.IO) {
-            runCatching { loadRoutingAppGroups(context.packageManager, context.packageName, apps,
-                multi.rules.mapNotNull { it.packageName }.toSet()) }.getOrNull()
+            runCatching { loadRoutingAppGroups(context.packageManager, context.packageName, apps, assignedPackages) }.getOrNull()
         }
     }
     fun save(rules: List<MultiServerRule>) {
@@ -192,13 +206,13 @@ internal fun DualRoutingPage(settings: AppRoutingSettings, profiles: List<Import
                     val domain = SiteDomain.normalize(input)
                     when {
                         domain == null -> error = "Введите домен, например example.com"
-                        multi.rules.any { it.domain == domain } -> error = "Этот сайт уже добавлен"
+                        domain in siteNames -> error = "Этот сайт уже добавлен"
                         else -> { save(multi.rules + MultiServerRule(domain = domain,
                             target = if (tab >= 22 && multi.slots[tab - 20] != null) ServerRouteTarget(ServerRouteKind.PROFILE, multi.slots[tab - 20]) else ServerRouteTarget(ServerRouteKind.DEFAULT))); input = "" }
                     }
                 }) { Text("Добавить сайт") }
             }
-            items(multi.rules.filter { it.domain != null && (tab == 0 || it.target.profileId == multi.slots[tab - 20]) }, key = { "site:${it.domain}:${it.includeSubdomains}" }) { rule ->
+            items(siteRules.filter { tab == 0 || it.target.profileId == multi.slots[tab - 20] }, key = { "site:${it.domain}:${it.includeSubdomains}" }) { rule ->
                 SoftCard {
                     Text(requireNotNull(rule.domain))
                     DualRouteChoices(rule.target, multi, busy) { target ->
@@ -218,7 +232,7 @@ internal fun DualRoutingPage(settings: AppRoutingSettings, profiles: List<Import
                 group.members.any { it.label.contains(search, true) || it.packageName.contains(search, true) }
             }, key = { it.key }) { group ->
                 val targets = group.packages.map { name ->
-                    multi.rules.firstOrNull { it.packageName == name }?.target ?: ServerRouteTarget(ServerRouteKind.DEFAULT)
+                    packageRules[name]?.firstOrNull()?.target ?: ServerRouteTarget(ServerRouteKind.DEFAULT)
                 }.distinct()
                 val target = targets.singleOrNull() ?: ServerRouteTarget(ServerRouteKind.BLOCK)
                 SoftCard {

@@ -39,8 +39,9 @@ internal class ServerChecks(private val context: Context, private val scope: Cor
 
     fun reset() { cancel(); mutableState.value = ServerCheckState() }
 
-    fun start(profiles: List<ImportedProfile>, diagnostic: Boolean = false, onBest: ((ImportedProfile) -> Boolean)? = null) {
+    fun start(profiles: List<ImportedProfile>, diagnostic: Boolean = false, quick: Boolean = false, onBest: ((ImportedProfile) -> Boolean)? = null) {
         if (job?.isCompleted == false || profiles.isEmpty()) return
+        val quickCheck = quick && !diagnostic && onBest == null
         val batch = ++generation
         val preferences = AppPreferencesStore(context)
         val engine = preferences.vpnEngine()
@@ -75,7 +76,7 @@ internal class ServerChecks(private val context: Context, private val scope: Cor
                         }
                         try {
                             client.connect()
-                            val result = client.check(config, diagnostic, engine)
+                            val result = client.check(config, diagnostic, engine, quickCheck)
                             ServerCheckResult(if (result.unsupported) CheckOutcome.UNSUPPORTED else if (result.millis != null) CheckOutcome.SUCCESS else CheckOutcome.FAILED,
                                 result.millis, successes = result.successes, attempts = result.attempts, events = result.events)
                         } catch (_: TimeoutCancellationException) {
@@ -160,12 +161,12 @@ private class ServerCheckClient(private val context: Context, private val onProg
         withTimeout(5_000) { connected.await() }
     }
 
-    suspend fun check(config: String, diagnostic: Boolean, engine: VpnEngine): ProbeAssessment {
+    suspend fun check(config: String, diagnostic: Boolean, engine: VpnEngine, quick: Boolean): ProbeAssessment {
         val deferred = CompletableDeferred<ProbeAssessment>()
         val id = ++serial
         pending = id to deferred
         connected.await().send(Message.obtain(null, ServerCheckService.CHECK, id, 0).apply {
-            data = Bundle().apply { putString("config", config); putBoolean("diagnostic", diagnostic); putString("engine", engine.id) }
+            data = Bundle().apply { putString("config", config); putBoolean("diagnostic", diagnostic); putBoolean("quick", quick); putString("engine", engine.id) }
             replyTo = replies
         })
         return try { withTimeout(if (diagnostic) 45_000 else 30_000) { deferred.await() } }

@@ -162,6 +162,18 @@ class MainActivity : ComponentActivity() {
     private val appPreferencesStore by lazy(LazyThreadSafetyMode.NONE) { AppPreferencesStore(applicationContext) }
     private val selectedProfileStore by lazy(LazyThreadSafetyMode.NONE) { SelectedProfileStore(applicationContext) }
 
+    override fun onStart() {
+        super.onStart()
+        VpnRuntime.clientVisible = true
+        sendBroadcast(Intent(NovaVpnService.ACTION_PROBE_VISIBILITY).setPackage(packageName))
+    }
+
+    override fun onStop() {
+        VpnRuntime.clientVisible = false
+        sendBroadcast(Intent(NovaVpnService.ACTION_PROBE_VISIBILITY).setPackage(packageName))
+        super.onStop()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         VpnRuntime.attach(applicationContext)
@@ -657,18 +669,20 @@ private fun NovaAndroidApp(
         applyRoutingPreset(routingDocument.activeId,candidate,com.nova.vpn.android.data.RoutingSelectionChange(id),baseline)
     }
 
+    var catalogSnapshot by remember { mutableStateOf<com.nova.vpn.android.data.ProfileSnapshot?>(null) }
     val vaultRevision by ProfileVault.changes.collectAsStateWithLifecycle()
     LaunchedEffect(vault, vaultRevision) {
-        runCatching { withContext(Dispatchers.IO) { vault.load() } }
-            .onSuccess { stored ->
+        runCatching { withContext(Dispatchers.IO) { vault.loadSnapshot() } }
+            .onSuccess { snapshot ->
+                catalogSnapshot = snapshot
+                SubscriptionScheduling.request(context, snapshot.subscriptions)
+                val stored = snapshot.profiles
                 profiles = stored
                 if (!profilesLoaded || stored.none { it.id == selectedProfileId }) {
                     selectedProfileId = runCatching {selectedProfileStore.resolveId(stored)}.getOrNull().orEmpty()
                 }
             }
             .onFailure { importError = "Не удалось открыть защищённое хранилище профилей." }
-        runCatching { withContext(Dispatchers.IO) { vault.loadSnapshot().subscriptions } }
-            .onSuccess { SubscriptionScheduling.request(context, it) }
         profilesLoaded = true
     }
     LaunchedEffect(tileConnectRequested, tileRequestToken, profilesLoaded, profiles, selectedProfileId) {
@@ -898,11 +912,12 @@ private fun NovaAndroidApp(
                               }
                         }
                         Page.Servers -> ServersPage(
+                            snapshot = catalogSnapshot,
                             profiles = profiles,
                             selectedId = routingDocument.active.settings.multiServer?.defaultProfileId?:selectedProfileId,
                             vpnState = vpnState,
                             checks = serverCheckState,
-                            onCheck = { serverChecks.start(profiles) },
+                            onCheck = { serverChecks.start(profiles, quick = true) },
                             onChooseBest = { candidates ->
                               if(routingDocument.active.settings.multiServer!=null)page=Page.Routing
                               else if (runCatching { AutoServerSettingsStore.pin(context) }.isSuccess) {

@@ -46,6 +46,8 @@ class RealityCoreSmokeRunner : Instrumentation() {
     private var multiLiveReloadOnly=false
     private var multiConcurrentOnly=false
     private var multiExitOnly=false
+    private var idleProbeSeconds = 0
+    private var requireBatteryDischarge = false
     private var multiProcessPhase: String? = null
     private var multiWifiRecoveryOnly = false
     private var multiCellularHandover = false
@@ -143,6 +145,10 @@ class RealityCoreSmokeRunner : Instrumentation() {
         multiLiveReloadOnly=arguments?.getString("multiLiveReloadOnly")=="true"
         multiConcurrentOnly=arguments?.getString("multiConcurrentOnly")=="true"
         multiExitOnly=arguments?.getString("multiExitOnly")=="true"
+        idleProbeSeconds = arguments?.getString("idleProbeSeconds")?.toInt() ?: 0
+        requireBatteryDischarge = arguments?.getString("requireBatteryDischarge") == "true"
+        check(idleProbeSeconds == 0 || idleProbeSeconds in 60..3600 && multiExitOnly)
+
         multiProcessPhase=arguments?.getString("multiProcessPhase")
         multiWifiRecoveryOnly = arguments?.getString("multiWifiRecoveryOnly") == "true"
         multiCellularHandover = arguments?.getString("multiCellularHandover") == "true"
@@ -622,7 +628,7 @@ class RealityCoreSmokeRunner : Instrumentation() {
         context.getSharedPreferences("app_preferences", 0).edit().putBoolean("notification_permission_requested", true).commit()
         val activity = fixtureForeground ?: startActivitySync(android.content.Intent(context, MainActivity::class.java)
             .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
-        if(multiExitOnly)runOnMainSync { activity.window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) }
+        if(multiExitOnly && idleProbeSeconds == 0)runOnMainSync { activity.window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) }
         val tlsFixture = TestTlsFixture(context)
         tlsFixture.serverSocket(previousCut?.getInt("firstPort") ?: 0).use { listener ->
             val firstDoh=if(multiExitOnly)TestDohFixture(tlsFixture, multiQuicSiteOnly, "first".takeIf { multiTxtDnsOnly }, http2 = isolatedEngine == VpnEngine.REALITY_CORE) else null
@@ -639,6 +645,7 @@ class RealityCoreSmokeRunner : Instrumentation() {
             val endpointPackets=java.util.concurrent.ConcurrentHashMap<Int,AtomicInteger>()
             val pairBarrier=java.util.concurrent.atomic.AtomicReference<java.util.concurrent.CountDownLatch?>(null)
             val exitPackets=java.util.concurrent.ConcurrentHashMap<String,AtomicInteger>()
+            val idleProbes = java.util.concurrent.ConcurrentHashMap<String, AtomicInteger>()
             val packets = AtomicInteger()
             val sitePackets = AtomicInteger()
             val acceptedPeers = AtomicInteger()
@@ -707,6 +714,25 @@ class RealityCoreSmokeRunner : Instrumentation() {
                             input.readFully(destination)
                             if(multiDirectTraceOnly && type==1 && destination.contentEquals(byteArrayOf(1,1,1,1)) && destinationPort==443)traceExitPackets.computeIfAbsent(exitKey){AtomicInteger()}.incrementAndGet()
                             socket.getOutputStream().write(byteArrayOf(0, 0))
+                            if (idleProbeSeconds > 0 && vlessCommand == 1 && destinationPort == 443 &&
+                                type == 1 && destination.contentEquals(byteArrayOf(1, 1, 1, 1))) {
+                                idleProbes.computeIfAbsent(exitKey) { AtomicInteger() }.incrementAndGet()
+                                val connectivity = context.getSystemService(android.net.ConnectivityManager::class.java)
+                                val underlay = connectivity.allNetworks.first { network ->
+                                    connectivity.getNetworkCapabilities(network)
+                                        ?.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI) == true
+                                }
+                                underlay.socketFactory.createSocket().use { upstream ->
+                                    upstream.connect(java.net.InetSocketAddress("1.1.1.1", 443), 4000)
+                                    upstream.soTimeout = 8000
+                                    val upload = thread(isDaemon = true) {
+                                        runCatching { input.copyTo(upstream.getOutputStream()); upstream.shutdownOutput() }
+                                    }
+                                    try { upstream.getInputStream().copyTo(socket.getOutputStream()) }
+                                    finally { upstream.close(); upload.join(1_000) }
+                                }
+                                return@peerUse
+                            }
                             if(vlessCommand==2) {
                                 udpCommands.computeIfAbsent(2){AtomicInteger()}.incrementAndGet()
                                 check(destinationPort==4433 && (type==1 && destination.contentEquals(byteArrayOf(198.toByte(),51,100,7)) || type==3 && destination.contentEquals(java.net.InetAddress.getByName("2001:db8::7").address)))
@@ -823,6 +849,68 @@ class RealityCoreSmokeRunner : Instrumentation() {
                         checkHostnameBootstrap(cycle + 1, "transport-cycle-$cycle-${java.util.UUID.randomUUID()}.test")
                         sendStatus(0, Bundle().apply { putString("stream", "Bootstrap restart cycle ${cycle + 1}/$hostnameBootstrapCycles: PASS\n") })
                     }
+                    return@use
+                }
+                if (idleProbeSeconds > 0) {
+                    check(isolatedEngine == VpnEngine.SING_BOX)
+                    AppPreferencesStore(context).setVpnEngine(VpnEngine.SING_BOX)
+                    val profiles = listOf(profile) + (2..10).map { number ->
+                        profile.copy(id = "idle-slot-$number", name = "Synthetic VPN $number",
+                            outboundJson = JSONObject(profile.outboundJson)
+                                .put("uuid", java.util.UUID.nameUUIDFromBytes("nova-idle-slot-$number".toByteArray()).toString())
+                                .toString())
+                    }
+                    ProfileVault(context).updateSnapshot { it.importManual(profiles) }
+                    val rules = profiles.drop(1).mapIndexed { index, vpn ->
+                        MultiServerRule(domain = "idle-slot-${index + 2}.test",
+                            target = ServerRouteTarget(ServerRouteKind.PROFILE, vpn.id))
+                    }
+                    val settings = AppRoutingSettings(multiServer = MultiServerSettings(100, profile.id, rules))
+                    val preset = "fixture-idle-10"
+                    routingStore.updatePresets { current ->
+                        current.copy(presets = current.presets + RoutingPreset(preset, "Synthetic idle load", settings))
+                    }
+                    val prepared = PreparedVpnConfiguration.prepare(context, profile, settings, preset)
+                    val isolated = JSONObject(prepared.config).apply {
+                        val tun = getJSONArray("inbounds").getJSONObject(0)
+                        check(tun.getString("type") == "tun")
+                        tun.remove("exclude_package")
+                        tun.put("include_package", JSONArray().put("${context.packageName}.test"))
+                    }.toString()
+                    val bound = prepared.copy(config = isolated,
+                        exits = RouteExitBindings.capture(requireNotNull(settings.multiServer), profiles, isolated),
+                        commitBinding = RouteCommitBinding.capture(settings, profile.id, isolated))
+                    start(isolated, presetId = preset, prepared = bound, preparedSettings = settings)
+                    waitUntil("ten healthy HTTPS exits", 90_000) {
+                        val checks = VpnRuntime.state.value.exitChecks
+                        checks.size == 10 && checks.values.all { it.status == ExitCheckStatus.VERIFIED }
+                    }
+                    uiAutomation.executeShellCommand("input keyevent 223").use { }
+                    val power = context.getSystemService(android.os.PowerManager::class.java)
+                    val battery = context.getSystemService(android.os.BatteryManager::class.java)
+                    waitUntil("screen off", 10_000) { !power.isInteractive }
+                    check(!requireBatteryDischarge || !battery.isCharging) { "Disconnect USB power for the battery measurement" }
+                    val startCharge = battery.getIntProperty(android.os.BatteryManager.BATTERY_PROPERTY_CHARGE_COUNTER)
+                    val startPss = android.os.Debug.getPss()
+                    val startCpu = android.os.Process.getElapsedCpuTime()
+                    val startCount = idleProbes.values.sumOf { it.get() }
+                    val session = VpnRuntime.state.value.sessionRevision
+                    val startedAt = android.os.SystemClock.elapsedRealtime()
+                    android.os.SystemClock.sleep(idleProbeSeconds * 1000L)
+                    val elapsed = android.os.SystemClock.elapsedRealtime() - startedAt
+                    val endCharge = battery.getIntProperty(android.os.BatteryManager.BATTERY_PROPERTY_CHARGE_COUNTER)
+                    val state = VpnRuntime.state.value
+                    check(!power.isInteractive && state.connected && state.sessionRevision == session)
+                    check(!requireBatteryDischarge || !battery.isCharging && startCharge > 0 && endCharge > 0)
+                    val evidence = JSONObject().put("version", BuildConfig.VERSION_NAME)
+                        .put("exits", state.exitChecks.size).put("elapsedMillis", elapsed)
+                        .put("httpsAttempts", idleProbes.values.sumOf { it.get() } - startCount)
+                        .put("cpuMillis", android.os.Process.getElapsedCpuTime() - startCpu)
+                        .put("startPssKiB", startPss).put("endPssKiB", android.os.Debug.getPss())
+                        .put("chargeDeltaMicroAh", startCharge.toLong() - endCharge)
+                        .put("charging", battery.isCharging)
+                    sendStatus(0, Bundle().apply { putString("stream", "NOVA_IDLE_BENCHMARK $evidence\n") })
+                    stop()
                     return@use
                 }
                 // Compare the same independent UID before any VPN exists.

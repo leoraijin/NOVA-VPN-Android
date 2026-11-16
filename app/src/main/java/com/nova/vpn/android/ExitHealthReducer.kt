@@ -2,7 +2,7 @@ package com.nova.vpn.android
 
 /** These states describe one HTTPS check, not UDP/IPv6 availability. */
 enum class ExitCheckStatus { QUEUED, CHECKING, VERIFIED, FAILED, UNAVAILABLE, UNSUPPORTED, INCOMPATIBLE }
-data class ExitCheckState(val status: ExitCheckStatus,val profileSha256: String? = null,val responseMillis: Int? = null)
+data class ExitCheckState(val status: ExitCheckStatus,val profileSha256: String? = null,val responseMillis: Int? = null, val checkedAtMillis: Long? = null)
 internal object ExitHealthReducer {
     private fun aggregate(state: VpnUiState,checks: Map<String,ExitCheckState>): VpnUiState {
         val verified=checks.isNotEmpty()&&checks.values.all { it.status==ExitCheckStatus.VERIFIED }
@@ -23,11 +23,11 @@ internal object ExitHealthReducer {
         if(!state.connected||state.recoveryStatus!=null||state.sessionRevision!=revision||before.profileSha256!=fingerprint||before.status !in setOf(ExitCheckStatus.QUEUED, ExitCheckStatus.VERIFIED, ExitCheckStatus.FAILED))return state
         return aggregate(state,state.exitChecks+(id to before.copy(status=ExitCheckStatus.CHECKING)))
     }
-    fun result(state: VpnUiState,revision: Long,id: String,fingerprint: String,success: Boolean,millis: Int?): VpnUiState {
+    fun result(state: VpnUiState,revision: Long,id: String,fingerprint: String,success: Boolean,millis: Int?, checkedAtMillis: Long? = null): VpnUiState {
         val before=state.exitChecks[id]?:return state
         if(!state.connected||state.recoveryStatus!=null||state.sessionRevision!=revision||before.profileSha256!=fingerprint||before.status!=ExitCheckStatus.CHECKING)return state
         require(millis==null||millis>=0)
-        return aggregate(state,state.exitChecks+(id to before.copy(status=if(success)ExitCheckStatus.VERIFIED else ExitCheckStatus.FAILED,responseMillis=millis.takeIf { success })))
+        return aggregate(state,state.exitChecks+(id to before.copy(status=if(success)ExitCheckStatus.VERIFIED else ExitCheckStatus.FAILED,responseMillis=millis.takeIf { success }, checkedAtMillis=checkedAtMillis)))
     }
 }
 internal fun VpnUiState.exitCheckSummary(): String = when {

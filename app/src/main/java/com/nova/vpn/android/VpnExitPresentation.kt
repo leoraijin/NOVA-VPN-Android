@@ -1,6 +1,7 @@
 package com.nova.vpn.android
 
 internal data class VpnExitLine(val title: String, val status: String, val failed: Boolean = false)
+private val exitCheckClock = java.time.format.DateTimeFormatter.ofPattern("HH:mm")
 internal fun VpnUiState.exitLines(primaryName: String): List<VpnExitLine> {
     val primary = appliedConfiguration?.profileId
     val ids = (listOfNotNull(primary) + exitChecks.keys + exitNames.keys).distinct()
@@ -30,6 +31,10 @@ internal fun VpnUiState.exitLines(primaryName: String): List<VpnExitLine> {
         val label = if(id == primary) "Основной VPN" else if(slot != null) "VPN-$slot" else if(ids.size == 2) "VPN-2" else "Дополнительный VPN"
         val name = exitNames[id] ?: if(id == primary) primaryName else "Сервер ${id.takeLast(6)}"
         val check = exitChecks[id]
-        VpnExitLine("$label · $name", status(check), check?.status in setOf(ExitCheckStatus.FAILED, ExitCheckStatus.UNAVAILABLE, ExitCheckStatus.INCOMPATIBLE))
+        val checked = check?.checkedAtMillis?.takeIf { connected && recoveryStatus == null }?.let {
+            val local = java.time.Instant.ofEpochMilli(it).atZone(java.time.ZoneId.systemDefault())
+            " · проверено в ${exitCheckClock.format(local)}"
+        }.orEmpty()
+        VpnExitLine("$label · $name", status(check) + checked, check?.status in setOf(ExitCheckStatus.FAILED, ExitCheckStatus.UNAVAILABLE, ExitCheckStatus.INCOMPATIBLE))
     }
 }

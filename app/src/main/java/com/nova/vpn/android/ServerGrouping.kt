@@ -56,6 +56,7 @@ internal fun ServersPage(
     onToggleFavorite: (String) -> Unit,
     onOpenSubscriptions: () -> Unit,
     onChooseBest: (List<ImportedProfile>) -> Unit,
+    snapshot: com.nova.vpn.android.data.ProfileSnapshot?,
     dualActions: DualServerActions? = null
 ) {
     val context = LocalContext.current.applicationContext
@@ -114,13 +115,9 @@ internal fun ServersPage(
     val map by produceState<ServerMapData?>(null) {
         value = withContext(Dispatchers.IO) { runCatching { ServerMapData.load(context) }.getOrNull() }
     }
-    val revision by com.nova.vpn.android.data.ProfileVault.changes.collectAsState()
-    val snapshot by produceState<com.nova.vpn.android.data.ProfileSnapshot?>(null, revision) {
-        value = withContext(Dispatchers.IO) { runCatching { com.nova.vpn.android.data.ProfileVault(context).loadSnapshot() }.getOrNull() }
-    }
     val groups by produceState<Map<String, List<ImportedProfile>>>(emptyMap(), profiles, mode, map, snapshot) {
         value = withContext(Dispatchers.Default) {
-            if (mode == ServerGrouping.SUBSCRIPTION && snapshot != null) subscriptionGroups(snapshot!!, profiles)
+            if (mode == ServerGrouping.SUBSCRIPTION && snapshot != null) subscriptionGroups(snapshot, profiles)
             else profiles.groupBy { profileGroup(it, mode) { name -> map?.resolve(name)?.country } }.toSortedMap()
         }
     }
@@ -133,13 +130,18 @@ internal fun ServersPage(
         val ids = ImportedProfile.distinctByConfiguration(preferred).map { it.id }.toSet()
         candidates.filter { it.id in ids }
     }
-    val visible by produceState(grouped, grouped, query, favoritesOnly, sortName, map, snapshot) {
+    val searchIndex by produceState<ServerListFilter.Index?>(null, grouped, map, snapshot) {
         value = withContext(Dispatchers.Default) {
             val sources = snapshot?.subscriptions.orEmpty().associate { it.id to it.name }
             val names = snapshot?.memberships.orEmpty().groupBy { it.profileId }
                 .mapValues { (_, memberships) -> memberships.mapNotNull { sources[it.subscriptionId] } }
-            ServerListFilter.apply(grouped, query, favoritesOnly,
-                ServerSort.valueOf(sortName), names) { name -> map?.resolve(name)?.country }
+            ServerListFilter.Index(grouped, names) { name -> map?.resolve(name)?.country }
+        }
+    }
+    val visible by produceState(grouped, searchIndex, query, favoritesOnly, sortName) {
+        if (query.isNotBlank()) kotlinx.coroutines.delay(150)
+        value = withContext(Dispatchers.Default) {
+            searchIndex?.filter(query, favoritesOnly, ServerSort.valueOf(sortName)) ?: grouped
         }
     }
     var libraryMenuOpen by rememberSaveable { mutableStateOf(false) }

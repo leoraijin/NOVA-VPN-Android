@@ -24,6 +24,7 @@ class ServerCheckService : Service() {
                 val reply = message.replyTo ?: return@Handler true
                 val requestId = message.arg1
                 val diagnostic = message.data.getBoolean("diagnostic")
+                val quick = message.data.getBoolean("quick") && !diagnostic
                 val selectedEngine = VpnEngine.fromId(message.data.getString("engine"))
                 if (!closing.get()) queue.execute {
                     if (closing.get()) return@execute
@@ -82,14 +83,18 @@ class ServerCheckService : Service() {
                         }
                         VpnDiagnostics.record("engine_started")
                         progress()
-                        val samples = mutableListOf<Int?>()
-                        repeat(3) {
-                          for (target in ProbeTarget.entries) {
+                        fun sample(target: ProbeTarget): Int? {
                             if (closing.get()) error("Cancelled")
-                            samples += if (check.check(4_000, target)) check.responseMillis else null
-                          }
+                            return if (check.check(4_000, target)) check.responseMillis else null
                         }
-                        assessment = ProbeAssessment.from(samples)
+                        assessment = if (quick) {
+                            val preferred = sample(ProbeTarget.GOOGLE)
+                            val response = preferred ?: sample(ProbeTarget.CLOUDFLARE)
+                            ProbeAssessment(response, if (response == null) 0 else 1, if (preferred == null) 2 else 1)
+                        } else {
+                            val samples = List(3) { ProbeTarget.entries.map(::sample) }.flatten()
+                            ProbeAssessment.from(samples)
+                        }
                         millis = assessment.millis ?: -1
                     } catch (_: UnsupportedProbeEngine) {
                         unsupported = true
