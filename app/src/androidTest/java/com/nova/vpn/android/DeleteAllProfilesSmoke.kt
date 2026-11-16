@@ -327,7 +327,11 @@ internal object DeleteAllProfilesSmoke {
             instrumentation.runOnMainSync { activity!!.window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) }
             instrumentation.waitForIdleSync()
             fun openDeleteAll() {
+                await("server menu or open management dialog") {
+                    find("Управление серверами") != null || find("Меню", actionable = true) != null
+                }
                 if (find("Управление серверами") == null) click("Меню")
+                await("management dialog") { find("Управление серверами") != null }
                 click("Ещё")
                 click("Удалить все конфиги VPN")
             }
