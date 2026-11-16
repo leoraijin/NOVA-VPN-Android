@@ -2,8 +2,8 @@
 set -euo pipefail
 # Build on Linux with Android NDK, Rust and cargo-ndk. No signing keys needed.
 root="$(cd "$(dirname "$0")/.." && pwd)"
-revision=16fe5dd518652965fe2c469dc943054fb86f4b9c
-# Exact fork revision with independent application and site routing for two exits.
+revision=ac47b5563604fb185b6c63ed60db49325dcb1c2f
+# Exact fork revision with independent application and site routing for multiple exits.
 source_ref=refs/heads/codex/dual-vpn-routing
 source_dir="$root/native/work/core"
 mkdir -p "$root/native/work"
