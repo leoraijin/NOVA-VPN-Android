@@ -1,9 +1,10 @@
 param(
     [Parameter(Mandatory=$true)][string]$AdbPath,
-    [Parameter(Mandatory=$true)][string]$DeviceSerial,
+    [string]$DeviceSerial,
     [Parameter(Mandatory=$true)][string]$BaselineRoot,
     [Parameter(Mandatory=$true)][string]$OutputDirectory,
-    [ValidateRange(60,3600)][int]$Seconds=900
+    [ValidateRange(60,3600)][int]$Seconds=900,
+    [switch]$PrepareOnly
 )
 $ErrorActionPreference='Stop'
 $root=Split-Path $PSScriptRoot -Parent
@@ -18,41 +19,85 @@ function Assert-NoPower {
     if ($state -match '^\s*(USB|AC|Wireless|Dock) powered: true$'){throw 'Disconnect all power sources before measuring.'}
 }
 
-function Install-IsolatedBuild([string]$source) {
-    $app=Join-Path $source 'app/build/outputs/apk/realitypreview/app-arm64-v8a-realitypreview.apk'
-    $tests=Join-Path $source 'app/build/outputs/apk/androidTest/realitypreview/app-realitypreview-androidTest.apk'
-    $metadata=Get-Content -LiteralPath (Join-Path (Split-Path $app) 'output-metadata.json') -Raw | ConvertFrom-Json
-    if($metadata.applicationId -ne $package){throw "Refusing to install a non-isolated package."}
-    foreach($file in @($app,$tests)){
-        & $adb -s $DeviceSerial install -r -d (Resolve-Path -LiteralPath $file).Path
+function Read-ApkMetadata([string]$path, [string]$operation, [string]$entry) {
+    Push-Location (Split-Path $path)
+    try {
+        $arguments=@('dump',$operation,(Split-Path $path -Leaf))
+        if($entry){$arguments+=$entry}
+        $info=(& $aapt @arguments) -join [Environment]::NewLine
+        if($LASTEXITCODE -ne 0){throw "Cannot inspect APK metadata at $path"}
+        return $info
+    } finally { Pop-Location }
+}
+
+function Get-IsolatedBuild([string]$source) {
+    $apkRoot=Join-Path $source 'app/build/outputs/apk'
+    $app=(Resolve-Path -LiteralPath (Join-Path $apkRoot 'realitypreview/app-arm64-v8a-realitypreview.apk')).Path
+    $tests=(Resolve-Path -LiteralPath (Join-Path $apkRoot 'androidTest/realitypreview/app-realitypreview-androidTest.apk')).Path
+    $manifest=Read-ApkMetadata $tests xmltree AndroidManifest.xml
+    if($manifest -notmatch ('targetPackage.*="' + [regex]::Escape($package) + '"') -or
+        $manifest -notmatch 'android:name.*="com\.nova\.vpn\.android\.RealityCoreSmokeRunner"'){
+        throw 'Instrumentation APK targets an unexpected package or runner.'
+    }
+    foreach($entry in @(@{Path=$app;Package=$package},@{Path=$tests;Package="$package.test"})){
+        $badging=Read-ApkMetadata $entry.Path badging
+        if($badging -notmatch ("(?m)^package: name='" + [regex]::Escape($entry.Package) + "'")){
+            throw "Unexpected Android package in $($entry.Path)"
+        }
+        $signature=(& $signer verify --print-certs $entry.Path) -join [Environment]::NewLine
+        if($LASTEXITCODE -ne 0 -or $signature -notmatch 'certificate SHA-256 digest: ([a-f0-9]{64})'){
+            throw "Cannot verify APK signature for $($entry.Path)"
+        }
+        [pscustomobject]@{Path=$entry.Path;Signer=$Matches[1];Sha256=(Get-FileHash -LiteralPath $entry.Path).Hash}
+    }
+}
+
+function Install-IsolatedBuild($records) {
+    foreach($record in $records){
+        if((Get-FileHash -LiteralPath $record.Path).Hash -ne $record.Sha256){throw 'An APK changed after the preflight.'}
+        & $adb -s $DeviceSerial install -r -d $record.Path
         if($LASTEXITCODE){throw 'Installing the isolated test build failed.'}
     }
     & $adb -s $DeviceSerial shell appops set $package ACTIVATE_VPN allow
     if($LASTEXITCODE){throw 'Test VPN authorization failed.'}
 }
 
+$buildTools=(Get-ChildItem -LiteralPath (Join-Path (Split-Path (Split-Path $adb)) 'build-tools') -Directory |
+    Sort-Object Name -Descending | Where-Object { (Test-Path (Join-Path $_.FullName 'aapt.exe')) -and
+        (Test-Path (Join-Path $_.FullName 'apksigner.bat')) } | Select-Object -First 1).FullName
+if(!$buildTools){throw 'Android build-tools with aapt and apksigner are required.'}
+$aapt=Join-Path $buildTools aapt.exe
+$signer=Join-Path $buildTools apksigner.bat
+$builds=@{baseline=@(Get-IsolatedBuild $BaselineRoot);candidate=@(Get-IsolatedBuild $root)}
+if(@($builds.baseline.Signer + $builds.candidate.Signer | Sort-Object -Unique).Count -ne 1){
+    throw 'Baseline, candidate and their instrumentation APKs must share one signing identity.'
+}
+$builds | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $OutputDirectory 'apk-preflight.json') -Encoding utf8
+if($PrepareOnly){return}
+if(!$DeviceSerial){throw 'DeviceSerial is required for a phone measurement.'}
+
 $measurements=@{}
 
 try {
     Assert-NoPower
-    foreach($case in @(@{Label='baseline';Root=$BaselineRoot},@{Label='candidate';Root=$root})){
-        Install-IsolatedBuild $case.Root
+    foreach($case in @('baseline','candidate')){
+        Install-IsolatedBuild $builds[$case]
         & $adb -s $DeviceSerial shell input keyevent 224
         Assert-NoPower
-        $log=Join-Path $OutputDirectory ($case.Label+'.txt')
+        $log=Join-Path $OutputDirectory ($case+'.txt')
         & $adb -s $DeviceSerial shell am instrument -w -r -e multiExitOnly true -e isolatedEngine SING_BOX -e recoveryOnly true -e allowWifiToggle true -e idleProbeSeconds $Seconds -e requireBatteryDischarge true $runner | Tee-Object -FilePath $log
         $result=Get-Content -LiteralPath $log -Raw
         $sample=[regex]::Match($result,'NOVA_IDLE_BENCHMARK (\{[^\r\n]+\})')
         if($result -notmatch 'INSTRUMENTATION_CODE: -1' -or !$sample.Success){
-            throw "The $($case.Label) measurement is invalid. See the instrumentation log."
+            throw "The $($case) measurement is invalid. See the instrumentation log."
         }
         $metrics=$sample.Groups[1].Value | ConvertFrom-Json
         if($metrics.exits -ne 10 -or $metrics.charging -or $metrics.chargeDeltaMicroAh -le 0 -or
             $metrics.elapsedMillis -lt ($Seconds * 1000) -or $metrics.httpsAttempts -lt 0){
             throw 'Invalid battery, timing, or tunnel metrics.'
         }
-        $measurements[$case.Label]=$metrics
-        $metrics | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $OutputDirectory ($case.Label+'.json')) -Encoding utf8
+        $measurements[$case]=$metrics
+        $metrics | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $OutputDirectory ($case+'.json')) -Encoding utf8
         & $adb -s $DeviceSerial shell am force-stop $package
     }
 } finally {
