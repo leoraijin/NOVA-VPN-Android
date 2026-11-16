@@ -12,7 +12,7 @@ object SingBoxConfigFactory {
             require(routing.packages.isEmpty() && routing.sites.isEmpty()) { "Перенесите прежние правила в назначения серверов." }
             val snapshot = profileSnapshot?.toList() ?: error("Нет снимка серверов для маршрутизации")
             require(snapshot.map { it.id }.distinct().size == snapshot.size) { "Повторяющиеся ID серверов" }
-            val referenced = MultiServerPolicy(settings.revision,settings.defaultProfileId,settings.rules,snapshot.map { it.id }.toSet()).referencedProfileIds
+            val referenced = MultiServerPolicy(settings.revision,settings.defaultProfileId,settings.effectiveRules(),snapshot.map { it.id }.toSet()).referencedProfileIds
             val available=snapshot.filter { !it.retiredFromSubscription && it.id in referenced }
             require(quarantinedIds.all {id->available.any {it.id==id && MultiServerProfileAdapter.problem(it)!=null}})
             val selected = available.filter {it.id !in quarantinedIds}

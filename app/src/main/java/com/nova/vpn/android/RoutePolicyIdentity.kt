@@ -15,7 +15,7 @@ class RoutePolicyIdentity(val revision: Long, profiles: Set<String>, val digest:
         fun capture(settings: com.nova.vpn.android.data.AppRoutingSettings): RoutePolicyIdentity? = settings.multiServer?.let { multi ->
             multi.validate()
             // Arrays have explicit order, unlike JSONObject maps. Include all traffic-affecting settings.
-            val rules=JSONArray().apply { multi.rules.forEach { rule -> put(JSONArray()
+            val rules=JSONArray().apply { multi.effectiveRules().forEach { rule -> put(JSONArray()
                 .put(rule.packageName?:JSONObject.NULL).put(rule.domain?:JSONObject.NULL).put(rule.includeSubdomains)
                 .put(rule.target.kind.name).put(rule.target.profileId?:JSONObject.NULL)) } }
             val sites=JSONArray().apply { settings.sites.sortedWith(compareBy({it.domain},{it.target.name})).forEach { put(JSONArray().put(it.domain).put(it.target.name)) } }
@@ -23,7 +23,7 @@ class RoutePolicyIdentity(val revision: Long, profiles: Set<String>, val digest:
                 .put(settings.ipv6Enabled).put(JSONArray(settings.packages.sorted())).put(sites).put(rules)
             val digest=java.security.MessageDigest.getInstance("SHA-256").digest(canonical.toString().toByteArray(Charsets.UTF_8))
                 .joinToString(""){"%02x".format(java.util.Locale.ROOT,it.toInt() and 255)}
-            RoutePolicyIdentity(multi.revision,com.nova.vpn.android.data.MultiServerPolicy(multi.revision,multi.defaultProfileId,multi.rules,emptySet()).referencedProfileIds,digest)
+            RoutePolicyIdentity(multi.revision,com.nova.vpn.android.data.MultiServerPolicy(multi.revision,multi.defaultProfileId,multi.effectiveRules(),emptySet()).referencedProfileIds,digest)
         }
         fun decode(value: String?): RoutePolicyIdentity? {
             if(value==null)return null

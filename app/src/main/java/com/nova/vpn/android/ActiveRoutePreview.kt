@@ -73,7 +73,7 @@ class ActiveRoutePreview private constructor(
                 .flatMap { server -> listOf("inet4_range", "inet6_range").mapNotNull { key ->
                     server.optString(key).takeIf(String::isNotEmpty)?.let { FakeIpNetworkPreflight.Prefix(it) }
                 } }
-            return ActiveRoutePreview(MultiServerPolicy(multi.revision, multi.defaultProfileId, multi.rules, exits.entries.keys),
+            return ActiveRoutePreview(MultiServerPolicy(multi.revision, multi.defaultProfileId, multi.effectiveRules(), exits.entries.keys),
                 settings.ipv6Enabled, ranges, SharedUidExitGuard.capture(config))
         }
     }

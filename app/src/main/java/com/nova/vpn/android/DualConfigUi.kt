@@ -52,7 +52,7 @@ internal fun DualModeControl(settings: AppRoutingSettings, busy: Boolean, onTogg
             horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text("Два VPN-конфига", style = MaterialTheme.typography.titleMedium)
-                Text(if (busy) "Применяются настройки…" else if (multi != null) "Режим включён" else "Режим выключен",
+                Text(if (busy) "Применяются настройки…" else if (multi != null && !multi.secondaryPaused) "Режим включён" else "Режим выключен",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             Icon(if (expanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore, contentDescription = null)
@@ -63,7 +63,7 @@ internal fun DualModeControl(settings: AppRoutingSettings, busy: Boolean, onTogg
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text("Использовать два конфига", modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
-                    Switch(checked = multi != null, onCheckedChange = onToggle, enabled = !busy)
+                    Switch(checked = multi != null && !multi.secondaryPaused, onCheckedChange = onToggle, enabled = !busy)
                 }
                 if (vpnState.connected || vpnState.connecting) {
                     val primaryName = profiles.firstOrNull { it.id == vpnState.appliedConfiguration?.profileId }?.displayName ?: "Выбранный сервер"
@@ -81,6 +81,7 @@ internal fun DualModeControl(settings: AppRoutingSettings, busy: Boolean, onTogg
                     Text("Основной VPN · ${name(multi.defaultProfileId)} · отключён", style = MaterialTheme.typography.bodySmall)
                     Text("VPN-2 · ${name(multi.secondaryProfileId)} · отключён", style = MaterialTheme.typography.bodySmall)
                 }
+                if (multi?.secondaryPaused == true) Text("Маршруты VPN-2 сейчас идут через основной VPN.", style = MaterialTheme.typography.bodySmall)
                 if (multi != null) TextButton(onClick = onServers) { Text("Выбрать конфиги") }
             }
         }
@@ -134,6 +135,7 @@ internal fun DualRoutingPage(settings: AppRoutingSettings, profiles: List<Import
         item {
             Text("Основной VPN · " + (profiles.firstOrNull { it.id == multi.defaultProfileId }?.displayName ?: "Недоступен"))
             Text("VPN-2 · " + (profiles.firstOrNull { it.id == multi.secondaryProfileId }?.displayName ?: "Выберите конфиг во вкладке «Серверы»"))
+            if (multi.secondaryPaused) Text("Режим выключен. Правила VPN-2 сохранены и сейчас идут через основной VPN.")
             Text("Правило сайта имеет приоритет над правилом приложения.", style = MaterialTheme.typography.bodySmall)
         }
         item {

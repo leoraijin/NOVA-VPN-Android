@@ -615,10 +615,11 @@ private fun NovaAndroidApp(
         val baseline = routingDocument.active.settings
         if (routingPreparing || routingDocument.pending != null) return
         runCatching {
-            if (!enabled) {
-                val change = RoutingModeTransitions.disable(baseline)
-                applyRoutingPreset(routingDocument.activeId, change.settings, change.selection, baseline)
-            } else {
+            val current = baseline.multiServer
+            if (current != null) {
+                val next = updateDualSettings(baseline, current.copy(secondaryPaused = !enabled))
+                applyRoutingPreset(routingDocument.activeId, next, expected = baseline)
+            } else if (enabled) {
                 require(Build.VERSION.SDK_INT >= 29 && AppPreferencesStore(context).vpnEngine() == VpnEngine.SING_BOX) {
                     "Для двух конфигов выберите ядро sing-box. Нужен Android 10 или новее."
                 }

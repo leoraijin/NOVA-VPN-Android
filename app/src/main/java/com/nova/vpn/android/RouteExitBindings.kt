@@ -51,7 +51,7 @@ internal class RouteExitBindings(val configSha256: String, entries: Map<String, 
             .joinToString(""){"%02x".format(java.util.Locale.ROOT,it.toInt() and 255)}
         fun profileHash(profile: ImportedProfile) = hash(profile.configurationKey())
         fun capture(settings: MultiServerSettings, profiles: List<ImportedProfile>, config: String, quarantinedIds:Set<String> = emptySet()): RouteExitBindings {
-            val referenced=MultiServerPolicy(settings.revision,settings.defaultProfileId,settings.rules,emptySet()).referencedProfileIds
+            val referenced=MultiServerPolicy(settings.revision,settings.defaultProfileId,settings.effectiveRules(),emptySet()).referencedProfileIds
             val available=profiles.filter { !it.retiredFromSubscription && it.id in referenced }
             require(quarantinedIds.all {id->available.any {it.id==id && MultiServerProfileAdapter.problem(it)!=null}})
             val selected=available.filter {it.id !in quarantinedIds}.sortedBy { it.id }

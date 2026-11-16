@@ -45,6 +45,38 @@ class DualConfigRoutingTest {
         assertTrue(reverted.filter { it.packageName in names }.all { it.target.kind == ServerRouteKind.DEFAULT })
     }
 
+    @Test fun pausedSecondExitUsesPrimaryForAppsAndSitesWithoutChangingSavedRules() {
+        val baseline = settings()
+        val second = ServerRouteTarget(ServerRouteKind.PROFILE, "second")
+        val rules = baseline.multiServer!!.rules + listOf(
+            MultiServerRule(packageName = "example.second", target = second),
+            MultiServerRule(domain = "second.example.org", target = second))
+        val enabled = updateDualSettings(baseline, baseline.multiServer.copy(rules = rules))
+        val paused = updateDualSettings(enabled, enabled.multiServer!!.copy(secondaryPaused = true))
+        val saved = MultiServerSettings.fromJson(paused.multiServer!!.toJson())
+        assertTrue(saved.secondaryPaused)
+        assertEquals(rules, saved.rules)
+        assertEquals("second", saved.secondaryProfileId)
+        assertEquals(setOf("first"), RoutePolicyIdentity.capture(paused)!!.profileIds)
+        val first = ImportedProfile(id = "first", name = "Primary", protocol = "socks",
+            server = "127.0.0.1", port = 1080,
+            outboundJson = """{"type":"socks","server":"127.0.0.1","server_port":1080}""")
+        val config = JSONObject(SingBoxConfigFactory.build(first, paused, "com.nova.vpn.android",
+            listOf(first), "/fixtures/paused-dns.db"))
+        val route = config.getJSONObject("route")
+        val entries = route.getJSONArray("rules")
+        val primaryTag = (0 until entries.length()).map(entries::getJSONObject).last().getString("outbound")
+        for ((selector, value) in listOf("domain" to "second.example.org", "package_name" to "example.second")) {
+            val rule = (0 until entries.length()).map(entries::getJSONObject).single {
+                it.optJSONArray(selector)?.optString(0) == value && it.optString("action") == "route"
+            }
+            assertEquals(primaryTag, rule.getString("outbound"))
+        }
+        val resumed = updateDualSettings(paused, saved.copy(secondaryPaused = false))
+        assertEquals(rules, resumed.multiServer!!.rules)
+        assertEquals(setOf("first", "second"), RoutePolicyIdentity.capture(resumed)!!.profileIds)
+    }
+
     @Test fun disablingRestoresOriginalAndRetainsSecondSelection() {
         val active = settings()
         val disabled = RoutingModeTransitions.disable(active).settings

@@ -10,7 +10,7 @@ object MultiServerConfigFactory {
         settings.validate()
         require(ownPackage.matches(Regex("[A-Za-z_][A-Za-z0-9_]*(\\.[A-Za-z_][A-Za-z0-9_]*)+")))
         require(cachePath.startsWith("/") && !cachePath.split('/').contains(".."))
-        require(settings.rules.none { it.packageName == ownPackage }) { "VPN-приложение нельзя направлять через себя" }
+        require(settings.effectiveRules().none { it.packageName == ownPackage }) { "VPN-приложение нельзя направлять через себя" }
         val config = JSONObject(base.toString())
         val inbounds = config.getJSONArray("inbounds")
         require(inbounds.length() == 1 && inbounds.getJSONObject(0).getString("type") == "tun")
@@ -19,7 +19,7 @@ object MultiServerConfigFactory {
         tun.put("exclude_package", JSONArray().put(ownPackage))
         // Both families must enter TUN; disabled IPv6 is rejected in the route rules.
         tun.put("address", JSONArray().put("172.19.0.1/30").put("fdfe:dcba:9876::1/126"))
-        val referenced = MultiServerPolicy(settings.revision, settings.defaultProfileId, settings.rules, profileOutbounds.keys).referencedProfileIds.sorted()
+        val referenced = MultiServerPolicy(settings.revision, settings.defaultProfileId, settings.effectiveRules(), profileOutbounds.keys).referencedProfileIds.sorted()
         val tags = referenced.filter { it in profileOutbounds }.mapIndexed { index, id -> id to "nova-exit-$index" }.toMap()
         val outbounds = JSONArray().put(JSONObject().put("type", "direct").put("tag", "nova-direct").put("domain_resolver", "nova-bootstrap-dns"))
         tags.forEach { (id, tag) ->
@@ -38,7 +38,7 @@ object MultiServerConfigFactory {
             .put("tls",JSONObject().put("enabled",true).put("server_name","cloudflare-dns.com"))
         servers.put(resolver("nova-direct"))
         tags.values.forEach { servers.put(resolver(it)) }
-        val hasAppAssignments = settings.rules.any { it.packageName != null }
+        val hasAppAssignments = settings.effectiveRules().any { it.packageName != null }
         val routeRules = JSONArray()
         if (hasAppAssignments) routeRules.put(
             JSONObject().put("package_name", JSONArray().put(SharedUidExitGuard.CONFLICT_PACKAGE)).put("action", "reject"))
@@ -54,7 +54,7 @@ object MultiServerConfigFactory {
                 if (rule.includeSubdomains) put("domain_suffix",JSONArray().put(".${rule.domain}"))
             }
         }
-        val ordered = settings.rules.sortedWith(compareBy<MultiServerRule> {
+        val ordered = settings.effectiveRules().sortedWith(compareBy<MultiServerRule> {
             if (it.target.kind == ServerRouteKind.BLOCK) 0 else if (it.domain != null) 1 else 2
         }.thenByDescending { it.domain?.length ?: 0 }.thenBy { it.includeSubdomains })
         val dnsRules = JSONArray()

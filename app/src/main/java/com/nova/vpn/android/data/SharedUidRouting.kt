@@ -16,7 +16,7 @@ object SharedUidRouting {
 
     fun validate(settings: MultiServerSettings, uidOf: (String) -> Int?, packagesOf: (Int) -> Set<String>, excludedPackage: String? = null) {
         settings.validate()
-        val rules=settings.rules.filter { it.packageName!=null }.associateBy { it.packageName!! }
+        val rules=settings.effectiveRules().filter { it.packageName!=null }.associateBy { it.packageName!! }
         fun effective(target: ServerRouteTarget?) = if(target==null||target.kind==ServerRouteKind.DEFAULT)
             ServerRouteTarget(ServerRouteKind.PROFILE,settings.defaultProfileId) else target
         val checked=mutableSetOf<String>()

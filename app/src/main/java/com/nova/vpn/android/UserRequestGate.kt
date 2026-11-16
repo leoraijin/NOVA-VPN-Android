@@ -54,7 +54,7 @@ internal data class PreparedVpnConfiguration(val config: String, val name: Strin
                     else if(frozen.history!=null) requireNotNull(snapshot?.firstOrNull {it.id==profile.id}) {"Прежний сервер недоступен. Выберите сервер вручную."}
                     else profile
                 val quarantined=if(quarantineUnsupported && multi!=null) {
-                    val ids=com.nova.vpn.android.data.MultiServerPolicy(multi.revision,multi.defaultProfileId,multi.rules,emptySet()).referencedProfileIds
+                    val ids=com.nova.vpn.android.data.MultiServerPolicy(multi.revision,multi.defaultProfileId,multi.effectiveRules(),emptySet()).referencedProfileIds
                     requireNotNull(snapshot).filter {!it.retiredFromSubscription && it.id in ids && com.nova.vpn.android.data.MultiServerProfileAdapter.problem(it)!=null}.map {it.id}.toSet()
                 } else emptySet()
                 val config=com.nova.vpn.android.data.SingBoxConfigFactory.build(primary,frozen,context.packageName,snapshot,
