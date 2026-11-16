@@ -12,6 +12,10 @@ on:
         description: Scoped GitHub CDN URL for the pinned preview AAR
         type: string
         required: false
+      delete_only:
+        description: Run only the delete-all emulator regression after building
+        type: boolean
+        default: false
       xhttp_4k:
         description: Run the XHTTP TUN control on Android 4 KiB
         type: boolean
@@ -80,7 +84,7 @@ jobs:
           profile: pixel_2
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none -memory 2048
           disable-animations: true
-          script: bash tools/Run-ScheduleChecksCi.sh
+          script: bash tools/Run-ScheduleChecksCi.sh ${{ inputs.delete_only }}
       - name: XHTTP TUN on Android
         if: inputs.xhttp_16k == true || inputs.xhttp_4k == true
         uses: reactivecircus/android-emulator-runner@v2

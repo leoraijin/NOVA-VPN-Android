@@ -13,6 +13,11 @@ trap '"$adb_path" -s "$serial" logcat -d > work/completion/logcat.txt 2>&1 || tr
 "$adb_path" -s "$serial" shell svc power stayon true
 "$adb_path" -s "$serial" shell input keyevent KEYCODE_WAKEUP
 "$adb_path" -s "$serial" shell wm dismiss-keyguard
+if [[ "${1:-false}" == true ]]; then
+    python3 tools/Verify-DeleteAll.py --adb "$adb_path" --serial "$serial" --work work/completion/delete-all
+    exit 0
+fi
+
 python3 tools/Verify-SubscriptionSchedule.py --adb "$adb_path" --serial "$serial" --work work/completion/schedule
 
 python3 tools/Verify-ServerLibrary.py --adb "$adb_path" --serial "$serial" --work work/completion/library
