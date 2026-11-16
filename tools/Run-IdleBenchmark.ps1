@@ -1,4 +1,4 @@
-﻿param(
+param(
     [Parameter(Mandatory=$true)][string]$AdbPath,
     [Parameter(Mandatory=$true)][string]$DeviceSerial,
     [Parameter(Mandatory=$true)][string]$BaselineRoot,
@@ -31,6 +31,8 @@ function Install-IsolatedBuild([string]$source) {
     if($LASTEXITCODE){throw 'Test VPN authorization failed.'}
 }
 
+$measurements=@{}
+
 try {
     Assert-NoPower
     foreach($case in @(@{Label='baseline';Root=$BaselineRoot},@{Label='candidate';Root=$root})){
@@ -45,7 +47,11 @@ try {
             throw "The $($case.Label) measurement is invalid. See the instrumentation log."
         }
         $metrics=$sample.Groups[1].Value | ConvertFrom-Json
-        if($metrics.exits -ne 10 -or $metrics.charging -or $metrics.chargeDeltaMicroAh -le 0){throw 'Invalid battery or tunnel metrics.'}
+        if($metrics.exits -ne 10 -or $metrics.charging -or $metrics.chargeDeltaMicroAh -le 0 -or
+            $metrics.elapsedMillis -lt ($Seconds * 1000) -or $metrics.httpsAttempts -lt 0){
+            throw 'Invalid battery, timing, or tunnel metrics.'
+        }
+        $measurements[$case.Label]=$metrics
         $metrics | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $OutputDirectory ($case.Label+'.json')) -Encoding utf8
         & $adb -s $DeviceSerial shell am force-stop $package
     }
@@ -55,3 +61,21 @@ try {
     & $adb -s $DeviceSerial shell input keyevent 224
     & $adb -s $DeviceSerial shell am start -n 'com.nova.vpn.android/.MainActivity'
 }
+
+$baseline=$measurements.baseline
+$candidate=$measurements.candidate
+if($baseline.version -eq $candidate.version){throw 'Baseline and candidate must be different builds.'}
+$baselineRate=$baseline.chargeDeltaMicroAh * 3600000.0 / $baseline.elapsedMillis
+$candidateRate=$candidate.chargeDeltaMicroAh * 3600000.0 / $candidate.elapsedMillis
+$summary=[ordered]@{
+    requestedSeconds=$Seconds
+    baselineVersion=$baseline.version
+    candidateVersion=$candidate.version
+    baselineDischargeMicroAhPerHour=[math]::Round($baselineRate,1)
+    candidateDischargeMicroAhPerHour=[math]::Round($candidateRate,1)
+    dischargeReductionPercent=[math]::Round(100.0 * (1.0 - $candidateRate / $baselineRate),1)
+    baselineHttpsAttempts=$baseline.httpsAttempts
+    candidateHttpsAttempts=$candidate.httpsAttempts
+    candidateObservedAtMost90ProbesInHour=if($Seconds -eq 3600){$candidate.httpsAttempts -le 90}else{$null}
+}
+$summary | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $OutputDirectory 'comparison.json') -Encoding utf8
