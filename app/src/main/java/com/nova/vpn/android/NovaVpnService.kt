@@ -588,11 +588,7 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
         }
     }
 
-    private fun probeInterval(job: ScheduledExitProbe): Long = when {
-        probeForeground -> 60_000
-        job.primary -> 120_000
-        else -> 600_000
-    }
+    private fun probeInterval(job: ScheduledExitProbe): Long = exitProbeIntervalMillis(probeForeground, job.primary)
 
     // Call with probeLock held. Network I/O and command ownership checks run outside it.
     private fun queueExitProbe(job: ScheduledExitProbe, delayMillis: Long) {
