@@ -93,7 +93,7 @@ internal fun SettingsTransferCard() {
     }
     SoftCard {
         Text("Поделиться и перенести", style=MaterialTheme.typography.titleMedium)
-        Text("Все профили маршрутизации: сайты, приложения и назначения VPN-1/VPN-2.",style=MaterialTheme.typography.bodySmall)
+        Text("Все профили маршрутизации: сайты, приложения и назначения VPN-1…VPN-10.",style=MaterialTheme.typography.bodySmall)
         OutlinedButton(onClick={password="";exportKeys=true},enabled=!busy,modifier=Modifier.fillMaxWidth().heightIn(min=48.dp)) { Text("Ключи + маршрутизация") }
         OutlinedButton(onClick={password="";exportKeys=false},enabled=!busy,modifier=Modifier.fillMaxWidth().heightIn(min=48.dp)) { Text("Только маршрутизация") }
         TextButton(onClick={open.launch(arrayOf("*/*"))},enabled=!busy,modifier=Modifier.fillMaxWidth().heightIn(min=48.dp)) { Text("Импорт из файла") }

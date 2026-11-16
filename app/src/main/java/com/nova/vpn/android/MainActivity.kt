@@ -620,8 +620,8 @@ private fun NovaAndroidApp(
                 val next = updateDualSettings(baseline, current.copy(secondaryPaused = !enabled))
                 applyRoutingPreset(routingDocument.activeId, next, expected = baseline)
             } else if (enabled) {
-                require(Build.VERSION.SDK_INT >= 29 && AppPreferencesStore(context).vpnEngine() == VpnEngine.SING_BOX) {
-                    "Для двух конфигов выберите ядро sing-box. Нужен Android 10 или новее."
+                require(Build.VERSION.SDK_INT >= 29) {
+                    "Для нескольких VPN нужен Android 10 или новее."
                 }
                 val primary = selectedProfileId.takeIf { id -> profiles.any { it.id == id } }
                     ?: error("Сначала выберите основной конфиг в «Серверах»")
@@ -634,7 +634,7 @@ private fun NovaAndroidApp(
                         if (it.target == SiteRoutingTarget.DIRECT) ServerRouteKind.DIRECT else ServerRouteKind.DEFAULT)) })
                 val next = RoutingModeTransitions.enable(baseline, selectedProfileId,
                     saved?.defaultProfileId ?: primary, rules, baseline.ipv6Enabled)
-                val multi = requireNotNull(next.multiServer).copy(secondaryProfileId = saved?.secondaryProfileId)
+                val multi = requireNotNull(next.multiServer).copy(secondaryProfileId = saved?.secondaryProfileId, additionalSlots = saved?.additionalSlots.orEmpty())
                 applyRoutingPreset(routingDocument.activeId, next.copy(multiServer = multi,
                     history = MultiServerRoutingHistory(next.history?.single, multi)), expected = baseline)
             }
@@ -736,12 +736,12 @@ private fun NovaAndroidApp(
         roleSelectionId?.let { id ->
             val profile = profiles.firstOrNull { it.id == id }
             val busy = routingPreparing || routingDocument.pending != null
-            fun assignRole(secondary: Boolean) {
+            fun assignRole(slot: Int) {
                 val baseline = routingDocument.active.settings
                 runCatching {
                     requireNotNull(profile) { "Конфиг больше недоступен" }
-                    require(MultiServerProfileAdapter.problem(profile) == null) { "Этот конфиг не поддерживает два VPN" }
-                    val next = selectDualServer(baseline, id, secondary)
+                    require(MultiServerProfileAdapter.problem(profile) == null) { "Этот конфиг не поддерживает режим нескольких VPN" }
+                    val next = selectVpnSlot(baseline, id, slot)
                     applyRoutingPreset(routingDocument.activeId, next, expected = baseline)
                     roleSelectionId = null
                 }.onFailure { roleSelectionError = it.message ?: "Не удалось выбрать конфиг" }
@@ -750,13 +750,18 @@ private fun NovaAndroidApp(
                 onDismissRequest = { roleSelectionId = null },
                 title = { Text("Использовать конфиг") },
                 text = {
-                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Column(Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         Text(profile?.displayName ?: "Конфиг недоступен")
                         roleSelectionError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-                        Button(onClick = { assignRole(false) }, enabled = !busy && profile != null,
+                        Button(onClick = { assignRole(1) }, enabled = !busy && profile != null,
                             modifier = Modifier.fillMaxWidth()) { Text("Основной VPN") }
-                        Button(onClick = { assignRole(true) }, enabled = !busy && profile != null,
-                            modifier = Modifier.fillMaxWidth()) { Text("VPN-2") }
+                        val multi = routingDocument.active.settings.multiServer
+                        val available = multi?.slots.orEmpty()
+                        val free = (2..10).firstOrNull { it !in available }
+                        (available.keys + listOfNotNull(free)).forEach { slot ->
+                            Button(onClick = { assignRole(slot) }, enabled = !busy && profile != null,
+                                modifier = Modifier.fillMaxWidth()) { Text(if (slot == free) "Добавить VPN-$slot" else "VPN-$slot") }
+                        }
                     }
                 },
                 confirmButton = { TextButton(onClick = { roleSelectionId = null }) { Text("Отмена") } }
@@ -888,7 +893,9 @@ private fun NovaAndroidApp(
                           }
                           DualModeControl(routingDocument.active.settings,
                               routingPreparing || routingDocument.pending != null, ::toggleDualMode,
-                              { page = Page.Servers }, profiles, vpnState)
+                              { page = Page.Servers }, profiles, vpnState) { next ->
+                                  applyRoutingPreset(routingDocument.activeId, next, expected = routingDocument.active.settings)
+                              }
                         }
                         Page.Servers -> ServersPage(
                             profiles = profiles,
@@ -929,12 +936,12 @@ private fun NovaAndroidApp(
                             onOpenSubscriptions = { showSubscriptions = true },
                             dualActions = routingDocument.active.settings.multiServer?.let { multi ->
                                 DualServerActions(multi.defaultProfileId, multi.secondaryProfileId,
-                                    routingPreparing || routingDocument.pending != null) { id, secondary ->
+                                    routingPreparing || routingDocument.pending != null, multi.slots) { id, slot ->
                                     val baseline = routingDocument.active.settings
                                     runCatching {
                                         val profile = profiles.single { it.id == id }
-                                        require(MultiServerProfileAdapter.problem(profile) == null) { "Этот конфиг не поддерживает два VPN" }
-                                        val next = selectDualServer(baseline, id, secondary)
+                                        require(MultiServerProfileAdapter.problem(profile) == null) { "Этот конфиг не поддерживает режим нескольких VPN" }
+                                        val next = selectVpnSlot(baseline, id, slot)
                                         applyRoutingPreset(routingDocument.activeId, next, expected = baseline)
                                     }.onFailure { profileError = it.message ?: "Не удалось выбрать конфиг" }
                                 }
@@ -1713,7 +1720,7 @@ internal fun RoutingPage(
     if(exitChecks.isNotEmpty())item { ExitHealthCard(exitChecks,profiles) }
     item { SoftCard {
         Text("Два VPN-конфига", fontWeight = FontWeight.SemiBold)
-        Text("Включите режим на главном экране, выберите основной VPN и VPN-2 в «Серверах». Здесь появятся маршруты через VPN-2.")
+        Text("Включите режим на главном экране и добавьте до 10 VPN. Для каждого дополнительного конфига здесь появятся маршруты сайтов и приложений.")
     } }
     if (iosRouting) item { IOSRoutingTabs(iosRoutingTab) { iosRoutingTab = it } }
     if (materialRouting) item { MaterialRouteTabs(iosRoutingTab) { iosRoutingTab = it } }

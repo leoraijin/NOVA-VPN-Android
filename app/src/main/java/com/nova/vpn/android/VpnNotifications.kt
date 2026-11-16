@@ -61,7 +61,7 @@ internal object VpnNotifications {
         return builder
             .setSmallIcon(R.drawable.ic_qs_vpn)
             .setContentTitle(content.title)
-            .setContentText(if (lines.size > 1) lines.mapIndexed { index, line -> "VPN-${index + 1}: ${line.status}" }.joinToString(" · ") else content.text)
+            .setContentText(if (lines.size > 1) lines.map { line -> "${line.title.substringBefore(" · ")}: ${line.status}" }.joinToString(" · ") else content.text)
             .setStyle(Notification.BigTextStyle().bigText(details.ifBlank { content.text }))
             .setContentIntent(openIntent)
             .setOngoing(true)

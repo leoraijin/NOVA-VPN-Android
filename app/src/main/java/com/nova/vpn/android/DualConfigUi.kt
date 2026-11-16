@@ -2,6 +2,7 @@
 package com.nova.vpn.android
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -29,29 +30,50 @@ internal fun updateDualSettings(settings: AppRoutingSettings, multi: MultiServer
         history = MultiServerRoutingHistory(settings.history?.single, next))
 }
 
-internal fun selectDualServer(settings: AppRoutingSettings, id: String, secondary: Boolean): AppRoutingSettings {
+internal fun selectDualServer(settings: AppRoutingSettings, id: String, secondary: Boolean): AppRoutingSettings =
+    selectVpnSlot(settings, id, if (secondary) 2 else 1)
+
+internal fun selectVpnSlot(settings: AppRoutingSettings, id: String, slot: Int): AppRoutingSettings {
     val multi = requireNotNull(settings.multiServer)
-    require(id != if (secondary) multi.defaultProfileId else multi.secondaryProfileId) {
-        "Для основного VPN и VPN-2 выберите разные конфиги"
-    }
-    val next = if (secondary) multi.copy(secondaryProfileId = id, rules = multi.rules.map { rule ->
-        if (multi.secondaryProfileId != null && rule.target.profileId == multi.secondaryProfileId)
-            rule.copy(target = ServerRouteTarget(ServerRouteKind.PROFILE, id)) else rule
-    }) else multi.copy(defaultProfileId = id)
+    val next = if (slot == 1) {
+        require(id !in multi.slots.values) { "Этот конфиг уже назначен другому VPN" }
+        multi.copy(defaultProfileId = id)
+    } else multi.withSlot(slot, id)
     return updateDualSettings(settings, next)
 }
 
 @Composable
 internal fun DualModeControl(settings: AppRoutingSettings, busy: Boolean, onToggle: (Boolean) -> Unit,
-    onServers: () -> Unit, profiles: List<ImportedProfile>, vpnState: VpnUiState) {
+    onServers: () -> Unit, profiles: List<ImportedProfile>, vpnState: VpnUiState, onChange: (AppRoutingSettings) -> Unit) {
     val multi = settings.multiServer
+    var choosingSlot by remember { mutableStateOf<Int?>(null) }
+    var removingSlot by remember { mutableStateOf<Int?>(null) }
+    var slotError by remember { mutableStateOf<String?>(null) }
+    choosingSlot?.let { slot ->
+        AlertDialog(onDismissRequest = { choosingSlot = null }, title = { Text("Выбрать VPN-$slot") },
+            text = { Column(Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                slotError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                profiles.filter { !it.retiredFromSubscription && MultiServerProfileAdapter.problem(it) == null }.forEach { profile ->
+                    TextButton(enabled = !busy && profile.id != multi?.defaultProfileId && multi?.slots?.none { it.key != slot && it.value == profile.id } == true,
+                        onClick = { runCatching { onChange(selectVpnSlot(settings, profile.id, slot)); choosingSlot = null }
+                            .onFailure { slotError = it.message } }) { Text(profile.displayName) }
+                }
+            } }, confirmButton = { TextButton(onClick = { choosingSlot = null }) { Text("Отмена") } })
+    }
+    removingSlot?.let { slot ->
+        AlertDialog(onDismissRequest = { removingSlot = null }, title = { Text("Удалить VPN-$slot?") },
+            text = { Text("Его отдельные правила сайтов и приложений будут удалены. Сам конфиг останется в списке серверов.") },
+            confirmButton = { TextButton(enabled = !busy, onClick = {
+                onChange(updateDualSettings(settings, requireNotNull(multi).withSlot(slot, null))); removingSlot = null
+            }) { Text("Удалить") } }, dismissButton = { TextButton(onClick = { removingSlot = null }) { Text("Отмена") } })
+    }
     var expanded by rememberSaveable { mutableStateOf(false) }
     Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)) {
         Row(Modifier.fillMaxWidth().heightIn(min = 56.dp)
             .clickable(onClickLabel = if (expanded) "Свернуть настройки VPN" else "Развернуть настройки VPN") { expanded = !expanded },
             horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text("Два VPN-конфига", style = MaterialTheme.typography.titleMedium)
+                Text("Несколько VPN-конфигов", style = MaterialTheme.typography.titleMedium)
                 Text(if (busy) "Применяются настройки…" else if (multi != null && !multi.secondaryPaused) "Режим включён" else "Режим выключен",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
@@ -62,7 +84,7 @@ internal fun DualModeControl(settings: AppRoutingSettings, busy: Boolean, onTogg
                 verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("Использовать два конфига", modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                    Text("Использовать несколько VPN", modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
                     Switch(checked = multi != null && !multi.secondaryPaused, onCheckedChange = onToggle, enabled = !busy)
                 }
                 if (vpnState.connected || vpnState.connecting) {
@@ -79,24 +101,38 @@ internal fun DualModeControl(settings: AppRoutingSettings, busy: Boolean, onTogg
                 } else if (multi != null) {
                     fun name(id: String?) = if (id == null) "Не выбран" else profiles.firstOrNull { it.id == id }?.displayName ?: "Конфиг недоступен"
                     Text("Основной VPN · ${name(multi.defaultProfileId)} · отключён", style = MaterialTheme.typography.bodySmall)
-                    Text("VPN-2 · ${name(multi.secondaryProfileId)} · отключён", style = MaterialTheme.typography.bodySmall)
+                    multi.slots.forEach { (slot, id) -> Text("VPN-$slot · ${name(id)} · отключён", style = MaterialTheme.typography.bodySmall) }
                 }
-                if (multi?.secondaryPaused == true) Text("Маршруты VPN-2 сейчас идут через основной VPN.", style = MaterialTheme.typography.bodySmall)
-                if (multi != null) TextButton(onClick = onServers) { Text("Выбрать конфиги") }
+                if (multi?.secondaryPaused == true) Text("Правила всех дополнительных VPN сохранены и сейчас идут через основной VPN.", style = MaterialTheme.typography.bodySmall)
+                if (multi != null) {
+                    multi.slots.forEach { (slot, id) ->
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                            TextButton(modifier = Modifier.weight(1f), enabled = !busy, onClick = { slotError = null; choosingSlot = slot }) {
+                                Text("VPN-$slot · " + (profiles.firstOrNull { it.id == id }?.displayName ?: "Недоступен"))
+                            }
+                            TextButton(enabled = !busy, onClick = { removingSlot = slot }) { Text("Удалить") }
+                        }
+                    }
+                    val free = (2..10).firstOrNull { it !in multi.slots }
+                    TextButton(enabled = !busy && free != null, onClick = { slotError = null; choosingSlot = free }) {
+                        Text(if (free == null) "Добавлено 10 VPN" else "+ Добавить VPN")
+                    }
+                    TextButton(onClick = onServers) { Text("Все серверы") }
+                }
             }
         }
     }
 }
 
 internal data class DualServerActions(val primary: String, val secondary: String?, val busy: Boolean,
-    val select: (String, Boolean) -> Unit)
+    val slots: Map<Int, String>, val select: (String, Int) -> Unit)
 internal val LocalDualServerActions = staticCompositionLocalOf<DualServerActions?> { null }
 
 @Composable
 internal fun DualRouteChoices(target: ServerRouteTarget, multi: MultiServerSettings, busy: Boolean,
     onSelect: (ServerRouteTarget) -> Unit) {
     if (target.kind == ServerRouteKind.BLOCK) Text("Текущий маршрут · заблокировано")
-    if (target.kind == ServerRouteKind.PROFILE && target.profileId != multi.secondaryProfileId)
+    if (target.kind == ServerRouteKind.PROFILE && target.profileId !in multi.slots.values)
         Text(if (target.profileId == multi.defaultProfileId) "Текущий маршрут · основной конфиг" else "Текущий маршрут · ранее назначенный конфиг")
     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         listOf("Напрямую" to ServerRouteTarget(ServerRouteKind.DIRECT),
@@ -104,10 +140,10 @@ internal fun DualRouteChoices(target: ServerRouteTarget, multi: MultiServerSetti
             FilterChip(selected = target == value, enabled = !busy, onClick = { onSelect(value) },
                 label = { Text(label) })
         }
-        FilterChip(selected = multi.secondaryProfileId != null && target.profileId == multi.secondaryProfileId,
-            enabled = !busy && multi.secondaryProfileId != null,
-            onClick = { multi.secondaryProfileId?.let { onSelect(ServerRouteTarget(ServerRouteKind.PROFILE, it)) } },
-            label = { Text("Через VPN-2") })
+        multi.slots.forEach { (slot, id) ->
+            FilterChip(selected = target.profileId == id, enabled = !busy,
+                onClick = { onSelect(ServerRouteTarget(ServerRouteKind.PROFILE, id)) }, label = { Text("Через VPN-$slot") })
+        }
     }
 }
 
@@ -117,6 +153,7 @@ internal fun DualRoutingPage(settings: AppRoutingSettings, profiles: List<Import
     val multi = requireNotNull(settings.multiServer)
     val context = LocalContext.current
     var tab by rememberSaveable { mutableStateOf(0) }
+    LaunchedEffect(multi.slots.keys) { if (tab !in listOf(0, 1) && tab !in multi.slots && (tab - 20) !in multi.slots) tab = 0 }
     var input by rememberSaveable { mutableStateOf("") }
     var search by rememberSaveable { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
@@ -130,23 +167,24 @@ internal fun DualRoutingPage(settings: AppRoutingSettings, profiles: List<Import
         runCatching { onChange(updateDualSettings(settings, multi.copy(rules = rules))) }
             .onFailure { error = it.message ?: "Не удалось изменить маршрут" }
     }
-    PageFrame("Маршруты", "Основной VPN и VPN-2") {
+    PageFrame("Маршруты", "Основной VPN и дополнительные конфиги") {
         presetsContent?.let { panel -> item { panel() } }
         item {
             Text("Основной VPN · " + (profiles.firstOrNull { it.id == multi.defaultProfileId }?.displayName ?: "Недоступен"))
-            Text("VPN-2 · " + (profiles.firstOrNull { it.id == multi.secondaryProfileId }?.displayName ?: "Выберите конфиг во вкладке «Серверы»"))
-            if (multi.secondaryPaused) Text("Режим выключен. Правила VPN-2 сохранены и сейчас идут через основной VPN.")
+            multi.slots.forEach { (slot, id) -> Text("VPN-$slot · " + (profiles.firstOrNull { it.id == id }?.displayName ?: "Недоступен")) }
+            if (multi.secondaryPaused) Text("Режим выключен. Правила дополнительных VPN сохранены и сейчас идут через основной VPN.")
             Text("Правило сайта имеет приоритет над правилом приложения.", style = MaterialTheme.typography.bodySmall)
         }
         item {
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                listOf("Сайты", "Приложения", "Приложения через VPN-2").forEachIndexed { i, label ->
+            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                (listOf(0 to "Сайты", 1 to "Приложения") + multi.slots.keys.flatMap { slot ->
+                    listOf((20 + slot) to "Сайты через VPN-$slot", slot to "Приложения через VPN-$slot") }).forEach { (i, label) ->
                     FilterChip(selected = tab == i, onClick = { tab = i }, label = { Text(label) })
                 }
             }
         }
         error?.let { item { Text(it, color = MaterialTheme.colorScheme.error) } }
-        if (tab == 0) {
+        if (tab == 0 || tab >= 22) {
             item {
                 OutlinedTextField(value = input, onValueChange = { input = it; error = null },
                     label = { Text("Домен сайта") }, singleLine = true, modifier = Modifier.fillMaxWidth())
@@ -156,11 +194,11 @@ internal fun DualRoutingPage(settings: AppRoutingSettings, profiles: List<Import
                         domain == null -> error = "Введите домен, например example.com"
                         multi.rules.any { it.domain == domain } -> error = "Этот сайт уже добавлен"
                         else -> { save(multi.rules + MultiServerRule(domain = domain,
-                            target = ServerRouteTarget(ServerRouteKind.DEFAULT))); input = "" }
+                            target = if (tab >= 22 && multi.slots[tab - 20] != null) ServerRouteTarget(ServerRouteKind.PROFILE, multi.slots[tab - 20]) else ServerRouteTarget(ServerRouteKind.DEFAULT))); input = "" }
                     }
                 }) { Text("Добавить сайт") }
             }
-            items(multi.rules.filter { it.domain != null }, key = { "site:${it.domain}:${it.includeSubdomains}" }) { rule ->
+            items(multi.rules.filter { it.domain != null && (tab == 0 || it.target.profileId == multi.slots[tab - 20]) }, key = { "site:${it.domain}:${it.includeSubdomains}" }) { rule ->
                 SoftCard {
                     Text(requireNotNull(rule.domain))
                     DualRouteChoices(rule.target, multi, busy) { target ->
@@ -173,7 +211,7 @@ internal fun DualRoutingPage(settings: AppRoutingSettings, profiles: List<Import
             item {
                 OutlinedTextField(value = search, onValueChange = { search = it }, label = { Text("Поиск приложений") },
                     singleLine = true, modifier = Modifier.fillMaxWidth())
-                if (tab == 2) Text("Включение VPN-2 заменяет прежний маршрут приложения. Выключение возвращает основной VPN.")
+                if (tab in 2..10) Text("Включение VPN-$tab заменяет прежний маршрут приложения. Выключение возвращает основной VPN.")
                 if (groups == null) Text("Загружаем приложения…")
             }
             items(groups.orEmpty().filter { group ->
@@ -204,13 +242,13 @@ internal fun DualRoutingPage(settings: AppRoutingSettings, profiles: List<Import
                         }
                     }
                     group.unavailableReason?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-                    if (tab == 2) {
+                    if (tab in 2..10) {
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Text("Через VPN-2", Modifier.weight(1f))
-                            Switch(checked = multi.secondaryProfileId != null && target.profileId == multi.secondaryProfileId,
-                                enabled = !busy && group.unavailableReason == null && multi.secondaryProfileId != null,
+                            Text("Через VPN-$tab", Modifier.weight(1f))
+                            Switch(checked = multi.slots[tab] != null && target.profileId == multi.slots[tab],
+                                enabled = !busy && group.unavailableReason == null && multi.slots[tab] != null,
                                 onCheckedChange = { enabled ->
-                                    val route = if (enabled) ServerRouteTarget(ServerRouteKind.PROFILE, requireNotNull(multi.secondaryProfileId))
+                                    val route = if (enabled) ServerRouteTarget(ServerRouteKind.PROFILE, requireNotNull(multi.slots[tab]))
                                         else ServerRouteTarget(ServerRouteKind.DEFAULT)
                                     save(assignRoutingApps(multi.rules, group.packages, route))
                                 })

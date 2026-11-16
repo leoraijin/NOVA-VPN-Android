@@ -265,11 +265,17 @@ internal fun FavoriteServerButton(profile: ImportedProfile) {
     val edit = LocalEditServer.current
     Column {
     LocalDualServerActions.current?.let { actions ->
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            FilterChip(selected = actions.primary == profile.id, enabled = !actions.busy,
-                onClick = { actions.select(profile.id, false) }, label = { Text("Основной VPN") })
-            FilterChip(selected = actions.secondary == profile.id, enabled = !actions.busy,
-                onClick = { actions.select(profile.id, true) }, label = { Text("VPN-2") })
+        var choosingRole by remember { mutableStateOf(false) }
+        Box {
+            TextButton(enabled = !actions.busy, onClick = { choosingRole = true }) { Text("Назначить VPN") }
+            DropdownMenu(expanded = choosingRole, onDismissRequest = { choosingRole = false }) {
+                DropdownMenuItem(text = { Text("Основной VPN") }, onClick = { actions.select(profile.id, 1); choosingRole = false })
+                val free = (2..10).firstOrNull { it !in actions.slots }
+                (actions.slots.keys + listOfNotNull(free)).forEach { slot ->
+                    DropdownMenuItem(text = { Text(if (slot == free) "Добавить VPN-$slot" else "VPN-$slot") },
+                        onClick = { actions.select(profile.id, slot); choosingRole = false })
+                }
+            }
         }
     }
     TextButton(onClick = { toggle(profile.id) }) {

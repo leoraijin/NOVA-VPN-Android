@@ -1,0 +1,31 @@
+{
+  "date": "2026-11-16T06:31:00.231730+00:00",
+  "feature": "up to 10 VPN configurations including primary; stable slots 2..10; paused routes use primary without modifying persisted assignments",
+  "android": {
+    "version": "0.2.76",
+    "unitTests": {
+      "tests": 574,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 2
+    },
+    "assembleOptimized": "passed",
+    "apkVariants": 5,
+    "originalCertificateSha256": "7abeb400a6f16c0adf6c127027f2bdd205ce79f558c53f631d41083ecca24626",
+    "physicalDevice": "ADB empty; not tested"
+  },
+  "windows": {
+    "version": "2.6.19",
+    "routingAssertions": 397,
+    "desktopUiAssertions": 646,
+    "renderedLayouts": 16,
+    "singBoxTenExitConfigCheck": "passed",
+    "realityTenExitConfigCheck": "passed",
+    "installerPayload": "81 files; core and Zapret included; private state excluded",
+    "installerLockTests": "passed"
+  },
+  "limitations": [
+    "Ten simultaneous real provider connections have not been exercised on a physical Android phone or on the user PC.",
+    "User installed clients and active VPN were not modified."
+  ]
+}

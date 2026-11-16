@@ -54,7 +54,9 @@ internal object RoutingModeTransitions {
     fun needsMigrationReview(settings: AppRoutingSettings,resuming: Boolean=false)=settings.multiServer==null&&!resuming&&
         (settings.mode==AppRoutingMode.INCLUDE_SELECTED||settings.packages.isNotEmpty()||settings.sites.isNotEmpty())
     fun enable(settings: AppRoutingSettings,selectedId: String?,primary: String,rules: List<MultiServerRule>,ipv6: Boolean): AppRoutingSettings {
-        val multi=MultiServerSettings((settings.multiServer?.revision?:settings.history?.savedAssignments?.revision?:0)+1,primary,rules.toList()).also {it.validate()}
+        val saved = settings.multiServer ?: settings.history?.savedAssignments
+        val multi=MultiServerSettings((saved?.revision ?: 0)+1,primary,rules.toList(), saved?.secondaryProfileId,
+            settings.multiServer?.secondaryPaused ?: false, saved?.additionalSlots.orEmpty()).also {it.validate()}
         val previous=if(settings.multiServer==null)SingleServerRouteSnapshot.capture(settings,selectedId) else settings.history?.single
         return settings.copy(packages=emptySet(),sites=emptyList(),ipv6Enabled=ipv6,multiServer=multi,history=MultiServerRoutingHistory(previous,multi))
     }

@@ -17,7 +17,7 @@ internal data class RoutingPresets(
     val hasModeHistory: Boolean get()=(presets.map {it.settings}+listOfNotNull(pending?.settings)).any {it.history!=null}
     val referencedProfileIds: Set<String> get()=(presets.map {it.settings}+listOfNotNull(pending?.settings)).flatMap { settings ->
         listOfNotNull(settings.multiServer,settings.history?.savedAssignments).flatMap {it.let {multi ->
-            MultiServerPolicy(multi.revision,multi.defaultProfileId,multi.rules,emptySet()).referencedProfileIds + listOfNotNull(multi.secondaryProfileId)}}+listOfNotNull(settings.history?.single?.profileId)
+            MultiServerPolicy(multi.revision,multi.defaultProfileId,multi.rules,emptySet()).referencedProfileIds + multi.slots.values}}+listOfNotNull(settings.history?.single?.profileId)
     }.toSet()+setOfNotNull(pending?.selection?.profileId)
 
     fun withoutServerAssignments(): RoutingPresets=copy(pending=null,presets=presets.map {preset ->

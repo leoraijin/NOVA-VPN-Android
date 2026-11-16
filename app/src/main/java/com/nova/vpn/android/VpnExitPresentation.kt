@@ -26,7 +26,8 @@ internal fun VpnUiState.exitLines(primaryName: String): List<VpnExitLine> {
     }
     if (ids.isEmpty()) return listOf(VpnExitLine("Основной VPN · $primaryName", status(null)))
     return ids.map { id ->
-        val label = if(id == primary) "Основной VPN" else if(ids.size == 2) "VPN-2" else "Дополнительный VPN"
+        val slot = appliedConfiguration?.policy?.vpnSlots?.entries?.firstOrNull { it.value == id }?.key
+        val label = if(id == primary) "Основной VPN" else if(slot != null) "VPN-$slot" else if(ids.size == 2) "VPN-2" else "Дополнительный VPN"
         val name = exitNames[id] ?: if(id == primary) primaryName else "Сервер ${id.takeLast(6)}"
         val check = exitChecks[id]
         VpnExitLine("$label · $name", status(check), check?.status in setOf(ExitCheckStatus.FAILED, ExitCheckStatus.UNAVAILABLE, ExitCheckStatus.INCOMPATIBLE))
