@@ -47,6 +47,7 @@ class RealityCoreSmokeRunner : Instrumentation() {
     private var multiConcurrentOnly=false
     private var multiExitOnly=false
     private var idleProbeSeconds = 0
+    private var idleExitCount = 10
     private var requireBatteryDischarge = false
     private var multiProcessPhase: String? = null
     private var multiWifiRecoveryOnly = false
@@ -146,6 +147,8 @@ class RealityCoreSmokeRunner : Instrumentation() {
         multiConcurrentOnly=arguments?.getString("multiConcurrentOnly")=="true"
         multiExitOnly=arguments?.getString("multiExitOnly")=="true"
         idleProbeSeconds = arguments?.getString("idleProbeSeconds")?.toInt() ?: 0
+        idleExitCount = arguments?.getString("idleExitCount")?.toInt() ?: 10
+        check(idleExitCount == 1 || idleExitCount == 2 || idleExitCount == 10)
         requireBatteryDischarge = arguments?.getString("requireBatteryDischarge") == "true"
         check(idleProbeSeconds == 0 || idleProbeSeconds in 60..3600 && multiExitOnly)
 
@@ -854,7 +857,7 @@ class RealityCoreSmokeRunner : Instrumentation() {
                 if (idleProbeSeconds > 0) {
                     check(isolatedEngine == VpnEngine.SING_BOX)
                     AppPreferencesStore(context).setVpnEngine(VpnEngine.SING_BOX)
-                    val profiles = listOf(profile) + (2..10).map { number ->
+                    val profiles = listOf(profile) + (2..idleExitCount).map { number ->
                         profile.copy(id = "idle-slot-$number", name = "Synthetic VPN $number",
                             outboundJson = JSONObject(profile.outboundJson)
                                 .put("uuid", java.util.UUID.nameUUIDFromBytes("nova-idle-slot-$number".toByteArray()).toString())
@@ -866,7 +869,7 @@ class RealityCoreSmokeRunner : Instrumentation() {
                             target = ServerRouteTarget(ServerRouteKind.PROFILE, vpn.id))
                     }
                     val settings = AppRoutingSettings(multiServer = MultiServerSettings(100, profile.id, rules))
-                    val preset = "fixture-idle-10"
+                    val preset = "fixture-idle-$idleExitCount"
                     routingStore.updatePresets { current ->
                         current.copy(presets = current.presets + RoutingPreset(preset, "Synthetic idle load", settings))
                     }
@@ -881,9 +884,9 @@ class RealityCoreSmokeRunner : Instrumentation() {
                         exits = RouteExitBindings.capture(requireNotNull(settings.multiServer), profiles, isolated),
                         commitBinding = RouteCommitBinding.capture(settings, profile.id, isolated))
                     start(isolated, presetId = preset, prepared = bound, preparedSettings = settings)
-                    waitUntil("ten healthy HTTPS exits", 90_000) {
+                    waitUntil("healthy HTTPS exits", 90_000) {
                         val checks = VpnRuntime.state.value.exitChecks
-                        checks.size == 10 && checks.values.all { it.status == ExitCheckStatus.VERIFIED }
+                        checks.size == idleExitCount && checks.values.all { it.status == ExitCheckStatus.VERIFIED }
                     }
                     uiAutomation.executeShellCommand("input keyevent 223").use { }
                     val power = context.getSystemService(android.os.PowerManager::class.java)

@@ -4,6 +4,7 @@ param(
     [Parameter(Mandatory=$true)][string]$BaselineRoot,
     [Parameter(Mandatory=$true)][string]$OutputDirectory,
     [ValidateRange(60,3600)][int]$Seconds=900,
+    [ValidateSet(1,2,10)][int]$Exits=10,
     [switch]$PrepareOnly
 )
 $ErrorActionPreference='Stop'
@@ -85,14 +86,14 @@ try {
         & $adb -s $DeviceSerial shell input keyevent 224
         Assert-NoPower
         $log=Join-Path $OutputDirectory ($case+'.txt')
-        & $adb -s $DeviceSerial shell am instrument -w -r -e multiExitOnly true -e isolatedEngine SING_BOX -e recoveryOnly true -e allowWifiToggle true -e idleProbeSeconds $Seconds -e requireBatteryDischarge true $runner | Tee-Object -FilePath $log
+        & $adb -s $DeviceSerial shell am instrument -w -r -e multiExitOnly true -e isolatedEngine SING_BOX -e recoveryOnly true -e allowWifiToggle true -e idleProbeSeconds $Seconds -e idleExitCount $Exits -e requireBatteryDischarge true $runner | Tee-Object -FilePath $log
         $result=Get-Content -LiteralPath $log -Raw
         $sample=[regex]::Match($result,'NOVA_IDLE_BENCHMARK (\{[^\r\n]+\})')
         if($result -notmatch 'INSTRUMENTATION_CODE: -1' -or !$sample.Success){
             throw "The $($case) measurement is invalid. See the instrumentation log."
         }
         $metrics=$sample.Groups[1].Value | ConvertFrom-Json
-        if($metrics.exits -ne 10 -or $metrics.charging -or $metrics.chargeDeltaMicroAh -le 0 -or
+        if($metrics.exits -ne $Exits -or $metrics.charging -or $metrics.chargeDeltaMicroAh -le 0 -or
             $metrics.elapsedMillis -lt ($Seconds * 1000) -or $metrics.httpsAttempts -lt 0){
             throw 'Invalid battery, timing, or tunnel metrics.'
         }
@@ -114,6 +115,7 @@ $baselineRate=$baseline.chargeDeltaMicroAh * 3600000.0 / $baseline.elapsedMillis
 $candidateRate=$candidate.chargeDeltaMicroAh * 3600000.0 / $candidate.elapsedMillis
 $summary=[ordered]@{
     requestedSeconds=$Seconds
+    exits=$Exits
     baselineVersion=$baseline.version
     candidateVersion=$candidate.version
     baselineDischargeMicroAhPerHour=[math]::Round($baselineRate,1)
@@ -121,6 +123,9 @@ $summary=[ordered]@{
     dischargeReductionPercent=[math]::Round(100.0 * (1.0 - $candidateRate / $baselineRate),1)
     baselineHttpsAttempts=$baseline.httpsAttempts
     candidateHttpsAttempts=$candidate.httpsAttempts
-    candidateObservedAtMost90ProbesInHour=if($Seconds -eq 3600){$candidate.httpsAttempts -le 90}else{$null}
+    baselineEndPssKiB=$baseline.endPssKiB
+    candidateEndPssKiB=$candidate.endPssKiB
+    endPssChangePercent=if($baseline.endPssKiB -gt 0){[math]::Round(100.0 * ($candidate.endPssKiB / [double]$baseline.endPssKiB - 1.0),1)}else{$null}
+    candidateObservedAtMost90ProbesInHour=if($Exits -eq 10 -and $Seconds -eq 3600){$candidate.httpsAttempts -le 90}else{$null}
 }
 $summary | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $OutputDirectory 'comparison.json') -Encoding utf8
