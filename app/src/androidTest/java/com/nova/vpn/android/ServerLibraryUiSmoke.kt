@@ -206,6 +206,16 @@ internal object ServerLibraryUiSmoke {
             }
             image.recycle()
         }
+        fun openLibraryMenu() {
+            click("Меню")
+            waitFor("Управление серверами")
+        }
+
+        fun closeLibraryMenu() {
+            click("Готово")
+            waitFor("Меню")
+        }
+
         fun awaitLifecycle(previous: MainActivity?, orientation: Int) {
             val deadline = SystemClock.elapsedRealtime() + 15_000
             while (SystemClock.elapsedRealtime() < deadline) {
@@ -213,7 +223,9 @@ internal object ServerLibraryUiSmoke {
                 if (current != null && current !== previous &&
                     context.resources.configuration.orientation == orientation) {
                     instrumentation.waitForIdleSync()
+                    openLibraryMenu()
                     waitFor("Найдено: 1 из 2000")
+                    closeLibraryMenu()
                     waitFor("Мой игровой узел")
                     return
                 }
@@ -248,6 +260,7 @@ internal object ServerLibraryUiSmoke {
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as MainActivity
             instrumentation.waitForIdleSync()
             click("Серверы")
+            openLibraryMenu()
             waitFor("Найдено: 2000 из 2000")
             stage = "responsive-filter-actions"
             click("Группировка: Без группировки")
@@ -263,6 +276,7 @@ internal object ServerLibraryUiSmoke {
             capture("controls")
             enter("Узел 0000")
             waitFor("Найдено: 1 из 2000")
+            closeLibraryMenu()
             stage = "open-original-actions"
             if (style == DesignStyle.IOS_LIQUID_GLASS.name) click("Узел 0000")
             click("Название и порядок")
@@ -273,8 +287,10 @@ internal object ServerLibraryUiSmoke {
             waitFor("Мой игровой узел")
             stage = "search-personal-name"
             // Replace the query directly to exercise saved search state.
+            openLibraryMenu()
             enter("МОЙ ИГРОВОЙ")
             waitFor("Найдено: 1 из 2000")
+            closeLibraryMenu()
             stage = "reopen-personal-actions"
             click("Название и порядок")
             click("Ниже")
