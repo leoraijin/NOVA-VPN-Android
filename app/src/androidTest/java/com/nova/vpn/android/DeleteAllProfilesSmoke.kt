@@ -239,17 +239,34 @@ internal object DeleteAllProfilesSmoke {
         val release = CountDownLatch(1)
         val entered = CountDownLatch(1)
         val executor = Executors.newSingleThreadExecutor()
-        fun find(text: String): AccessibilityNodeInfo? {
+        fun find(text: String, actionable: Boolean = false): AccessibilityNodeInfo? {
             fun visit(node: AccessibilityNodeInfo?): AccessibilityNodeInfo? {
                 if (node == null) return null
-                if (node.text?.toString() == text && node.isVisibleToUser) return node
+                val matches = node.text?.toString() == text || node.contentDescription?.toString() == text
+                if (matches && node.isVisibleToUser &&
+                    (!actionable || generateSequence(node) { it.parent }.take(10).any { it.isClickable && it.isEnabled })) {
+                    return node
+                }
                 for (i in 0 until node.childCount) visit(node.getChild(i))?.let { return it }
                 return null
             }
-            val root=ui.rootInActiveWindow
-            if(root?.packageName?.toString()!=context.packageName)return null
-            return visit(root)
+            val root = ui.rootInActiveWindow
+            return if (root?.packageName?.toString() == context.packageName) visit(root) else null
         }
+
+        fun visibleLabels(): String {
+            val root = ui.rootInActiveWindow ?: return "<no active window>"
+            if (root.packageName?.toString() != context.packageName) return "window=${root.packageName}"
+            val labels = mutableListOf<String>()
+            fun visit(node: AccessibilityNodeInfo?) {
+                if (node == null || labels.size >= 24) return
+                if (node.isVisibleToUser) (node.text ?: node.contentDescription)?.toString()?.let(labels::add)
+                for (index in 0 until node.childCount) visit(node.getChild(index))
+            }
+            visit(root)
+            return labels.joinToString(" | ")
+        }
+
         fun scrollOwnedForward():Boolean {
             val root=ui.rootInActiveWindow?:return false
             if(root.packageName?.toString()!=context.packageName)return false
@@ -268,11 +285,11 @@ internal object DeleteAllProfilesSmoke {
                 if (condition()) return
                 SystemClock.sleep(100)
             }
-            error("Timeout: $description")
+            error("Timeout: $description. Visible: ${visibleLabels()}")
         }
         fun click(text: String) {
-            await(text) { val visible=find(text)!=null; if(!visible)scrollOwnedForward(); visible }
-            var node = requireNotNull(find(text))
+            await(text) { val visible=find(text, actionable = true)!=null; if(!visible)scrollOwnedForward(); visible }
+            var node = requireNotNull(find(text, actionable = true))
             while (!node.isClickable) node = requireNotNull(node.parent)
             check(node.isEnabled && node.performAction(AccessibilityNodeInfo.ACTION_CLICK)) { "Cannot click $text" }
             instrumentation.waitForIdleSync()
@@ -314,7 +331,7 @@ internal object DeleteAllProfilesSmoke {
                 click("Ещё")
                 click("Удалить все конфиги VPN")
             }
-            click("Серверы")
+            if (find("Меню") == null) click("Серверы")
             openDeleteAll()
             await("confirmation") { find("Удалить все конфиги VPN?") != null }
             click("Отмена")
@@ -358,7 +375,7 @@ internal object DeleteAllProfilesSmoke {
             instrumentation.runOnMainSync { activity?.finish() }
             activity = instrumentation.startActivitySync(Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
             instrumentation.runOnMainSync { activity!!.window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) }
-            click("Серверы")
+            if (find("Меню") == null) click("Серверы")
             await("empty list after activity recreation") {
                 val persistedEmpty=vault.loadSnapshot()==ProfileSnapshot() && SelectedProfileStore(context).load()==null
                 val visible=listOf("Найдено: 0 из 0","Пока нет серверов","Пока нет профилей","Нет сохранённых серверов","Пока нет подключений").any {find(it)!=null}
