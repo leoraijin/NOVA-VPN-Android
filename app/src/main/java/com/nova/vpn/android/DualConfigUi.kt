@@ -163,7 +163,8 @@ internal fun DualRouteChoices(target: ServerRouteTarget, multi: MultiServerSetti
 
 @Composable
 internal fun DualRoutingPage(settings: AppRoutingSettings, profiles: List<ImportedProfile>,
-    apps: List<AppListEntry>, busy: Boolean, presetsContent: (@Composable () -> Unit)? = null, onChange: (AppRoutingSettings) -> Unit) {
+    apps: List<AppListEntry>, busy: Boolean, presetsContent: (@Composable () -> Unit)? = null,
+    onDnsChange: (AppRoutingSettings, (String?) -> Unit) -> Unit, onChange: (AppRoutingSettings) -> Unit) {
     val multi = requireNotNull(settings.multiServer)
     val context = LocalContext.current
     var tab by rememberSaveable { mutableStateOf(0) }
@@ -285,7 +286,7 @@ internal fun DualRoutingPage(settings: AppRoutingSettings, profiles: List<Import
                         }
                     } else DualRouteChoices(target, multi, busy || group.unavailableReason != null,
                         dnsSelected = group.packages.any { it in settings.customDns.appServers },
-                        dnsChoice = { AppDnsRouteChip(settings, group.packages, busy || group.unavailableReason != null, onChange) }) {
+                        dnsChoice = { AppDnsRouteChip(settings, group.packages, busy || group.unavailableReason != null, onDnsChange) }) {
                         saveApps(group.packages, it)
                     }
                 }

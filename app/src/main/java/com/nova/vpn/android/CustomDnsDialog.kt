@@ -22,38 +22,50 @@ internal fun HomeDnsControl() {
 }
 
 @Composable
-internal fun CustomDnsDialog(settings: CustomDnsSettings, onDismiss: () -> Unit, onSave: (CustomDnsSettings) -> Unit) {
+internal fun CustomDnsDialog(settings: CustomDnsSettings, onDismiss: () -> Unit, onSave: (CustomDnsSettings, (String?) -> Unit) -> Unit) {
     var draft by remember(settings) { mutableStateOf(settings) }
     var editing by remember { mutableStateOf<CustomDnsServer?>(null) }
     var adding by remember { mutableStateOf(false) }
-    AlertDialog(onDismissRequest = onDismiss, title = { Text("DNS для сайтов") }, text = {
+    var saving by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    if (!adding && editing == null) AlertDialog(onDismissRequest = { if (!saving) onDismiss() }, title = { Text("DNS для сайтов") }, text = {
         Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("Выбранные сайты используют этот DNS и прямое подключение. Домены включают поддомены. Для этого режима нужно ядро sing-box.", style = MaterialTheme.typography.bodyMedium)
-            NovaTextButton(onClick = { draft = draft.copy(selectedId = null) }) {
+            NovaTextButton(enabled = !saving, onClick = { draft = draft.copy(selectedId = null) }) {
                 Text(if (draft.selectedId == null) "✓ Обычная маршрутизация" else "Обычная маршрутизация")
             }
             draft.servers.forEach { server ->
                 Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surfaceVariant) {
                     Column(Modifier.fillMaxWidth().padding(12.dp)) {
-                        NovaTextButton(onClick = { draft = draft.copy(selectedId = server.id) }) {
+                        NovaTextButton(enabled = !saving, onClick = { draft = draft.copy(selectedId = server.id) }) {
                             Text((if (draft.selectedId == server.id) "✓ " else "") + server.name)
                         }
                         Text(server.address, style = MaterialTheme.typography.bodySmall)
                         Text("Сайтов — ${server.domains.size} · приложений — ${draft.appServers.values.count { it == server.id }}",
                             style = MaterialTheme.typography.bodySmall)
                         Row {
-                            NovaTextButton(onClick = { editing = server }) { Text("Изменить") }
-                            NovaTextButton(onClick = { draft = draft.copy(servers = draft.servers.filterNot { it.id == server.id },
+                            NovaTextButton(enabled = !saving, onClick = { editing = server }) { Text("Изменить") }
+                            NovaTextButton(enabled = !saving, onClick = { draft = draft.copy(servers = draft.servers.filterNot { it.id == server.id },
                                 selectedId = draft.selectedId.takeUnless { it == server.id },
                                 appServers = draft.appServers.filterValues { it != server.id }) }) { Text("Удалить") }
                         }
                     }
                 }
             }
-            NovaOutlinedButton(onClick = { adding = true }, enabled = draft.servers.size < 20) { Text("Добавить DNS-сервер") }
+            NovaOutlinedButton(onClick = { adding = true }, enabled = !saving && draft.servers.size < 20) { Text("Добавить DNS-сервер") }
+            error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         }
-    }, confirmButton = { NovaTextButton(onClick = { onSave(draft) }) { Text("Применить") } },
-        dismissButton = { NovaTextButton(onClick = onDismiss) { Text("Отмена") } })
+    }, confirmButton = {
+        NovaTextButton(enabled = !saving, onClick = {
+            saving = true
+            error = null
+            onSave(draft) { failure ->
+                saving = false
+                error = failure
+                if (failure == null) onDismiss()
+            }
+        }) { Text(if (saving) "Применяем…" else "Применить") }
+    }, dismissButton = { NovaTextButton(enabled = !saving, onClick = onDismiss) { Text("Отмена") } })
     if (adding || editing != null) DnsServerEditor(editing, onDismiss = { adding = false; editing = null }) { server ->
         draft = draft.copy(servers = draft.servers.filterNot { it.id == server.id } + server, selectedId = server.id)
         adding = false

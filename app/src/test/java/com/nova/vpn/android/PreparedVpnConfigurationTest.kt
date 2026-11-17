@@ -188,6 +188,42 @@ class PreparedVpnConfigurationTest {
         assertEquals(settings, store.loadPresets().active.settings)
     }
 
+    @Test fun newAppDnsCanBeCommittedWithAnUninstalledAppStillInThePreset() {
+        val context = RuntimeEnvironment.getApplication()
+        val installed = "org.example.browser"
+        val removed = "org.example.removed"
+        val info = android.content.pm.ApplicationInfo().apply { packageName = installed; uid = 14027 }
+        org.robolectric.Shadows.shadowOf(context.packageManager).installPackage(
+            android.content.pm.PackageInfo().apply { packageName = installed; applicationInfo = info }
+        )
+        val profile = ImportedProfile(id = "main", name = "Main", protocol = "socks", server = "127.0.0.1", port = 1080,
+            outboundJson = """{"type":"socks","server":"127.0.0.1","server_port":1080}""")
+        val missingRule = MultiServerRule(packageName = removed, target = ServerRouteTarget(ServerRouteKind.DIRECT))
+        val installedRule = MultiServerRule(packageName = installed, target = ServerRouteTarget(ServerRouteKind.DEFAULT))
+        val original = AppRoutingSettings(multiServer = MultiServerSettings(1, profile.id, listOf(missingRule, installedRule)))
+        val store = AppRoutingStore(context, atomicWrite = { it() })
+        store.save(original)
+        val presetId = store.loadPresets().activeId
+        val server = CustomDnsServer(name = "Test DNS", address = "tls://dns.example.org")
+        val candidate = assignDnsApps(original.copy(customDns = CustomDnsSettings(servers = listOf(server))), setOf(installed), server.id)
+        val unavailable = validateInstalledRoutingApps(requireNotNull(candidate.multiServer), context.packageManager, context.packageName) +
+            validateInstalledDnsApps(candidate.customDns, context.packageManager, context.packageName)
+        val config = SingBoxConfigFactory.build(profile, candidate, context.packageName, listOf(profile),
+            "/tmp/private-fixture-dns.db", unavailablePackages = unavailable)
+        assertFalse(config.contains(removed))
+        assertTrue(config.contains(installed))
+        assertTrue(config.contains("dns.example.org"))
+        val request = "assign-dns-with-stale-package"
+        store.stage(presetId, request, candidate, expected = original)
+        assertEquals(emptyList<CustomDnsServer>(), AppRoutingStore(context).load().customDns.servers)
+        assertTrue(store.commitPending(request, presetId, RoutePolicyIdentity.capture(candidate), profile.id,
+            RouteCommitBinding.capture(candidate, profile.id, config)))
+        val reloaded = AppRoutingStore(context).load()
+        assertEquals(listOf(server), reloaded.customDns.servers)
+        assertEquals(server.id, reloaded.customDns.appServers[installed])
+        assertEquals(listOf(missingRule), reloaded.multiServer!!.rules)
+    }
+
     @Test fun selectedPrimaryRefusesMissingOrClearedOrdinaryChoice() {
         val fr=ImportedProfile(id="fr",name="FR",protocol="socks",server="127.0.0.1",port=1,outboundJson="{}")
         assertNull(PreparedVpnConfiguration.selectedPrimary(listOf(fr),AppRoutingSettings(),"missing"))

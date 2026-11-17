@@ -146,6 +146,8 @@ import com.nova.vpn.android.data.SingBoxConfigFactory
 import com.nova.vpn.android.data.SubscriptionFetcher
 import com.nova.vpn.android.wear.WearStatusSync
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -327,22 +329,29 @@ private fun NovaAndroidApp(
     val routingRevision by routingStore.changes.collectAsStateWithLifecycle()
     val applyResults by VpnApplyRequests.tracker.results.collectAsStateWithLifecycle()
     LaunchedEffect(routingRevision, editingRoutingId) {
-        runCatching { withContext(Dispatchers.IO) { routingStore.loadPresets() } }.onSuccess {
+        try {
+            val it = withContext(Dispatchers.IO) { routingStore.loadPresets() }
             routingDocument = it
             val editing = it.presets.firstOrNull { preset -> preset.id == editingRoutingId }
             if (editingRoutingId != null && editing == null) editingRoutingId = null
             val target = editing ?: it.active
             routing = it.pending?.takeIf { change -> change.presetId == target.id }?.settings ?: target.settings
             if(it.pending==null)selectedProfileId=withContext(Dispatchers.IO){selectedProfileStore.resolveId(profiles)}.orEmpty()
-        }.onFailure { routingFailure = "Не удалось прочитать профили маршрутизации." }
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            routingFailure = "Не удалось прочитать профили маршрутизации."
+        }
     }
     LaunchedEffect(applyResults, routingRequest) {
         val result = applyResults[routingRequest] ?: return@LaunchedEffect
         when (result.status) {
+            ApplyStatus.APPLIED -> routingFailure = null
             ApplyStatus.ROLLED_BACK -> routingFailure = "Правила не применились. Восстановлен прежний профиль маршрутизации."
             ApplyStatus.FAILED -> routingFailure = "Не удалось применить правила. Сохранён прежний профиль."
             else -> Unit
         }
+        if (result.status != ApplyStatus.PENDING) routingRequest = null
     }
     var autoConnect by remember { mutableStateOf(preferencesStore.autoConnectEnabled()) }
     var autoConnectAttempted by remember { mutableStateOf(false) }
@@ -508,8 +517,14 @@ private fun NovaAndroidApp(
         }
     }
 
-    fun applyRoutingPreset(presetId: String, settings: AppRoutingSettings? = null,selectionChange: com.nova.vpn.android.data.RoutingSelectionChange?=null,expected: AppRoutingSettings?=null) {
-        if (routingPreparing || routingDocument.pending != null) return
+    fun applyRoutingPreset(presetId: String, settings: AppRoutingSettings? = null,
+        selectionChange: RoutingSelectionChange? = null, expected: AppRoutingSettings? = null,
+        onComplete: ((String?) -> Unit)? = null
+    ) {
+        if (routingPreparing || routingDocument.pending != null) {
+            onComplete?.invoke("Дождитесь применения текущих маршрутов.")
+            return
+        }
         val request = VpnUserRequests.gate.begin()
         routingPreparing = true; routingFailure = null; routingRequest = request
         scope.launch {
@@ -531,29 +546,36 @@ private fun NovaAndroidApp(
                     }
                 }
                 if (!vpnState.connected && !vpnState.connecting) {
-                    withContext(Dispatchers.IO) { VpnUserRequests.gate.accept(request) { routingStore.updatePresets(selection) { document ->
+                    val saved = withContext(Dispatchers.IO) { VpnUserRequests.gate.accept(request) { routingStore.updatePresets(selection) { document ->
                         check(document.pending==null&&document.presets.single {it.id==presetId}.settings==previous)
                         document.copy(activeId = presetId, pending = null, presets = document.presets.map {
                             if (it.id == presetId) it.copy(settings = candidate) else it
                         })
                     } } }
+                    check(saved) { "Настройки изменились. Повторите сохранение." }
+                    onComplete?.invoke(null)
                 } else {
-                    val missing = withContext(Dispatchers.IO) { (candidate.packages + candidate.multiServer?.rules.orEmpty().mapNotNull { it.packageName }).filter { name ->
-                        runCatching { context.packageManager.getApplicationInfo(name, 0) }.isFailure
-                    } }
-                    if (missing.isNotEmpty()) {
-                        routingFailure = "В профиле есть удалённые приложения. Уберите отмеченные записи из правил."
-                        return@launch
-                    }
+                    // Runtime preparation ignores missing packages without deleting their saved assignments.
                     val prepared = multiPrepared ?: withContext(Dispatchers.Default) {
                         val profile = PreparedVpnConfiguration.selectedPrimary(profiles, candidate, selectedTarget)
                             ?: error("Прежний сервер недоступен. Отключите VPN и восстановите правила, затем выберите сервер вручную.")
                         PreparedVpnConfiguration.prepare(context, profile, candidate, presetId)
                     }
-                    if (!VpnUserRequests.gate.isCurrent(request)) return@launch
+                    check(VpnUserRequests.gate.isCurrent(request)) { "Настройки изменились. Повторите сохранение." }
                     withContext(Dispatchers.IO) { routingStore.stage(presetId, request, candidate,selection,previous) }
-                    if (!VpnUserRequests.start(context, prepared, request)) {
-                        withContext(Dispatchers.IO) { routingStore.cancelPending(request) }
+                    check(VpnUserRequests.start(context, prepared, request)) { "Настройки изменились. Повторите сохранение." }
+                    if (onComplete != null) {
+                        val status = withTimeoutOrNull(30_000) {
+                            VpnApplyRequests.tracker.results.first {
+                                it[request]?.status?.let { status -> status != ApplyStatus.PENDING } == true
+                            }.getValue(request).status
+                        }
+                        onComplete(when (status) {
+                            ApplyStatus.APPLIED -> null
+                            ApplyStatus.ROLLED_BACK, ApplyStatus.FAILED -> "VPN не применил новый маршрут. Прежние правила сохранены."
+                            null -> "VPN ещё не подтвердил применение. Проверьте маршрут перед повторной попыткой."
+                            else -> "Изменение маршрута отменено."
+                        })
                     }
                 }
             } catch (cancelled: kotlinx.coroutines.CancellationException) {
@@ -561,15 +583,25 @@ private fun NovaAndroidApp(
                 throw cancelled
             } catch (error: Exception) {
                 withContext(Dispatchers.IO) { routingStore.cancelPending(request) }
-                routingFailure = if(error is com.nova.vpn.android.data.SharedUidRoutingException) error.message else "Не удалось применить профиль. Прежние правила сохранены."
+                val message = if (error is SharedUidRoutingException) error.message else null
+                routingFailure = message ?: "Не удалось применить профиль. Прежние правила сохранены."
+                onComplete?.invoke(routingFailure)
             } finally { routingPreparing = false }
         }
     }
 
-    fun saveRoutingRules(settings: AppRoutingSettings,selection: com.nova.vpn.android.data.RoutingSelectionChange?=null,expected: AppRoutingSettings?=null) {
+    fun saveRoutingRules(settings: AppRoutingSettings, selection: RoutingSelectionChange? = null,
+        expected: AppRoutingSettings? = null, onComplete: ((String?) -> Unit)? = null
+    ) {
         val target = editingRoutingId ?: routingDocument.activeId
-        if (target == routingDocument.activeId) { applyRoutingPreset(target, settings,selection,expected); return }
-        if (routingPreparing || routingDocument.pending != null) return
+        if (target == routingDocument.activeId) {
+            applyRoutingPreset(target, settings, selection, expected, onComplete)
+            return
+        }
+        if (routingPreparing || routingDocument.pending != null) {
+            onComplete?.invoke("Дождитесь применения текущих маршрутов.")
+            return
+        }
         routingPreparing = true; routingFailure = null
         scope.launch {
             try {
@@ -578,8 +610,12 @@ private fun NovaAndroidApp(
                     check(expected==null||document.presets.single {it.id==target}.settings==expected)
                     document.copy(presets = document.presets.map { if (it.id == target) it.copy(settings = settings) else it })
                 } }
+                onComplete?.invoke(null)
             } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
-            catch (_: Exception) { routingFailure = "Не удалось сохранить правила. Повторите изменение." }
+            catch (_: Exception) {
+                routingFailure = "Не удалось сохранить правила. Повторите изменение."
+                onComplete?.invoke(routingFailure)
+            }
             finally { routingPreparing = false }
         }
     }
@@ -799,10 +835,9 @@ private fun NovaAndroidApp(
             }
         ) { insets ->
           if (showCustomDns) CustomDnsDialog(routingDocument.active.settings.customDns,
-              onDismiss = { showCustomDns = false }, onSave = { dns ->
+              onDismiss = { showCustomDns = false }, onSave = { dns, complete ->
                   val active = routingDocument.active
-                  showCustomDns = false
-                  applyRoutingPreset(active.id, active.settings.copy(customDns = dns), expected = active.settings)
+                  applyRoutingPreset(active.id, active.settings.copy(customDns = dns), expected = active.settings, onComplete = complete)
               })
           CompositionLocalProvider(LocalDesignPreset provides designPreset, LocalTutorialStep provides tutorialStep,
               LocalDnsControl provides DnsControlState(routingDocument.active.settings.customDns.selected?.name ?: "По правилам маршрутизации",
@@ -880,7 +915,7 @@ private fun NovaAndroidApp(
                             profile = profiles.firstOrNull { it.id == ConnectionProfileSelection.id(vpnState, selectedProfileId,
                                 routingDocument.active.settings.multiServer?.defaultProfileId) },
                             vpnState = vpnState,
-                            error = connectError ?: vpnState.error ?: routingFailure,
+                            error = connectError ?: vpnState.error,
                             onCopyDiagnostics = {
                                 val profileId = ConnectionProfileSelection.id(vpnState, selectedProfileId,
                                     routingDocument.active.settings.multiServer?.defaultProfileId)
@@ -1007,7 +1042,7 @@ private fun NovaAndroidApp(
                                 saveRoutingRules(next)
                             },
                             profiles = profiles, selectedProfileId = selectedProfileId,
-                            onModeChanged={change->saveRoutingRules(change.settings,change.selection,change.baseline)},
+                            onModeChanged = { change, complete -> saveRoutingRules(change.settings, change.selection, change.baseline, complete) },
                             previousProfileId=if((editingRoutingId?:routingDocument.activeId)==routingDocument.activeId&&(vpnState.connected||vpnState.connecting))
                                 vpnState.appliedConfiguration?.profileId?:selectedProfileId else selectedProfileId,
                             assignmentBusy = routingPreparing || routingDocument.pending != null,
@@ -1670,11 +1705,14 @@ internal fun RoutingPage(
     assignmentBusy: Boolean = false,
     exitChecks: Map<String,ExitCheckState> = emptyMap(),
     activeRoutePreview: ActiveRoutePreview? = null,
-    onModeChanged: ((com.nova.vpn.android.data.RoutingModeChange)->Unit)?=null,
+    onModeChanged: ((RoutingModeChange, ((String?) -> Unit)?) -> Unit)? = null,
     previousProfileId: String?=selectedProfileId,
     presetsContent: (@Composable () -> Unit)? = null
 ) {
-    fun publishSettings(next: AppRoutingSettings){onModeChanged?.invoke(com.nova.vpn.android.data.RoutingModeChange(settings,next))?:onSettingsChanged(next)}
+    fun publishSettings(next: AppRoutingSettings, complete: ((String?) -> Unit)? = null) {
+        if (onModeChanged != null) onModeChanged(RoutingModeChange(settings, next), complete)
+        else { onSettingsChanged(next); complete?.invoke(null) }
+    }
     val materialRouting = LocalDesignPreset.current == DesignStyle.MATERIAL_YOU
     val iosRouting = LocalDesignPreset.current == DesignStyle.IOS_LIQUID_GLASS
     val oneUIRouting = LocalDesignPreset.current == DesignStyle.ONE_UI
@@ -1731,12 +1769,11 @@ internal fun RoutingPage(
     }
 
     fun changeMode(change: RoutingModeChange) {
-        onModeChanged?.invoke(change) ?: publishSettings(change.settings)
+        onModeChanged?.invoke(change, null) ?: publishSettings(change.settings)
     }
     if (settings.multiServer != null) {
-        DualRoutingPage(settings, profiles, apps, assignmentBusy, presetsContent) { next ->
-            changeMode(RoutingModeChange(settings, next))
-        }
+        DualRoutingPage(settings, profiles, apps, assignmentBusy, presetsContent,
+            onDnsChange = ::publishSettings, onChange = { publishSettings(it) })
         return
     }
     PageFrame(if (tabbedRouting) "Маршруты" else "Маршрутизация", "Исключённые приложения используют обычную сеть Android",
