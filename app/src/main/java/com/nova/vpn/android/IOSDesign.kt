@@ -106,6 +106,7 @@ internal fun HomePage(profiles: List<ImportedProfile>, selectedProfileId: String
                 }, fontSize = 14.sp, color = c.onSurfaceVariant, textAlign = TextAlign.Center)
             }
         }
+        item { HomeDnsControl() }
         if (!error.isNullOrBlank() || vpnState.warning != null || vpnState.transportNotice != null) item {
             IOSGroup {
                 Text(error ?: vpnState.warning ?: vpnState.transportNotice.orEmpty(), color = if (error != null || vpnState.warning != null) c.error else c.onSurfaceVariant, fontSize = 14.sp, modifier = Modifier.padding(16.dp))

@@ -22,6 +22,12 @@ class RoutePolicyIdentity(val revision: Long, profiles: Set<String>, val digest:
             val sites=JSONArray().apply { settings.sites.sortedWith(compareBy({it.domain},{it.target.name})).forEach { put(JSONArray().put(it.domain).put(it.target.name)) } }
             val canonical=JSONArray().put(1).put(multi.revision).put(multi.defaultProfileId).put(settings.mode.name)
                 .put(settings.ipv6Enabled).put(JSONArray(settings.packages.sorted())).put(sites).put(rules)
+            if (settings.customDns != com.nova.vpn.android.data.CustomDnsSettings()) {
+                canonical.put(settings.customDns.selectedId ?: JSONObject.NULL)
+                canonical.put(JSONArray().apply { settings.customDns.servers.forEach { server ->
+                    put(JSONArray().put(server.id).put(server.address).put(JSONArray(server.domains)))
+                } })
+            }
             val digest=java.security.MessageDigest.getInstance("SHA-256").digest(canonical.toString().toByteArray(Charsets.UTF_8))
                 .joinToString(""){"%02x".format(java.util.Locale.ROOT,it.toInt() and 255)}
             RoutePolicyIdentity(multi.revision,com.nova.vpn.android.data.MultiServerPolicy(multi.revision,multi.defaultProfileId,multi.effectiveRules(),emptySet()).referencedProfileIds,digest, if (multi.secondaryPaused) emptyMap() else multi.slots)

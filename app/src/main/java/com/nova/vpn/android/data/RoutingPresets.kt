@@ -84,6 +84,7 @@ internal data class RoutingPresets(
 
         internal fun validateSettings(settings: AppRoutingSettings) {
             settings.multiServer?.validate()
+            settings.customDns.validate()
             require(settings.packages.size <= 2000 && settings.sites.size <= 10000)
             require(settings.packages.all { it.length in 3..255 && it.matches(Regex("[A-Za-z_][A-Za-z0-9_]*(\\.[A-Za-z_][A-Za-z0-9_]*)+")) })
             require(settings.sites.map { it.domain }.distinct().size == settings.sites.size)
@@ -93,16 +94,18 @@ internal data class RoutingPresets(
         internal fun settingsJson(settings: AppRoutingSettings): JSONObject = JSONObject().put("mode", settings.mode.name)
             .put("multiServer", settings.multiServer?.toJson() ?: JSONObject.NULL)
             .put("history",settings.history?.toJson()?:JSONObject.NULL)
+            .put("customDns", settings.customDns.toJson())
             .put("packages", JSONArray(settings.packages.sorted())).put("ipv6", settings.ipv6Enabled)
             .put("sites", JSONArray().apply { settings.sites.forEach { put(JSONObject().put("domain", it.domain).put("target", it.target.name)) } })
 
         internal fun readSettings(json: JSONObject): AppRoutingSettings {
-            listOf("multiServer","history").forEach {key->require(!json.has(key)||json.isNull(key)||json.get(key) is JSONObject)}
+            listOf("multiServer","history","customDns").forEach {key->require(!json.has(key)||json.isNull(key)||json.get(key) is JSONObject)}
             val packages = json.getJSONArray("packages")
             val sites = json.getJSONArray("sites")
             require(packages.length()<=2000 && sites.length()<=10000)
             return AppRoutingSettings(AppRoutingMode.valueOf(json.getString("mode")), List(packages.length()) { packages.getString(it) }.toSet(),
-                List(sites.length()) { val site = sites.getJSONObject(it); SiteRoutingRule(site.getString("domain"), SiteRoutingTarget.valueOf(site.getString("target"))) }, json.getBoolean("ipv6"), json.optJSONObject("multiServer")?.let(MultiServerSettings::fromJson),json.optJSONObject("history")?.let(MultiServerRoutingHistory::fromJson))
+                List(sites.length()) { val site = sites.getJSONObject(it); SiteRoutingRule(site.getString("domain"), SiteRoutingTarget.valueOf(site.getString("target"))) }, json.getBoolean("ipv6"), json.optJSONObject("multiServer")?.let(MultiServerSettings::fromJson),json.optJSONObject("history")?.let(MultiServerRoutingHistory::fromJson),
+                json.optJSONObject("customDns")?.let(CustomDnsSettings::fromJson) ?: CustomDnsSettings())
         }
     }
 }

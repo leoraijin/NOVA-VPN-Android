@@ -120,6 +120,7 @@ internal fun WindowsHome(profiles: List<ImportedProfile>, selectedId: String, pr
                 }
             }
         }
+        item { HomeDnsControl() }
         if (error != null || state.warning != null || state.transportNotice != null) item {
             WindowsCard { WindowsRow("Сведения о соединении", error ?: state.warning ?: state.transportNotice, Icons.Outlined.Info) }
         }

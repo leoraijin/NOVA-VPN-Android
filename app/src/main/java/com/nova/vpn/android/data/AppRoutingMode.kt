@@ -11,7 +11,8 @@ data class AppRoutingSettings(
     val sites: List<SiteRoutingRule> = emptyList(),
     val ipv6Enabled: Boolean = false,
     val multiServer: MultiServerSettings? = null,
-    val history: MultiServerRoutingHistory? = null
+    val history: MultiServerRoutingHistory? = null,
+    val customDns: CustomDnsSettings = CustomDnsSettings()
 )
 
 enum class SiteRoutingTarget { VPN, DIRECT }

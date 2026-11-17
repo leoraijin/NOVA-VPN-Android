@@ -136,6 +136,7 @@ internal fun OneUIHome(profiles: List<ImportedProfile>, selectedId: String, prof
                 }
             }
         }
+        item { HomeDnsControl() }
         if (error != null || state.warning != null || state.transportNotice != null || state.connected) item {
             OneUIGroup {
                 Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {

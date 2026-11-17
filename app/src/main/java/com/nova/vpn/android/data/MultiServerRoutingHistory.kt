@@ -63,7 +63,7 @@ internal object RoutingModeTransitions {
     fun disable(settings: AppRoutingSettings): RoutingModeChange {
         val multi=requireNotNull(settings.multiServer)
         val single=settings.history?.single?:SingleServerRouteSnapshot.capture(settings.copy(multiServer=null,history=null),multi.defaultProfileId)
-        return RoutingModeChange(settings,single.settings().copy(history=MultiServerRoutingHistory(single,multi)),RoutingSelectionChange(single.profileId))
+        return RoutingModeChange(settings,single.settings().copy(history=MultiServerRoutingHistory(single,multi), customDns=settings.customDns),RoutingSelectionChange(single.profileId))
     }
     fun forget(settings: AppRoutingSettings): RoutingModeChange {
         require(settings.multiServer==null)

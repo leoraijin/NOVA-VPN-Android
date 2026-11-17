@@ -130,6 +130,7 @@ internal fun MaterialHome(profiles: List<ImportedProfile>, selectedId: String, p
                 }
             }
         }
+        item { HomeDnsControl() }
         state.transportNotice?.let { item { MaterialPanel { Text(it, style = MaterialTheme.typography.bodyMedium) } } }
         item {
             MaterialPanel {

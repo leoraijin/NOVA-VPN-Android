@@ -299,6 +299,7 @@ private fun NovaAndroidApp(
     var showDeleteAll by remember { mutableStateOf(false) }
     var deletingAll by remember { mutableStateOf(false) }
     var importing by remember { mutableStateOf(false) }
+    var showCustomDns by remember { mutableStateOf(false) }
     var routing by remember { mutableStateOf(routingStore.load()) }
     var routingDocument by remember { mutableStateOf(routingStore.loadPresets()) }
     var editingRoutingId by remember { mutableStateOf<String?>(null) }
@@ -797,7 +798,15 @@ private fun NovaAndroidApp(
                 }
             }
         ) { insets ->
-          CompositionLocalProvider(LocalDesignPreset provides designPreset, LocalTutorialStep provides tutorialStep) {
+          if (showCustomDns) CustomDnsDialog(routingDocument.active.settings.customDns,
+              onDismiss = { showCustomDns = false }, onSave = { dns ->
+                  val active = routingDocument.active
+                  showCustomDns = false
+                  applyRoutingPreset(active.id, active.settings.copy(customDns = dns), expected = active.settings)
+              })
+          CompositionLocalProvider(LocalDesignPreset provides designPreset, LocalTutorialStep provides tutorialStep,
+              LocalDnsControl provides DnsControlState(routingDocument.active.settings.customDns.selected?.name ?: "По правилам маршрутизации",
+                  !routingPreparing && routingDocument.pending == null && !vpnState.connecting) { showCustomDns = true }) {
             if (showSubscriptions) SubscriptionDialog(onDismiss = { showSubscriptions = false }, onChanged = { profiles = it })
             diagnosticSnapshot?.let { snapshot ->
               DisposableEffect(Unit) {
@@ -871,7 +880,7 @@ private fun NovaAndroidApp(
                             profile = profiles.firstOrNull { it.id == ConnectionProfileSelection.id(vpnState, selectedProfileId,
                                 routingDocument.active.settings.multiServer?.defaultProfileId) },
                             vpnState = vpnState,
-                            error = connectError ?: vpnState.error,
+                            error = connectError ?: vpnState.error ?: routingFailure,
                             onCopyDiagnostics = {
                                 val profileId = ConnectionProfileSelection.id(vpnState, selectedProfileId,
                                     routingDocument.active.settings.multiServer?.defaultProfileId)
@@ -1504,6 +1513,7 @@ internal fun StandardHomePage(
                 }
             }
         }
+        HomeDnsControl()
         Text("NOVA VPN ${BuildConfig.VERSION_NAME}", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         OutlinedButton(onClick = onCopyDiagnostics, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
             Text("Открыть диагностику")
