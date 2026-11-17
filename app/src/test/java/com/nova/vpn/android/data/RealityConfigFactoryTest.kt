@@ -67,6 +67,73 @@ class RealityConfigFactoryTest {
         }
     }
 
+    @Test fun customDnsForLegacyAppsKeepsBuilderFilterAndRoutesViaProtectedDns() {
+        val dnsApp = "org.example.dns"
+        val resolver = CustomDnsServer("custom", "DNS", "udp://dns.example:5353")
+        val source = generated(AppRoutingSettings(mode = AppRoutingMode.INCLUDE_SELECTED,
+            packages = setOf("org.example.vpn"), customDns = CustomDnsSettings(listOf(resolver), null,
+                mapOf(dnsApp to resolver.id))))
+        val prepared = RealityConfigFactory.prepare(source.toString(), own, {
+            if (it == dnsApp) 10001 else 10002
+        })
+        assertEquals(listOf("org.example.vpn", dnsApp), prepared.includedPackages)
+        assertTrue(prepared.excludedPackages.isEmpty())
+        val config = JSONObject(prepared.config)
+        val upstreams = servers(config)
+        val custom = (0 until upstreams.length()).map(upstreams::getJSONObject)
+            .single { it.optString("tag") == CustomDnsConfig.RESOLVER_PREFIX }
+        assertEquals(CustomDnsConfig.OUTBOUND_PREFIX, custom.getString("detour"))
+        assertEquals("dns.example", custom.getString("server"))
+        assertEquals(5353, custom.getInt("server_port"))
+        assertFalse(custom.has("domain_resolver"))
+        val dnsRoutes = dns(config).getJSONArray("rules")
+        assertEquals(RealityConfigFactory.CONFLICT_UID,
+            dnsRoutes.getJSONObject(0).getJSONArray("user_id").getLong(0))
+        assertEquals(10001, dnsRoutes.getJSONObject(1).getJSONArray("user_id").getInt(0))
+        assertEquals(CustomDnsConfig.RESOLVER_PREFIX, dnsRoutes.getJSONObject(1).getString("server"))
+    }
+
+    @Test fun customSiteAndAppDnsCoexistWithThreeVpnExitsAndBlockRules() {
+        val base = generated()
+        val profiles = listOf("primary", "second", "third").associateWith {
+            JSONObject(proxy(base).toString()).put("server", "$it.example")
+        }
+        val settings = MultiServerSettings(1, "primary", listOf(
+            MultiServerRule(packageName = "org.example.vpn",
+                target = ServerRouteTarget(ServerRouteKind.PROFILE, "second")),
+            MultiServerRule(domain = "site-vpn.example", includeSubdomains = true,
+                target = ServerRouteTarget(ServerRouteKind.PROFILE, "third")),
+            MultiServerRule(domain = "blocked.site-dns.example",
+                target = ServerRouteTarget(ServerRouteKind.BLOCK))
+        ), "second")
+        val site = CustomDnsServer("site", "DNS сайта", "https://site-resolver.example/query?profile=A",
+            listOf("site-dns.example"))
+        val app = CustomDnsServer("app", "DNS приложения", "tls://app-resolver.example")
+        val input = CustomDnsConfig.apply(MultiServerConfigFactory.build(base, settings, profiles, own, false,
+            "/data/local/nova.db"), CustomDnsSettings(listOf(site, app), site.id,
+            mapOf("org.example.dns" to app.id)), own)
+        val output = JSONObject(RealityConfigFactory.prepare(input.toString(), own, {
+            if (it.endsWith("dns")) 10001 else 10002
+        }, managedDual = true).config)
+        val dnsRules = dns(output).getJSONArray("rules")
+        val ordered = (0 until dnsRules.length()).map(dnsRules::getJSONObject)
+        assertTrue(ordered.indexOfFirst { it.optJSONArray("domain")?.optString(0) == "blocked.site-dns.example" } <
+            ordered.indexOfFirst { it.optJSONArray("domain")?.optString(0) == "site-dns.example" })
+        for ((domain, parent) in listOf("site-dns.example" to CustomDnsConfig.RESOLVER_PREFIX,
+                "site-vpn.example" to "dns-nova-exit-2")) {
+            val paired = ordered.filter { it.optJSONArray("domain")?.optString(0) == domain }
+            assertEquals(listOf("nova-fakeip", parent), paired.map { it.getString("server") })
+            assertEquals(listOf("A", "AAAA"), paired.first().getJSONArray("query_type").let { listOf(it.getString(0), it.getString(1)) })
+        }
+        assertEquals("${CustomDnsConfig.RESOLVER_PREFIX}-app",
+            ordered.single { it.optJSONArray("user_id")?.optInt(0) == 10001 }.getString("server"))
+        val resolverList = servers(output)
+        val endpoints = (0 until resolverList.length()).map(resolverList::getJSONObject).associateBy { it.getString("tag") }
+        assertEquals("/query?profile=A", endpoints.getValue(CustomDnsConfig.RESOLVER_PREFIX).getString("path"))
+        assertEquals("${CustomDnsConfig.OUTBOUND_PREFIX}-app",
+            endpoints.getValue("${CustomDnsConfig.RESOLVER_PREFIX}-app").getString("detour"))
+    }
+
     @Test fun generatedRealityPreservesTransportSecretsAndKeepsMetadataOutOfJson() {
         val source = generated()
         val original = source.toString()

@@ -1,0 +1,933 @@
+diff --git a/core/src/app/dns/fakeip.rs b/core/src/app/dns/fakeip.rs
+index 4fa06f9af25e9b6d7b361a246418879a0c476282..bf0dc10e80b9c865a74ad3c49885576cf9b3f642 100644
+--- a/core/src/app/dns/fakeip.rs
++++ b/core/src/app/dns/fakeip.rs
+@@ -14,7 +14,11 @@
+ use std::collections::HashMap;
+ use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+ use std::path::{Path, PathBuf};
+-use std::sync::Mutex;
++use std::sync::{Arc, Mutex, OnceLock};
++use std::time::Duration;
++
++use tokio::sync::Notify;
++use tokio::task::AbortHandle;
+ 
+ use crate::app::access::IpNet;
+ use crate::error::{Error, Result};
+@@ -37,6 +41,20 @@ struct Inner {
+     dirty: bool,
+ }
+ 
++#[derive(Default)]
++struct Persistence {
++    changed: Arc<Notify>,
++    task: OnceLock<AbortHandle>,
++}
++
++impl Drop for Persistence {
++    fn drop(&mut self) {
++        if let Some(task) = self.task.get() {
++            task.abort();
++        }
++    }
++}
++
+ pub struct FakeIp {
+     v4_base: u32,
+     v4_prefix: u8,
+@@ -46,6 +64,7 @@ pub struct FakeIp {
+     last: u32,
+     file: Option<PathBuf>,
+     inner: Mutex<Inner>,
++    persistence: Option<Persistence>,
+ }
+ 
+ fn net_bounds4(n: &IpNet) -> Option<u32> {
+@@ -124,6 +143,7 @@ impl FakeIp {
+             v6_base,
+             first,
+             last,
++            persistence: file.as_ref().map(|_| Persistence::default()),
+             file,
+             inner: Mutex::new(Inner {
+                 by_name: HashMap::new(),
+@@ -147,6 +167,26 @@ impl FakeIp {
+         Ok(fake)
+     }
+ 
++    pub(super) fn start_persistence(self: &Arc<Self>) {
++        let Some(persistence) = &self.persistence else { return };
++        persistence.task.get_or_init(|| {
++            let changed = persistence.changed.clone();
++            let weak = Arc::downgrade(self);
++            tokio::spawn(async move {
++                loop {
++                    changed.notified().await;
++                    // Batch nearby updates, then spend no timer wakeups while idle.
++                    tokio::time::sleep(Duration::from_secs(30)).await;
++                    let Some(fake) = weak.upgrade() else { return };
++                    if let Err(e) = fake.save() {
++                        tracing::warn!(error = %e, "fake-IP: таблица не сохранена");
++                    }
++                }
++            })
++            .abort_handle()
++        });
++    }
++
+     pub fn capacity(&self) -> u32 {
+         self.last - self.first + 1
+     }
+@@ -180,7 +220,12 @@ impl FakeIp {
+         }
+         g.by_off.insert(off, name.clone());
+         g.by_name.insert(name, off);
+-        g.dirty = true;
++        if !g.dirty {
++            g.dirty = true;
++            if let Some(persistence) = &self.persistence {
++                persistence.changed.notify_one();
++            }
++        }
+         off
+     }
+ 
+diff --git a/core/src/app/dns/mod.rs b/core/src/app/dns/mod.rs
+index 0f48cd8b8d256b1b793e8659511d219ffbdf3fea..bb7f4c8fcfba9b104c8cf21e3a8b9daa18e19654 100644
+--- a/core/src/app/dns/mod.rs
++++ b/core/src/app/dns/mod.rs
+@@ -242,6 +242,14 @@ impl Dns {
+                     "dns.bootstrap требует UDP-сервер с IP-адресом и прямой detour".into(),
+                 ));
+             }
++            if matches!(kind, upstream::Kind::Udp | upstream::Kind::Tcp)
++                && matches!(host, crate::vless::Address::Domain(_))
++                && !detour.as_ref().is_some_and(|d| d.clash_type() == "Direct")
++            {
++                return Err(Error::Config(
++                    "DNS по имени через UDP или TCP требует прямой detour".into(),
++                ));
++            }
+             let needs_detour = !matches!(kind, upstream::Kind::Local | upstream::Kind::FakeIp);
+             if needs_detour && detour.is_none() {
+                 return Err(Error::Config(format!(
+@@ -778,22 +786,10 @@ impl Dns {
+     }
+ 
+     /// Сохранять таблицу fake-IP раз в полминуты (если менялась).
+-    pub fn spawn_persistence(self: &Arc<Self>) {
+-        if self.fakeip.is_none() {
+-            return;
++    pub fn spawn_persistence(&self) {
++        if let Some(fake) = &self.fakeip {
++            fake.start_persistence();
+         }
+-        let weak = Arc::downgrade(self);
+-        tokio::spawn(async move {
+-            loop {
+-                tokio::time::sleep(Duration::from_secs(30)).await;
+-                let Some(dns) = weak.upgrade() else { break };
+-                if let Some(f) = &dns.fakeip {
+-                    if let Err(e) = f.save() {
+-                        tracing::warn!(error = %e, "fake-IP: таблица не сохранена");
+-                    }
+-                }
+-            }
+-        });
+     }
+ 
+     /// Сохранить таблицу fake-IP сейчас (при выходе).
+diff --git a/core/src/app/dns/upstream.rs b/core/src/app/dns/upstream.rs
+index d6f6c28e09a702341fe7c31e53341dd05e37ad9c..a8e6e03bb14bc64ee51c886a28dedf54591ac116 100644
+--- a/core/src/app/dns/upstream.rs
++++ b/core/src/app/dns/upstream.rs
+@@ -9,17 +9,17 @@
+ //! (имя и тип) должны совпасть — иначе ответ отбрасывается (защита от
+ //! подмены по UDP).
+ 
+-use std::collections::HashMap;
++use std::collections::{hash_map::Entry, HashMap};
+ use std::net::{IpAddr, SocketAddr};
+ use std::sync::atomic::{AtomicBool, Ordering};
+-use std::sync::{Arc, Mutex};
++use std::sync::{Arc, Mutex, OnceLock};
+ use std::time::Duration;
+ 
+ use bytes::Bytes;
+ use hickory_proto::op::{Message, MessageType, ResponseCode};
+ use hickory_proto::rr::rdata::{A, AAAA};
+ use hickory_proto::rr::{RData, Record, RecordType};
+-use tokio::io::{AsyncReadExt, AsyncWriteExt};
++use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader};
+ use tokio::sync::oneshot;
+ 
+ use crate::app::outbound::{Outbound, UdpSession};
+@@ -92,6 +92,14 @@ pub fn parse_address(s: &str) -> Result<(Kind, Address, u16)> {
+     if !path.is_empty() && !matches!(kind, Kind::Https { .. }) {
+         return Err(bad("путь бывает только у https://"));
+     }
++    if let Kind::Https { path } = &kind {
++        if path.contains('#') || !crate::http1::request_part_ok(path) {
++            return Err(bad("некорректный путь HTTPS"));
++        }
++    }
++    if !crate::http1::request_part_ok(authority) {
++        return Err(bad("некорректный адрес сервера"));
++    }
+     let (host, port) = if let Some(r) = authority.strip_prefix('[') {
+         let (h, tail) = r.split_once(']').ok_or_else(|| bad("нет ']'"))?;
+         let port = match tail.strip_prefix(':') {
+@@ -112,14 +120,7 @@ pub fn parse_address(s: &str) -> Result<(Kind, Address, u16)> {
+     let addr = match host.parse::<IpAddr>() {
+         Ok(IpAddr::V4(v4)) => Address::Ipv4(v4),
+         Ok(IpAddr::V6(v6)) => Address::Ipv6(v6),
+-        Err(_) => {
+-            if matches!(kind, Kind::Udp | Kind::Tcp) {
+-                return Err(bad(
+-                    "для udp:// и tcp:// нужен IP-адрес (имя самого DNS-сервера нечем разрешить)",
+-                ));
+-            }
+-            Address::Domain(host.to_ascii_lowercase())
+-        }
++        Err(_) => Address::Domain(host.to_ascii_lowercase()),
+     };
+     Ok((kind, addr, port))
+ }
+@@ -157,10 +158,34 @@ fn decode(b: &[u8]) -> Result<Message> {
+ 
+ /// Общая UDP-сессия с сервером: ответы раздаются ожидающим запросам по
+ /// номеру.
++type PendingQueries = Mutex<HashMap<u16, Option<oneshot::Sender<Vec<u8>>>>>;
++
+ struct UdpClient {
+     session: Arc<dyn UdpSession>,
+-    pending: Mutex<HashMap<u16, oneshot::Sender<Vec<u8>>>>,
+-    closed: AtomicBool,
++    target: Address,
++    pending: Arc<PendingQueries>,
++    closed: Arc<AtomicBool>,
++    reader: tokio::task::AbortHandle,
++}
++
++impl Drop for UdpClient {
++    fn drop(&mut self) {
++        self.reader.abort();
++    }
++}
++
++struct PendingQuery<'a> {
++    queries: &'a PendingQueries,
++    id: u16,
++}
++
++impl Drop for PendingQuery<'_> {
++    fn drop(&mut self) {
++        self.queries
++            .lock()
++            .unwrap_or_else(std::sync::PoisonError::into_inner)
++            .remove(&self.id);
++    }
+ }
+ 
+ async fn read_framed<S: AsyncStream + ?Sized>(s: &mut S) -> Result<Vec<u8>> {
+@@ -183,6 +208,37 @@ async fn write_framed<S: AsyncStream + ?Sized>(s: &mut S, msg: &[u8]) -> Result<
+ 
+ type TlsConn = tokio_rustls::client::TlsStream<Box<dyn AsyncStream>>;
+ 
++enum DohConnection {
++    H2(h2::client::SendRequest<Bytes>),
++    Http1(TlsConn),
++}
++
++async fn exchange_http1<S: AsyncStream>(
++    mut stream: S,
++    request: &http::Uri,
++    bytes: &[u8],
++) -> Result<Message> {
++    let authority = request.authority().ok_or_else(|| Error::Protocol("DoH: нет Host".into()))?;
++    let path = request.path_and_query().map_or("/", |path| path.as_str());
++    let head = format!(
++        "POST {path} HTTP/1.1\r\nHost: {authority}\r\nConnection: close\r\n\
++         Content-Type: application/dns-message\r\nAccept: application/dns-message\r\n\
++         Content-Length: {}\r\n\r\n",
++        bytes.len()
++    );
++    stream.write_all(head.as_bytes()).await?;
++    stream.write_all(bytes).await?;
++    stream.flush().await?;
++    let mut reader = BufReader::new(stream);
++    let head = crate::http1::read_head(&mut reader).await?;
++    if head.status != 200 {
++        return Err(Error::Protocol(format!("DoH: сервер ответил {}", head.status)));
++    }
++    let mut body = crate::app::http_client::Limited::new(MAX_MESSAGE);
++    crate::http1::pump_body(&mut reader, head.body_kind(), Some(&mut body)).await?;
++    decode(&body.into_inner())
++}
++
+ pub struct Upstream {
+     pub tag: String,
+     pub kind: Kind,
+@@ -192,6 +248,7 @@ pub struct Upstream {
+     roots: Option<rustls::RootCertStore>,
+     udp: tokio::sync::Mutex<Option<Arc<UdpClient>>>,
+     tls_pool: Mutex<Vec<TlsConn>>,
++    tls_config: OnceLock<Arc<rustls::ClientConfig>>,
+     h2: tokio::sync::Mutex<Option<h2::client::SendRequest<Bytes>>>,
+     quic: tokio::sync::Mutex<Option<(quinn::Endpoint, quinn::Connection)>>,
+ }
+@@ -219,6 +276,7 @@ impl Upstream {
+             roots,
+             udp: tokio::sync::Mutex::new(None),
+             tls_pool: Mutex::new(Vec::new()),
++            tls_config: OnceLock::new(),
+             h2: tokio::sync::Mutex::new(None),
+             quic: tokio::sync::Mutex::new(None),
+         })
+@@ -308,47 +366,63 @@ impl Upstream {
+         Ok(answer)
+     }
+ 
+-    async fn udp_client(&self) -> Result<Arc<UdpClient>> {
++    async fn udp_client(&self, attempt: usize) -> Result<Arc<UdpClient>> {
+         let mut g = self.udp.lock().await;
+         if let Some(c) = g.as_ref() {
+             if !c.closed.load(Ordering::Relaxed) {
+                 return Ok(c.clone());
+             }
+         }
+-        let session = self.detour().udp(&self.meta(Network::Udp)).await?;
+-        let client = Arc::new(UdpClient {
+-            session,
+-            pending: Mutex::new(HashMap::new()),
+-            closed: AtomicBool::new(false),
+-        });
+-        let reader = client.clone();
+-        let (host, port) = (self.host.clone(), self.port);
++        let mut meta = self.meta(Network::Udp);
++        if let Address::Domain(host) = &self.host {
++            let addresses = crate::transport::tcp_tls::resolve_server(host, self.port).await?;
++            let address = addresses
++                .get(attempt)
++                .or_else(|| addresses.first())
++                .ok_or_else(|| Error::Protocol("DNS: адрес сервера не найден".into()))?;
++            meta.target = match address.ip() {
++                IpAddr::V4(ip) => Address::Ipv4(ip),
++                IpAddr::V6(ip) => Address::Ipv6(ip),
++            };
++        }
++        let session = self.detour().udp(&meta).await?;
++        let pending = Arc::new(PendingQueries::default());
++        let closed = Arc::new(AtomicBool::new(false));
++        let (reader_session, reader_pending, reader_closed) =
++            (session.clone(), pending.clone(), closed.clone());
++        let (host, port) = (meta.target.clone(), self.port);
+         let tag = self.tag.clone();
+-        tokio::spawn(async move {
+-            while let Ok(Some((src, sport, data))) = reader.session.recv().await {
+-                // Ответ должен прийти с адреса сервера.
+-                let from_server =
+-                    sport == port && (matches!(host, Address::Domain(_)) || src == host);
+-                if !from_server || data.len() < 2 {
++        let reader = tokio::spawn(async move {
++            while let Ok(Some((src, sport, data))) = reader_session.recv().await {
++                if sport != port || src != host || data.len() < 2 {
+                     tracing::debug!(dns = %tag, "DNS: пакет не от сервера — отброшен");
+                     continue;
+                 }
+                 let id = u16::from_be_bytes([data[0], data[1]]);
+-                if let Some(tx) = reader
+-                    .pending
++                if let Some(tx) = reader_pending
+                     .lock()
+                     .unwrap_or_else(std::sync::PoisonError::into_inner)
+-                    .remove(&id)
++                    .get_mut(&id)
++                    .and_then(Option::take)
+                 {
+                     let _ = tx.send(data);
+                 }
+             }
+-            reader.closed.store(true, Ordering::Relaxed);
+-            reader
+-                .pending
++            reader_closed.store(true, Ordering::Relaxed);
++            for tx in reader_pending
+                 .lock()
+                 .unwrap_or_else(std::sync::PoisonError::into_inner)
+-                .clear();
++                .values_mut()
++            {
++                tx.take();
++            }
++        });
++        let client = Arc::new(UdpClient {
++            session,
++            target: meta.target,
++            pending,
++            closed,
++            reader: reader.abort_handle(),
+         });
+         *g = Some(client.clone());
+         Ok(client)
+@@ -358,24 +432,33 @@ impl Upstream {
+         let bytes = encode(q)?;
+         let id = q.metadata.id;
+         for attempt in 0..2 {
+-            let client = self.udp_client().await?;
++            let client = self.udp_client(attempt).await?;
+             let (tx, rx) = oneshot::channel();
+-            client
+-                .pending
+-                .lock()
+-                .unwrap_or_else(std::sync::PoisonError::into_inner)
+-                .insert(id, tx);
++            {
++                let mut pending = client
++                    .pending
++                    .lock()
++                    .unwrap_or_else(std::sync::PoisonError::into_inner);
++                match pending.entry(id) {
++                    Entry::Vacant(entry) if !client.closed.load(Ordering::Relaxed) => {
++                        entry.insert(Some(tx));
++                    }
++                    Entry::Vacant(_) => continue,
++                    Entry::Occupied(_) => {
++                        return Err(Error::Protocol("DNS: номер запроса уже используется".into()));
++                    }
++                }
++            }
++            let _pending = PendingQuery {
++                queries: &client.pending,
++                id,
++            };
+             if let Err(e) = client
+                 .session
+-                .send(self.host.clone(), self.port, bytes.clone())
++                .send(client.target.clone(), self.port, bytes.clone())
+                 .await
+             {
+                 client.closed.store(true, Ordering::Relaxed);
+-                client
+-                    .pending
+-                    .lock()
+-                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+-                    .remove(&id);
+                 if attempt == 1 {
+                     return Err(e);
+                 }
+@@ -390,11 +473,10 @@ impl Upstream {
+                 }
+                 Ok(Err(_)) => {} // сессия закрылась — попробуем новую
+                 Err(_) => {
+-                    client
+-                        .pending
+-                        .lock()
+-                        .unwrap_or_else(std::sync::PoisonError::into_inner)
+-                        .remove(&id);
++                    if matches!(self.host, Address::Domain(_)) {
++                        // A resolver hostname can have an unreachable address family.
++                        client.closed.store(true, Ordering::Relaxed);
++                    }
+                 }
+             }
+         }
+@@ -417,8 +499,15 @@ impl Upstream {
+ 
+     async fn new_tls(&self) -> Result<TlsConn> {
+         let s = self.detour().connect(&self.meta(Network::Tcp)).await?;
+-        crate::transport::tcp_tls::tls_over(s, &self.tls_name(), self.roots.clone(), Vec::new())
+-            .await
++        let config = self.tls_config.get_or_init(|| {
++            let alpn = if matches!(self.kind, Kind::Https { .. }) {
++                vec![b"h2".to_vec(), b"http/1.1".to_vec()]
++            } else {
++                Vec::new()
++            };
++            crate::transport::tcp_tls::tls_over_config(self.roots.clone(), alpn)
++        });
++        crate::transport::tcp_tls::tls_over_with_config(s, &self.tls_name(), config.clone()).await
+     }
+ 
+     async fn exchange_tls(&self, q: &Message) -> Result<Message> {
+@@ -462,19 +551,15 @@ impl Upstream {
+         .map_err(|_| Error::Protocol(format!("DNS {}: сервер не ответил по TLS", self.tag)))?
+     }
+ 
+-    async fn h2_sender(&self) -> Result<h2::client::SendRequest<Bytes>> {
++    async fn doh_connection(&self) -> Result<DohConnection> {
+         let mut g = self.h2.lock().await;
+         if let Some(s) = g.as_ref() {
+-            return Ok(s.clone());
++            return Ok(DohConnection::H2(s.clone()));
++        }
++        let tls = self.new_tls().await?;
++        if tls.get_ref().1.alpn_protocol() != Some(b"h2") {
++            return Ok(DohConnection::Http1(tls));
+         }
+-        let s = self.detour().connect(&self.meta(Network::Tcp)).await?;
+-        let tls = crate::transport::tcp_tls::tls_over(
+-            s,
+-            &self.tls_name(),
+-            self.roots.clone(),
+-            vec![b"h2".to_vec()],
+-        )
+-        .await?;
+         let (send, conn) = h2::client::handshake(tls)
+             .await
+             .map_err(|e| Error::Protocol(format!("DoH: h2: {e}")))?;
+@@ -485,7 +570,7 @@ impl Upstream {
+             }
+         });
+         *g = Some(send.clone());
+-        Ok(send)
++        Ok(DohConnection::H2(send))
+     }
+ 
+     async fn exchange_https(&self, q: &Message, path: &str) -> Result<Message> {
+@@ -496,16 +581,21 @@ impl Upstream {
+             (h, 443) => h.to_string(),
+             (h, p) => format!("{h}:{p}"),
+         };
+-        let uri = format!("https://{authority}{path}");
++        let uri = format!("https://{authority}{path}")
++            .parse::<http::Uri>()
++            .map_err(|e| Error::Protocol(format!("DoH: {e}")))?;
+         let once = || async {
+-            let send = self.h2_sender().await?;
++            let send = match self.doh_connection().await? {
++                DohConnection::H2(send) => send,
++                DohConnection::Http1(stream) => return exchange_http1(stream, &uri, &bytes).await,
++            };
+             let mut send = send
+                 .ready()
+                 .await
+                 .map_err(|e| Error::Protocol(format!("DoH: {e}")))?;
+             let req = http::Request::builder()
+                 .method("POST")
+-                .uri(&uri)
++                .uri(uri.clone())
+                 .header("content-type", "application/dns-message")
+                 .header("accept", "application/dns-message")
+                 .header("content-length", bytes.len())
+@@ -703,10 +793,17 @@ mod tests {
+                 853
+             )
+         );
++        assert_eq!(
++            p("udp://dns.google"),
++            (Kind::Udp, Address::Domain("dns.google".into()), 53)
++        );
++        assert_eq!(
++            p("tcp://dns.google:5353"),
++            (Kind::Tcp, Address::Domain("dns.google".into()), 5353)
++        );
+         for bad in [
+             "ftp://1.1.1.1",
+             "quic://1.1.1.1/x",
+-            "udp://dns.google",
+             "tls://",
+             "1.1.1.1/x",
+             "tcp://1.1.1.1:99999",
+diff --git a/core/src/app/http_client.rs b/core/src/app/http_client.rs
+index f024f73ea6d76c4c7b17a4a9a33008daa3799597..73a09892e1a866182532dfe8b9a345b97e06219f 100644
+--- a/core/src/app/http_client.rs
++++ b/core/src/app/http_client.rs
+@@ -149,11 +149,21 @@ pub async fn probe(out: &dyn Outbound, url: &Url, timeout: Duration) -> Result<D
+ }
+ 
+ /// Буфер с потолком: больше `limit` байт — ошибка.
+-struct Limited {
++pub(super) struct Limited {
+     buf: Vec<u8>,
+     limit: usize,
+ }
+ 
++impl Limited {
++    pub(super) fn new(limit: usize) -> Self {
++        Self { buf: Vec::new(), limit }
++    }
++
++    pub(super) fn into_inner(self) -> Vec<u8> {
++        self.buf
++    }
++}
++
+ impl AsyncWrite for Limited {
+     fn poll_write(
+         mut self: Pin<&mut Self>,
+@@ -267,15 +277,12 @@ pub async fn get(
+                 }
+                 continue;
+             }
+-            let mut body = Limited {
+-                buf: Vec::new(),
+-                limit,
+-            };
++            let mut body = Limited::new(limit);
+             http1::pump_body(&mut r, head.body_kind(), Some(&mut body)).await?;
+             return Ok(Response {
+                 status: head.status,
+                 headers: head.headers,
+-                body: body.buf,
++                body: body.into_inner(),
+             });
+         }
+         Err(Error::Protocol("слишком много перенаправлений".into()))
+diff --git a/core/src/app/tun/mod.rs b/core/src/app/tun/mod.rs
+index 5e09e015b6cf83a88425a6061141b0c4739fb83d..8cc913eb8246501fadd93035f835cf81fc58aa17 100644
+--- a/core/src/app/tun/mod.rs
++++ b/core/src/app/tun/mod.rs
+@@ -414,19 +414,15 @@ impl TunInbound {
+         if is_local_only(dst.ip()) {
+             return Ok(());
+         }
+-        let mut buf = vec![0u8; 65535];
+         if self.settings.dns_hijack && dst.port() == 53 {
+             if let Some(dns) = router.dns().cloned() {
+                 let owner = dns.owner_for_flow(Network::Udp, src, dst).await;
+-                loop {
+-                    let n = u.read(&mut buf).await?;
+-                    if n == 0 {
+-                        return Ok(());
+-                    }
+-                    if let Some(a) = answer_bytes_for(&dns, &buf[..n], true, Some(&owner)).await {
+-                        u.write_all(&a).await?;
++                while let Some(data) = u.recv().await {
++                    if let Some(answer) = answer_bytes_for(&dns, &data, true, Some(&owner)).await {
++                        u.send(answer).await?;
+                     }
+                 }
++                return Ok(());
+             }
+         }
+         if in_tun_net(&self.settings, dst) {
+@@ -484,13 +480,10 @@ impl TunInbound {
+         }
+         loop {
+             tokio::select! {
+-                r = u.read(&mut buf) => {
+-                    let n = r?;
+-                    if n == 0 {
+-                        return Ok(());
+-                    }
+-                    conn.add_up(n as u64);
+-                    session.send(meta.target.clone(), meta.port, buf[..n].to_vec()).await?;
++                data = u.recv() => {
++                    let Some(data) = data else { return Ok(()) };
++                    conn.add_up(data.len() as u64);
++                    session.send(meta.target.clone(), meta.port, data).await?;
+                 }
+                 r = session.recv() => {
+                     match r? {
+@@ -498,7 +491,7 @@ impl TunInbound {
+                         // приложение (так устроен [`udp::UdpFlow`]).
+                         Some((_, _, data)) => {
+                             conn.add_down(data.len() as u64);
+-                            u.write_all(&data).await?
++                            u.send(data).await?
+                         }
+                         None => return Ok(()),
+                     }
+diff --git a/core/src/app/tun/udp.rs b/core/src/app/tun/udp.rs
+index 65642b708aedf92576195724d1173da0ca73c2ce..ef6b128b7ddf2c5f8149976e74a83941e18021cf 100644
+--- a/core/src/app/tun/udp.rs
++++ b/core/src/app/tun/udp.rs
+@@ -2,12 +2,12 @@
+ //! UDP входа TUN: датаграммы общего UDP-сокета стека раскладываются по
+ //! потокам — по одному на пару (приложение, назначение), как
+ //! соединения TCP. Поток читается и пишется по одной датаграмме
+-//! (`AsyncRead`/`AsyncWrite`), ответы уходят приложению «от» адреса,
++//! Ответы уходят приложению «от» адреса,
+ //! куда оно отправляло (в том числе от fake-IP), и закрывается сам,
+ //! если в обе стороны ничего не шло [`UDP_IDLE`](super::super::outbound::UDP_IDLE).
+ 
+ use std::collections::HashMap;
+-use std::future::Future;
++use std::future::{poll_fn, Future};
+ use std::net::SocketAddr;
+ use std::pin::Pin;
+ use std::sync::Arc;
+@@ -16,10 +16,9 @@ use std::time::Duration;
+ 
+ use futures_util::{SinkExt, StreamExt};
+ use netstack_smoltcp::udp::{ReadHalf, UdpMsg, WriteHalf};
+-use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
++use tokio::io::{AsyncRead, ReadBuf};
+ use tokio::sync::{mpsc, OwnedSemaphorePermit, Semaphore};
+ use tokio::time::{Instant, Sleep};
+-use tokio_util::sync::PollSender;
+ 
+ /// Очередь датаграмм одного потока: дальше — отбрасываются (UDP).
+ const FLOW_QUEUE: usize = 256;
+@@ -33,7 +32,7 @@ pub struct UdpFlow {
+     local: SocketAddr,
+     peer: SocketAddr,
+     rx: mpsc::Receiver<Vec<u8>>,
+-    tx: PollSender<UdpMsg>,
++    tx: mpsc::Sender<UdpMsg>,
+     idle: Duration,
+     deadline: Pin<Box<Sleep>>,
+     _permit: OwnedSemaphorePermit,
+@@ -50,6 +49,31 @@ impl UdpFlow {
+         self.peer
+     }
+ 
++    pub async fn recv(&mut self) -> Option<Vec<u8>> {
++        poll_fn(|cx| self.poll_datagram(cx)).await
++    }
++
++    pub async fn send(&mut self, data: Vec<u8>) -> std::io::Result<()> {
++        self.tx
++            .send((data, self.peer, self.local))
++            .await
++            .map_err(|_| std::io::Error::from(std::io::ErrorKind::BrokenPipe))?;
++        self.touch();
++        Ok(())
++    }
++
++    fn poll_datagram(&mut self, cx: &mut Context<'_>) -> Poll<Option<Vec<u8>>> {
++        match self.rx.poll_recv(cx) {
++            Poll::Ready(data) => {
++                if data.is_some() {
++                    self.touch();
++                }
++                Poll::Ready(data)
++            }
++            Poll::Pending => self.deadline.as_mut().poll(cx).map(|_| None),
++        }
++    }
++
+     fn touch(&mut self) {
+         let at = Instant::now() + self.idle;
+         self.deadline.as_mut().reset(at);
+@@ -64,47 +88,12 @@ impl AsyncRead for UdpFlow {
+         cx: &mut Context<'_>,
+         buf: &mut ReadBuf<'_>,
+     ) -> Poll<std::io::Result<()>> {
+-        match self.rx.poll_recv(cx) {
+-            Poll::Ready(Some(d)) => {
+-                self.touch();
+-                let n = d.len().min(buf.remaining());
+-                buf.put_slice(&d[..n]);
+-                Poll::Ready(Ok(()))
++        self.poll_datagram(cx).map(|data| {
++            if let Some(data) = data {
++                buf.put_slice(&data[..data.len().min(buf.remaining())]);
+             }
+-            Poll::Ready(None) => Poll::Ready(Ok(())),
+-            Poll::Pending => match self.deadline.as_mut().poll(cx) {
+-                Poll::Ready(()) => Poll::Ready(Ok(())),
+-                Poll::Pending => Poll::Pending,
+-            },
+-        }
+-    }
+-}
+-
+-impl AsyncWrite for UdpFlow {
+-    /// Одна запись — одна датаграмма приложению.
+-    fn poll_write(
+-        mut self: Pin<&mut Self>,
+-        cx: &mut Context<'_>,
+-        buf: &[u8],
+-    ) -> Poll<std::io::Result<usize>> {
+-        let closed = || std::io::Error::from(std::io::ErrorKind::BrokenPipe);
+-        match self.tx.poll_reserve(cx) {
+-            Poll::Ready(Ok(())) => {}
+-            Poll::Ready(Err(_)) => return Poll::Ready(Err(closed())),
+-            Poll::Pending => return Poll::Pending,
+-        }
+-        let msg = (buf.to_vec(), self.peer, self.local);
+-        self.tx.send_item(msg).map_err(|_| closed())?;
+-        self.touch();
+-        Poll::Ready(Ok(buf.len()))
+-    }
+-
+-    fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+-        Poll::Ready(Ok(()))
+-    }
+-
+-    fn poll_shutdown(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+-        Poll::Ready(Ok(()))
++            Ok(())
++        })
+     }
+ }
+ 
+@@ -178,7 +167,7 @@ fn open(
+         local,
+         peer,
+         rx,
+-        tx: PollSender::new(reply.clone()),
++        tx: reply.clone(),
+         idle,
+         deadline: Box::pin(tokio::time::sleep(idle)),
+         _permit: permit,
+diff --git a/core/src/transport/tcp_tls.rs b/core/src/transport/tcp_tls.rs
+index 1f1997a1e1ae1977724ee544003e16e870aafe69..1df2e32e7cc5a351170c6ecd2d65e578e110b912 100644
+--- a/core/src/transport/tcp_tls.rs
++++ b/core/src/transport/tcp_tls.rs
+@@ -524,13 +524,30 @@ pub async fn tls_over<S>(
+ where
+     S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
+ {
++    tls_over_with_config(stream, server_name, tls_over_config(roots, alpn)).await
++}
++
++pub(crate) fn tls_over_config(
++    roots: Option<RootCertStore>,
++    alpn: Vec<Vec<u8>>,
++) -> Arc<ClientConfig> {
+     ensure_crypto_provider();
+-    let config = build_client_config(
++    Arc::new(build_client_config(
+         roots.unwrap_or_else(default_root_store),
+         alpn,
+         crate::fingerprint::Browser::Chrome,
+-    );
+-    let connector = TlsConnector::from(Arc::new(config));
++    ))
++}
++
++pub(crate) async fn tls_over_with_config<S>(
++    stream: S,
++    server_name: &str,
++    config: Arc<ClientConfig>,
++) -> Result<TlsStream<S>>
++where
++    S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
++{
++    let connector = TlsConnector::from(config);
+     let name = ServerName::try_from(server_name.to_string()).map_err(Error::InvalidDnsName)?;
+     with_handshake_timeout("TLS", connector.connect(name, stream)).await
+ }
+diff --git a/core/tests/app_dns.rs b/core/tests/app_dns.rs
+index ea4815b536ca173827d0bfad4ff550b11ce577c1..680e4bf8f63ad8b064dc0875c05835904148ef81 100644
+--- a/core/tests/app_dns.rs
++++ b/core/tests/app_dns.rs
+@@ -15,7 +15,7 @@ use hickory_proto::op::{Message, MessageType, OpCode, Query, ResponseCode};
+ use hickory_proto::rr::rdata::A;
+ use hickory_proto::rr::{Name, RData, Record, RecordType};
+ use rustls::pki_types::{PrivateKeyDer, PrivatePkcs8KeyDer};
+-use tokio::io::{AsyncReadExt, AsyncWriteExt};
++use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
+ use tokio::net::{TcpListener, TcpStream, UdpSocket};
+ 
+ use reality_core::app::config::Config;
+@@ -106,7 +106,7 @@ struct Tls {
+ }
+ 
+ /// Сертификат на 127.0.0.1 и файл с ним для `ca_file`.
+-fn tls_setup(name: &str) -> Tls {
++fn tls_setup(name: &str, alpn: &[u8]) -> Tls {
+     reality_core::transport::tcp_tls::ensure_crypto_provider();
+     let ck = rcgen::generate_simple_self_signed(vec!["127.0.0.1".to_string()]).unwrap();
+     // Свой каталог на каждый вызов: тесты идут параллельно.
+@@ -121,7 +121,7 @@ fn tls_setup(name: &str) -> Tls {
+         .with_no_client_auth()
+         .with_single_cert(vec![ck.cert.der().clone()], key)
+         .unwrap();
+-    cfg.alpn_protocols = vec![b"h2".to_vec()];
++    cfg.alpn_protocols = vec![alpn.to_vec()];
+     Tls {
+         acceptor: tokio_rustls::TlsAcceptor::from(Arc::new(cfg)),
+         ca_file,
+@@ -130,7 +130,7 @@ fn tls_setup(name: &str) -> Tls {
+ 
+ /// DNS over TLS на 127.0.0.1.
+ async fn dot_server(ip: Ipv4Addr) -> (SocketAddr, PathBuf) {
+-    let tls = tls_setup("dot");
++    let tls = tls_setup("dot", b"h2");
+     let l = TcpListener::bind("127.0.0.1:0").await.unwrap();
+     let addr = l.local_addr().unwrap();
+     tokio::spawn(async move {
+@@ -162,7 +162,7 @@ async fn dot_server(ip: Ipv4Addr) -> (SocketAddr, PathBuf) {
+ 
+ /// DNS over HTTPS (HTTP/2, POST /dns-query) на 127.0.0.1.
+ async fn doh_server(ip: Ipv4Addr) -> (SocketAddr, PathBuf) {
+-    let tls = tls_setup("doh");
++    let tls = tls_setup("doh", b"h2");
+     let l = TcpListener::bind("127.0.0.1:0").await.unwrap();
+     let addr = l.local_addr().unwrap();
+     tokio::spawn(async move {
+@@ -206,6 +206,70 @@ async fn doh_server(ip: Ipv4Addr) -> (SocketAddr, PathBuf) {
+     (addr, tls.ca_file)
+ }
+ 
++async fn doh_http1_server(ip: Ipv4Addr) -> (SocketAddr, PathBuf) {
++    let tls = tls_setup("doh-http1", b"http/1.1");
++    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
++    let addr = listener.local_addr().unwrap();
++    tokio::spawn(async move {
++        while let Ok((stream, _)) = listener.accept().await {
++            let acceptor = tls.acceptor.clone();
++            tokio::spawn(async move {
++                let Ok(stream) = acceptor.accept(stream).await else { return };
++                assert_eq!(stream.get_ref().1.alpn_protocol(), Some(b"http/1.1".as_slice()));
++                let mut stream = BufReader::new(stream);
++                let mut line = String::new();
++                stream.read_line(&mut line).await.unwrap();
++                assert_eq!(line, "POST /resolver?profile=one HTTP/1.1\r\n");
++                let mut length = None;
++                loop {
++                    line.clear();
++                    assert!(stream.read_line(&mut line).await.unwrap() > 0);
++                    if line == "\r\n" { break; }
++                    if let Some(value) = line.strip_prefix("Content-Length: ") {
++                        length = Some(value.trim().parse::<usize>().unwrap());
++                    }
++                }
++                let mut bytes = vec![0; length.unwrap()];
++                stream.read_exact(&mut bytes).await.unwrap();
++                let question = Message::from_vec(&bytes).unwrap();
++                assert_eq!(question.metadata.id, 0);
++                let body = answer_for(&question, ip).to_vec().unwrap();
++                let head = format!(
++                    "HTTP/1.1 200 OK\r\nContent-Type: application/dns-message\r\nContent-Length: {}\r\n\r\n",
++                    body.len()
++                );
++                stream.write_all(head.as_bytes()).await.unwrap();
++                stream.write_all(&body).await.unwrap();
++                stream.shutdown().await.unwrap();
++            });
++        }
++    });
++    (addr, tls.ca_file)
++}
++
++#[tokio::test]
++async fn custom_dns_supports_http1_and_hostname_endpoints() {
++    let plain = upstream(Ipv4Addr::new(1, 2, 3, 4)).await;
++    let (https, ca) = doh_http1_server(Ipv4Addr::new(4, 3, 2, 1)).await;
++    let app = start(&format!(r#"{{
++        "inbounds": [{DNS_IN}], {OUTS}, "route": {{ "rules": [{HIJACK}] }},
++        "dns": {{ "final": "https", "servers": [
++            {{ "type": "https", "tag": "https", "server": "127.0.0.1", "server_port": {},
++                "path": "/resolver?profile=one", "detour": "direct", "tls": {{ "certificate_path": {} }} }},
++            {{ "type": "udp", "tag": "udp", "server": "localhost", "server_port": {}, "detour": "direct" }},
++            {{ "type": "tcp", "tag": "tcp", "server": "localhost", "server_port": {}, "detour": "direct" }}
++        ], "rules": [
++            {{ "domain": ["udp.test"], "server": "udp" }},
++            {{ "domain": ["tcp.test"], "server": "tcp" }}
++        ] }}
++    }}"#, https.port(), q(&ca), plain.addr.port(), plain.addr.port())).await;
++    let dns = app.listen_addrs[0];
++    assert_eq!(ips(&ask_udp(dns, "https.test.", RecordType::A).await), [Ipv4Addr::new(4, 3, 2, 1)]);
++    for name in ["udp.test.", "tcp.test."] {
++        assert_eq!(ips(&ask_udp(dns, name, RecordType::A).await), [Ipv4Addr::new(1, 2, 3, 4)]);
++    }
++}
++
+ /// DNS over QUIC (RFC 9250) на 127.0.0.1: поток на запрос, длина + сообщение.
+ async fn doq_server(ip: Ipv4Addr) -> (SocketAddr, PathBuf, Arc<AtomicUsize>) {
+     reality_core::transport::tcp_tls::ensure_crypto_provider();
+@@ -773,7 +837,7 @@ fn dns_config_errors() {
+         socks,
+         "",
+         "",
+-        r#", "dns": {"servers": [{"tag": "x", "address": "udp://dns.google"}]}"#,
++        r#", "dns": {"bootstrap":"x","servers": [{"tag": "x", "address": "udp://dns.google"}]}"#,
+     ));
+     assert!(e.contains("IP"), "{e}");
+     let e = err(cfg(

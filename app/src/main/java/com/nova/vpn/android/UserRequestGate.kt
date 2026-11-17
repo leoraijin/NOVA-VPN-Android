@@ -59,10 +59,6 @@ internal data class PreparedVpnConfiguration(val config: String, val name: Strin
                     val ids=com.nova.vpn.android.data.MultiServerPolicy(multi.revision,multi.defaultProfileId,multi.effectiveRules(),emptySet()).referencedProfileIds
                     requireNotNull(snapshot).filter {!it.retiredFromSubscription && it.id in ids && com.nova.vpn.android.data.MultiServerProfileAdapter.problem(it)!=null}.map {it.id}.toSet()
                 } else emptySet()
-                require(!frozen.customDns.hasRules ||
-                    com.nova.vpn.android.data.AppPreferencesStore(context).vpnEngine() == com.nova.vpn.android.data.VpnEngine.SING_BOX) {
-                    "Для пользовательского DNS выберите ядро sing-box в настройках"
-                }
                 val config=com.nova.vpn.android.data.SingBoxConfigFactory.build(primary,frozen,context.packageName,snapshot,
                     java.io.File(context.filesDir,"multi-server-dns-v2.db").absolutePath,quarantined,unavailablePackages)
                 if(multi!=null) FakeIpNetworkPreflight.validate(config,FakeIpNetworkPreflight.capture(context))

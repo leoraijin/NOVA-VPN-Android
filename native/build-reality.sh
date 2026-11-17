@@ -16,6 +16,8 @@ fi
 git -C "$source_dir" fetch https://github.com/leoraijin/vpn-core.git "$source_ref"
 git -C "$source_dir" cat-file -e "$revision^{commit}"
 git -C "$source_dir" checkout --detach "$revision"
+# Keep NOVA's Android changes reviewable against the exact upstream revision.
+git -C "$source_dir" apply --index "$root/native/reality-android-dns.patch"
 : "${ANDROID_NDK_HOME:?Set ANDROID_NDK_HOME}"
 export RUSTFLAGS="${RUSTFLAGS:-} -C link-arg=-Wl,-z,max-page-size=16384 -C link-arg=-Wl,-z,common-page-size=16384"
 abis=("$@")
@@ -37,7 +39,7 @@ for abi in "${abis[@]}"; do
     -I"$source_dir/ffi/include" "$root/native/reality-jni.c" \
     -L"$dest" -lreality -Wl,--no-undefined -o "$dest/libnova_reality_jni.so"
 done
-# Exact reviewed source: no NOVA patches are applied to the core.
-git -C "$source_dir" archive "$revision" -o "$root/native/work/reality-core-source.tar"
+# License bundle corresponds to the patched source that was compiled.
+git -C "$source_dir" archive "$(git -C "$source_dir" write-tree)" -o "$root/native/work/reality-core-source.tar"
 cp "$source_dir/LICENSE" "$root/native/REALITY-LICENSE"
 find "$root/app/src/main/jniLibs" -name '*.so' -print0 | sort -z | xargs -0 sha256sum

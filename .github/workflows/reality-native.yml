@@ -32,7 +32,7 @@ jobs:
         working-directory: native/work/core
         run: |
           cargo test --locked -p reality-ffi
-          cargo test --locked -p reality-core --lib
+          cargo test --locked -p reality-core --lib --test app_dns
       - name: Dependency license notices
         if: matrix.abi == 'arm64-v8a'
         working-directory: native/work/core

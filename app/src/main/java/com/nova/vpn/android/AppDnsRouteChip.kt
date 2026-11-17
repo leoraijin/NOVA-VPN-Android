@@ -34,9 +34,6 @@ internal fun AppDnsRouteChip(settings: AppRoutingSettings, packages: Set<String>
         scope.launch {
             runCatching {
                 require(Build.VERSION.SDK_INT >= 29) { "DNS для приложений требует Android 10 или новее" }
-                require(withContext(Dispatchers.IO) { AppPreferencesStore(context).vpnEngine() == VpnEngine.SING_BOX }) {
-                    "В настройках VPN выберите ядро sing-box"
-                }
                 val group = withContext(Dispatchers.IO) {
                     SharedUidRouting.groupFor(packages.first(), { name ->
                         runCatching { context.packageManager.getApplicationInfo(name, 0).uid }.getOrNull()
@@ -67,7 +64,7 @@ internal fun AppDnsRouteChip(settings: AppRoutingSettings, packages: Set<String>
     if (choosing && !adding) AlertDialog(onDismissRequest = { if (!saving) choosing = false },
         title = { Text("DNS для приложения") }, text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("Приложение использует выбранный DNS и прямое подключение. Нужен sing-box.")
+                Text("Приложение использует выбранный DNS и прямое подключение.")
                 if (servers.isEmpty()) Text("Добавьте DNS-сервер, чтобы назначить его приложению.")
                 servers.forEach { server ->
                     NovaOutlinedButton(onClick = { choose(server.id) }, enabled = !saving && !busy, modifier = Modifier.fillMaxWidth()) {

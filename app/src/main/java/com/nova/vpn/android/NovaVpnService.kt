@@ -697,22 +697,24 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
         val probe = if (multi == null) {
             runCatching { AndroidTrafficProbe.prepare(config) }.getOrElse { throw InvalidConfiguration() }
         } else null
+        val managedDual = request.identity.policy != null
+        val dualUidGuard = if (com.nova.vpn.android.data.SharedUidExitGuard.hasManagedRules(config)) runCatching {
+            com.nova.vpn.android.data.SharedUidExitGuard.capture(config)
+        }.getOrElse { throw InvalidConfiguration() } else null
         val packageUid: ((String) -> Int)? = if (Build.VERSION.SDK_INT >= 29) { name ->
             val uid = runCatching { packageManager.getApplicationInfo(name, 0).uid }.getOrNull()
             require(uid != null && uid >= 0) { "Приложение недоступно. Обновите список приложений маршрутизации." }
-            // Android cannot distinguish packages sharing a Linux UID. Do not promise otherwise.
-            require(packageManager.getPackageInfo(name, 0).sharedUserId == null &&
-                packageManager.getPackagesForUid(uid)?.toSet() == setOf(name)) {
-                "Совместная маршрутизация недоступна для приложений с общим UID. Выберите sing-box."
+            val packages = packageManager.getPackagesForUid(uid).orEmpty().toList()
+            require(name in packages && (if (dualUidGuard == null) {
+                packageManager.getPackageInfo(name, 0).sharedUserId == null && packages == listOf(name)
+            } else !dualUidGuard.conflicts(packages))) {
+                "Приложения с общим UID должны использовать одинаковый маршрут."
             }
             uid
         } else null
-        val managedDual = request.identity.policy != null
-        val dualUidGuard = if (managedDual) runCatching {
-            com.nova.vpn.android.data.SharedUidExitGuard.capture(config)
-        }.getOrElse { throw InvalidConfiguration() } else null
         val prepared = runCatching {
-            RealityConfigFactory.prepare(multi?.config ?: probe?.config ?: config, packageName, packageUid, managedDual)
+            RealityConfigFactory.prepare(multi?.config ?: probe?.config ?: config, packageName, packageUid, managedDual,
+                sharedUidGuard = dualUidGuard != null)
         }
             .getOrElse { throw InvalidConfiguration() }
         val runtimeConfig = prepared.config
@@ -728,7 +730,7 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
         if (!commands.current(ticket)) return
         activeEngine = VpnEngine.REALITY_CORE
         VpnDiagnostics.record("engine_reality_core")
-        VpnDiagnostics.record("reality_revision_5feb936")
+        VpnDiagnostics.record("reality_revision_5feb936_nova_dns1")
         registerRealityNetworkMonitor()
         val builder = Builder().setSession("NOVA VPN · Reality Core").setMtu(1500)
             .addAddress("172.19.0.1", 30).addRoute("0.0.0.0", 0).addDnsServer("172.19.0.2")

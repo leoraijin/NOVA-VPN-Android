@@ -42,15 +42,17 @@ object RealityConfigFactory {
     fun prepare(config: String, ownPackage: String, packageUid: ((String) -> Int)? = null): Prepared =
         prepare(config, ownPackage, packageUid, managedDual = false)
 
-    fun prepare(config: String, ownPackage: String, packageUid: ((String) -> Int)?, managedDual: Boolean): Prepared = try {
+    fun prepare(config: String, ownPackage: String, packageUid: ((String) -> Int)?, managedDual: Boolean,
+                sharedUidGuard: Boolean = false): Prepared = try {
         require(PACKAGE.matches(ownPackage)) { "Некорректные параметры VPN-приложения." }
-        prepareJson(JSONObject(config), ownPackage, packageUid, managedDual)
+        prepareJson(JSONObject(config), ownPackage, packageUid, managedDual, sharedUidGuard)
     } catch (_: JSONException) {
         // org.json errors can include input fragments, credentials and server names.
         throw IllegalArgumentException("Некорректная конфигурация Reality Core.")
     }
 
-    private fun prepareJson(root: JSONObject, ownPackage: String, packageUid: ((String) -> Int)?, managedDual: Boolean): Prepared {
+    private fun prepareJson(root: JSONObject, ownPackage: String, packageUid: ((String) -> Int)?,
+                            managedDual: Boolean, sharedUidGuard: Boolean): Prepared {
         val outbounds = objects(root.getJSONArray("outbounds"))
         require(outbounds.isNotEmpty() && outbounds.all { it.opt("type") in PROTOCOLS }) {
             "Протокол подключения не поддерживается Reality Core. Выберите sing-box."
@@ -73,11 +75,28 @@ object RealityConfigFactory {
         prepareTun(tun)
 
         val dns = root.getJSONObject("dns")
-        prepareDns(dns, outbounds, managedDual)
-        val (included, excluded) = if (managedDual) {
-            prepareDualPackages(route, dns, ownPackage, packageUid)
-            emptyList<String>() to listOf(ownPackage)
-        } else preparePackages(route, dns, outbounds, ownPackage, packageUid)
+        val customDns = prepareDns(dns, outbounds, managedDual)
+        val (included, excluded) = when {
+            managedDual -> {
+                prepareDualPackages(route, dns, ownPackage, packageUid, sharedUidGuard)
+                emptyList<String>() to listOf(ownPackage)
+            }
+            customDns -> {
+                prepareDualPackages(route, dns, ownPackage, packageUid, sharedUidGuard)
+                if (requestedIncluded != null) {
+                    require(requestedIncluded.isNotEmpty() && ownPackage !in requestedIncluded &&
+                        requestedIncluded.all(PACKAGE::matches)) { "Некорректный список приложений VPN." }
+                    requestedIncluded to emptyList()
+                } else {
+                    val exclusions = requestedExcluded ?: listOf(ownPackage)
+                    require(ownPackage in exclusions && exclusions.all(PACKAGE::matches)) {
+                        "Некорректный список исключённых приложений."
+                    }
+                    emptyList<String>() to exclusions
+                }
+            }
+            else -> preparePackages(route, dns, outbounds, ownPackage, packageUid)
+        }
         // Never silently ignore Builder filters or accept a custom filter that
         // disagrees with the validated generated application policy.
         require((requestedIncluded == null || requestedIncluded == included) &&
@@ -85,8 +104,9 @@ object RealityConfigFactory {
             !(requestedIncluded != null && requestedExcluded != null)) {
             "Правила приложений VPN-интерфейса не соответствуют маршрутизации."
         }
+        if (customDns) prepareCustomSiteDns(dns, managedDual)
         if (!managedDual) {
-            prepareSiteDns(route, dns, outbounds)
+            if (!customDns) prepareSiteDns(route, dns, outbounds)
             normalizeTerminalDirectRoute(route, dns, outbounds)
         }
         // SingBoxConfigFactory always emits a DNS strategy for managed DNS. Full JSON
@@ -222,8 +242,11 @@ object RealityConfigFactory {
         }
     }
 
-    private fun prepareDns(dns: JSONObject, outbounds: List<JSONObject>, managedDual: Boolean) {
+    private fun prepareDns(dns: JSONObject, outbounds: List<JSONObject>, managedDual: Boolean): Boolean {
         val servers = objects(dns.getJSONArray("servers"))
+        val customTags = servers.map { it.optString("tag") }.filter {
+            it == CustomDnsConfig.RESOLVER_PREFIX || it.startsWith("${CustomDnsConfig.RESOLVER_PREFIX}-")
+        }.toSet()
         servers.forEach { server ->
             if (server.opt("tag") == BOOTSTRAP && server.opt("type") == "local" &&
                 keys(server) == setOf("type", "tag")) {
@@ -243,6 +266,15 @@ object RealityConfigFactory {
             }
             val tls = server.optJSONObject("tls")
             val tag = server.optString("tag")
+            if (tag in customTags) {
+                val direct = CustomDnsConfig.OUTBOUND_PREFIX + tag.removePrefix(CustomDnsConfig.RESOLVER_PREFIX)
+                require(!server.has("detour") && server.opt("type") in setOf("udp", "tcp", "tls", "https") &&
+                    outbounds.count { it.opt("tag") == direct && it.opt("type") == "direct" &&
+                        keys(it) == setOf("tag", "type") } == 1) { "Некорректный выход пользовательского DNS." }
+                removeBootstrapResolver(server, "domain_resolver", managedDual)
+                require(!server.has("domain_resolver")) { "Неподдерживаемый способ разрешения адреса DNS." }
+                server.put("detour", direct)
+            }
             val detour = server.optString("detour")
             val generatedDualDns = managedDual && tag == "dns-$detour" &&
                 outbounds.any { it.opt("tag") == detour }
@@ -268,13 +300,44 @@ object RealityConfigFactory {
         if (!dns.has("bootstrap") && servers.any { it.opt("tag") == BOOTSTRAP }) {
             dns.put("bootstrap", BOOTSTRAP)
         }
+        return customTags.isNotEmpty()
+    }
+
+    /** Preserve the name of explicitly routed sites on the native TUN.
+     * Lookups made by the outbound skip FakeIP and use the original resolver.
+     */
+    private fun prepareCustomSiteDns(dns: JSONObject, managedDual: Boolean) {
+        val rules = objects(dns.getJSONArray("rules"))
+        val selectors = setOf("domain", "domain_suffix")
+        val routedSites = rules.filter { rule ->
+            rule.opt("action") == "route" && keys(rule).any(selectors::contains) &&
+                keys(rule).all { it in selectors || it in setOf("action", "server", "strategy") }
+        }.toSet()
+        if (routedSites.isEmpty()) return
+        val servers = dns.getJSONArray("servers")
+        val fake = if (managedDual) "nova-fakeip" else SITE_FAKEIP
+        require(!dns.has("fakeip") && objects(servers).count { it.opt("type") == "fakeip" ||
+            it.opt("address") == "fakeip" || it.opt("tag") == fake } == if (managedDual) 1 else 0) {
+            "Конфликт настроек DNS для правил сайтов."
+        }
+        if (!managedDual) servers.put(JSONObject().put("type", "fakeip").put("tag", fake)
+            .put("inet4_range", "198.18.0.0/15").put("inet6_range", "fc00::/18"))
+        val paired = JSONArray()
+        rules.forEach { rule ->
+            if (rule in routedSites) paired.put(JSONObject(rule.toString()).put("server", fake)
+                .put("query_type", JSONArray().put("A").put("AAAA")))
+            paired.put(rule)
+        }
+        dns.put("rules", paired)
     }
 
     private fun prepareDualPackages(
-        route: JSONObject, dns: JSONObject, ownPackage: String, packageUid: ((String) -> Int)?
+        route: JSONObject, dns: JSONObject, ownPackage: String, packageUid: ((String) -> Int)?,
+        sharedUidGuard: Boolean
     ) {
-        val firstRoute = route.getJSONArray("rules").optJSONObject(0)
-        if (firstRoute?.optJSONArray("package_name")?.optString(0) == SharedUidExitGuard.CONFLICT_PACKAGE) {
+        if (objects(route.getJSONArray("rules")).any {
+                it.optJSONArray("package_name")?.optString(0) == SharedUidExitGuard.CONFLICT_PACKAGE
+            }) {
             val existing = dns.getJSONArray("rules")
             val guarded = JSONArray().put(JSONObject().put("action", "reject")
                 .put("package_name", JSONArray().put(SharedUidExitGuard.CONFLICT_PACKAGE)))
@@ -310,7 +373,7 @@ object RealityConfigFactory {
                             }.invoke(name)
                             require(uid >= 0)
                             val other = packageByUid.putIfAbsent(uid, name)
-                            require(other == null || other == name) {
+                            require(sharedUidGuard || other == null || other == name) {
                                 "Приложения с общим UID нельзя разделить между VPN."
                             }
                             uid

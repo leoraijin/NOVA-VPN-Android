@@ -32,7 +32,6 @@ data class CustomDnsServer(
 data class CustomDnsSettings(val servers: List<CustomDnsServer> = emptyList(), val selectedId: String? = null,
     val appServers: Map<String, String> = emptyMap()) {
     val selected: CustomDnsServer? get() = servers.singleOrNull { it.id == selectedId }
-    val hasRules: Boolean get() = selected?.domains?.isNotEmpty() == true || appServers.isNotEmpty()
     fun validate() {
         require(servers.size <= 20 && servers.map { it.id }.distinct().size == servers.size)
         servers.forEach { it.validate() }
@@ -56,12 +55,16 @@ data class CustomDnsSettings(val servers: List<CustomDnsServer> = emptyList(), v
 
 /** Compiles site and application DNS assignments into the captured sing-box policy. */
 internal object CustomDnsConfig {
+    const val OUTBOUND_PREFIX = "nova-custom-dns-direct"
+    const val RESOLVER_PREFIX = "nova-custom-dns-resolver"
+
     fun apply(config: JSONObject, settings: CustomDnsSettings, ownPackage: String?, unavailablePackages: Set<String> = emptySet()): JSONObject {
         settings.validate()
         val appServers = settings.appServers.filterKeys { it !in unavailablePackages }
         require(ownPackage == null || ownPackage !in appServers) { "NOVA VPN нельзя направить через собственный DNS-маршрут" }
+        val appsByServer = appServers.entries.groupBy({ it.value }, { it.key })
         val active = settings.servers.filter { server ->
-            server.id in appServers.values || server.id == settings.selectedId && server.domains.isNotEmpty()
+            server.id in appsByServer || server.id == settings.selectedId && server.domains.isNotEmpty()
         }
         if (active.isEmpty()) return config
         val route = config.getJSONObject("route")
@@ -69,10 +72,10 @@ internal object CustomDnsConfig {
         val outbounds = config.getJSONArray("outbounds")
         val dnsServers = dns.getJSONArray("servers")
         val tags = active.mapIndexed { index, server ->
-            server.id to (if (index == 0) "nova-custom-dns-direct" else "nova-custom-dns-direct-${server.id}")
+            server.id to (if (index == 0) OUTBOUND_PREFIX else "$OUTBOUND_PREFIX-${server.id}")
         }.toMap()
         val resolvers = active.mapIndexed { index, server ->
-            server.id to (if (index == 0) "nova-custom-dns-resolver" else "nova-custom-dns-resolver-${server.id}")
+            server.id to (if (index == 0) RESOLVER_PREFIX else "$RESOLVER_PREFIX-${server.id}")
         }.toMap()
         for (server in active) {
             val direct = tags.getValue(server.id)
@@ -99,13 +102,13 @@ internal object CustomDnsConfig {
         val siteServer = settings.selected?.takeIf { it.domains.isNotEmpty() }
         fun siteMatch(server: CustomDnsServer) = JSONObject().put("domain", JSONArray(server.domains))
             .put("domain_suffix", JSONArray(server.domains.map { ".$it" }))
-        fun appMatch(server: CustomDnsServer) = JSONObject().put("package_name", JSONArray(appServers.filterValues { it == server.id }.keys.sorted()))
+        fun appMatch(server: CustomDnsServer) = JSONObject().put("package_name", JSONArray(appsByServer.getValue(server.id).sorted()))
         val rules = JSONArray()
         val siteRules = JSONArray()
         val tail = JSONArray()
         if (appServers.isNotEmpty()) rules.put(JSONObject().put("package_name", JSONArray().put(SharedUidExitGuard.CONFLICT_PACKAGE)).put("action", "reject"))
         for (i in 0 until existing.length()) {
-            val rule = JSONObject(existing.getJSONObject(i).toString())
+            val rule = existing.getJSONObject(i)
             if (rule.optJSONArray("package_name")?.optString(0) == SharedUidExitGuard.CONFLICT_PACKAGE) {
                 if (appServers.isEmpty()) rules.put(rule)
                 continue
@@ -124,7 +127,7 @@ internal object CustomDnsConfig {
                 tail.put(rule)
             }
         }
-        if (appServers.isNotEmpty() && (0 until existing.length()).none { existing.getJSONObject(it).optString("action") == "sniff" }) {
+        if ((appServers.isNotEmpty() || siteServer != null) && (0 until existing.length()).none { existing.getJSONObject(it).optString("action") == "sniff" }) {
             rules.put(JSONObject().put("action", "sniff"))
         }
         fun append(match: JSONObject, server: CustomDnsServer) {
@@ -134,7 +137,7 @@ internal object CustomDnsConfig {
         }
         siteServer?.let { append(siteMatch(it), it) }
         for (i in 0 until siteRules.length()) rules.put(siteRules.getJSONObject(i))
-        for (server in active.filter { it.id in appServers.values }) append(appMatch(server), server)
+        for (server in active.filter { it.id in appsByServer }) append(appMatch(server), server)
         for (i in 0 until tail.length()) rules.put(tail.getJSONObject(i))
         route.put("rules", rules)
 
@@ -142,7 +145,7 @@ internal object CustomDnsConfig {
         val dnsHead = JSONArray()
         val dnsTail = JSONArray()
         for (i in 0 until oldDnsRules.length()) {
-            val rule = JSONObject(oldDnsRules.getJSONObject(i).toString())
+            val rule = oldDnsRules.getJSONObject(i)
             val block = rule.optString("action") == "reject" && hasSiteMatch(rule)
             if (block || rule.optString("action") == "predefined") dnsHead.put(rule)
             else dnsTail.put(rule)
@@ -152,7 +155,7 @@ internal object CustomDnsConfig {
         }
         for (i in 0 until dnsTail.length()) if (hasSiteMatch(dnsTail.getJSONObject(i))) dnsHead.put(dnsTail.getJSONObject(i))
         // Real A/AAAA answers for app DNS must precede the multi-VPN FakeIP allocator.
-        for (server in active.filter { it.id in appServers.values }) dnsHead.put(appMatch(server).put("action", "route").put("server", resolvers.getValue(server.id)))
+        for (server in active.filter { it.id in appsByServer }) dnsHead.put(appMatch(server).put("action", "route").put("server", resolvers.getValue(server.id)))
         for (i in 0 until dnsTail.length()) if (!hasSiteMatch(dnsTail.getJSONObject(i))) dnsHead.put(dnsTail.getJSONObject(i))
         dns.put("rules", dnsHead)
         config.getJSONArray("inbounds").let { inbounds ->

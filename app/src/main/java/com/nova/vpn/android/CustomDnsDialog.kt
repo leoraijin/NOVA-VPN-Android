@@ -30,7 +30,7 @@ internal fun CustomDnsDialog(settings: CustomDnsSettings, onDismiss: () -> Unit,
     var error by remember { mutableStateOf<String?>(null) }
     if (!adding && editing == null) AlertDialog(onDismissRequest = { if (!saving) onDismiss() }, title = { Text("DNS для сайтов") }, text = {
         Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("Выбранные сайты используют этот DNS и прямое подключение. Домены включают поддомены. Для этого режима нужно ядро sing-box.", style = MaterialTheme.typography.bodyMedium)
+            Text("Выбранные сайты используют этот DNS и прямое подключение. Домены включают поддомены.", style = MaterialTheme.typography.bodyMedium)
             NovaTextButton(enabled = !saving, onClick = { draft = draft.copy(selectedId = null) }) {
                 Text(if (draft.selectedId == null) "✓ Обычная маршрутизация" else "Обычная маршрутизация")
             }
