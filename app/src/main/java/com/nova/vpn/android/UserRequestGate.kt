@@ -2,6 +2,7 @@ package com.nova.vpn.android
 
 import com.nova.vpn.android.data.AppRoutingSettings
 import com.nova.vpn.android.data.ImportedProfile
+import com.nova.vpn.android.data.validateInstalledRoutingApps
 
 /** One immutable configuration/identity snapshot survives asynchronous preparation and consent. */
 internal data class PreparedVpnConfiguration(val config: String, val name: String, val profileId: String, val routingPresetId: String, val policy: RoutePolicyIdentity? = null, val exits: RouteExitBindings? = null, val commitBinding: RouteCommitBinding? = null) {
@@ -46,9 +47,9 @@ internal data class PreparedVpnConfiguration(val config: String, val name: Strin
                 if (multi != null) {
                     require(android.os.Build.VERSION.SDK_INT >= 29) { "Назначения серверов приложениям требуют Android 10 или новее." }
                 }
-                if(multi!=null) com.nova.vpn.android.data.SharedUidRouting.validate(multi,
-                    { name -> runCatching { context.packageManager.getApplicationInfo(name,0).uid }.getOrNull() },
-                    { uid -> context.packageManager.getPackagesForUid(uid)?.toSet().orEmpty() }, context.packageName)
+                val unavailablePackages = multi?.let {
+                    validateInstalledRoutingApps(it, context.packageManager, context.packageName)
+                }.orEmpty()
                 val snapshot = if (multi != null || frozen.history!=null) com.nova.vpn.android.data.ProfileVault(context).load().toList() else null
                 val primary = if(multi!=null) selectedPrimary(requireNotNull(snapshot), frozen, null) ?: throw MissingSelectedProfile()
                     else if(frozen.history!=null) requireNotNull(snapshot?.firstOrNull {it.id==profile.id}) {"Прежний сервер недоступен. Выберите сервер вручную."}
@@ -58,7 +59,7 @@ internal data class PreparedVpnConfiguration(val config: String, val name: Strin
                     requireNotNull(snapshot).filter {!it.retiredFromSubscription && it.id in ids && com.nova.vpn.android.data.MultiServerProfileAdapter.problem(it)!=null}.map {it.id}.toSet()
                 } else emptySet()
                 val config=com.nova.vpn.android.data.SingBoxConfigFactory.build(primary,frozen,context.packageName,snapshot,
-                    java.io.File(context.filesDir,"multi-server-dns-v2.db").absolutePath,quarantined)
+                    java.io.File(context.filesDir,"multi-server-dns-v2.db").absolutePath,quarantined,unavailablePackages)
                 if(multi!=null) FakeIpNetworkPreflight.validate(config,FakeIpNetworkPreflight.capture(context))
                 PreparedVpnConfiguration(config,primary.name,primary.id,presetId,RoutePolicyIdentity.capture(frozen),
                     multi?.let { RouteExitBindings.capture(it,requireNotNull(snapshot),config,quarantined) },RouteCommitBinding.capture(frozen,primary.id,config))

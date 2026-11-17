@@ -156,7 +156,8 @@ internal fun RowScope.NovaNavigationItem(selected: Boolean, enabled: Boolean, on
         return
     }
     Column(itemModifier.bringIntoViewRequester(bringIntoView).heightIn(min = 56.dp).clip(shape)
-        .background(if (selected && !windows) { if (style == DesignStyle.IOS_LIQUID_GLASS) colors.surfaceVariant.copy(alpha = .75f) else colors.primaryContainer } else Color.Transparent)
+        .then(if (selected && style == DesignStyle.IOS_LIQUID_GLASS) Modifier.novaGlassControl(shape) else Modifier)
+        .background(if (selected && !windows) { if (style == DesignStyle.IOS_LIQUID_GLASS) colors.primary.copy(alpha = .07f) else colors.primaryContainer } else Color.Transparent)
         .semantics { contentDescription = label }
         .selectable(selected = selected, enabled = enabled, role = Role.Tab, onClick = onClick)
         .padding(horizontal = 2.dp, vertical = 8.dp), horizontalAlignment = Alignment.CenterHorizontally,

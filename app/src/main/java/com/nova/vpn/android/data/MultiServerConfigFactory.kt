@@ -6,7 +6,7 @@ import org.json.JSONObject
 /** Compiles captured assignments into one TUN config. Native check is still required. */
 object MultiServerConfigFactory {
     fun build(base: JSONObject, settings: MultiServerSettings, profileOutbounds: Map<String, JSONObject>,
-        ownPackage: String, ipv6: Boolean, cachePath: String): JSONObject {
+        ownPackage: String, ipv6: Boolean, cachePath: String, unavailablePackages: Set<String> = emptySet()): JSONObject {
         settings.validate()
         require(ownPackage.matches(Regex("[A-Za-z_][A-Za-z0-9_]*(\\.[A-Za-z_][A-Za-z0-9_]*)+")))
         require(cachePath.startsWith("/") && !cachePath.split('/').contains(".."))
@@ -38,7 +38,9 @@ object MultiServerConfigFactory {
             .put("tls",JSONObject().put("enabled",true).put("server_name","cloudflare-dns.com"))
         servers.put(resolver("nova-direct"))
         tags.values.forEach { servers.put(resolver(it)) }
-        val hasAppAssignments = settings.effectiveRules().any { it.packageName != null }
+        // Preserve saved intent and exit identities. Only installed apps enter the live rules.
+        val activeRules = settings.effectiveRules().filterNot { it.packageName in unavailablePackages }
+        val hasAppAssignments = activeRules.any { it.packageName != null }
         val routeRules = JSONArray()
         if (hasAppAssignments) routeRules.put(
             JSONObject().put("package_name", JSONArray().put(SharedUidExitGuard.CONFLICT_PACKAGE)).put("action", "reject"))
@@ -54,7 +56,7 @@ object MultiServerConfigFactory {
                 if (rule.includeSubdomains) put("domain_suffix",JSONArray().put(".${rule.domain}"))
             }
         }
-        val ordered = settings.effectiveRules().sortedWith(compareBy<MultiServerRule> {
+        val ordered = activeRules.sortedWith(compareBy<MultiServerRule> {
             if (it.target.kind == ServerRouteKind.BLOCK) 0 else if (it.domain != null) 1 else 2
         }.thenByDescending { it.domain?.length ?: 0 }.thenBy { it.includeSubdomains })
         val dnsRules = JSONArray()

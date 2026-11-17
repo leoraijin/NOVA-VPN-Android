@@ -20,6 +20,9 @@ import androidx.compose.animation.core.spring
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
@@ -33,6 +36,17 @@ internal fun novaControlShape(): Shape = when (LocalDesignPreset.current) {
     else -> CircleShape
 }
 
+/** Static highlights add depth without a continuously running animation. */
+@Composable
+internal fun Modifier.novaGlassControl(shape: Shape = novaControlShape()): Modifier {
+    if (LocalDesignPreset.current != DesignStyle.IOS_LIQUID_GLASS) return this
+    val colors = MaterialTheme.colorScheme
+    return shadow(2.dp, shape).clip(shape).novaGlass()
+        .border(BorderStroke(1.dp, Brush.verticalGradient(listOf(
+            Color.White.copy(alpha = .75f), colors.outline.copy(alpha = .18f),
+            Color.White.copy(alpha = .30f)))), shape)
+}
+
 @Composable
 internal fun NovaButton(onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true,
     colors: ButtonColors = ButtonDefaults.buttonColors(), content: @Composable RowScope.() -> Unit) {
@@ -41,14 +55,18 @@ internal fun NovaButton(onClick: () -> Unit, modifier: Modifier = Modifier, enab
     val expressive = LocalDesignPreset.current == DesignStyle.MATERIAL_YOU || LocalDesignPreset.current == DesignStyle.IOS_LIQUID_GLASS
     val scale by animateFloatAsState(if (pressed && expressive) .96f else 1f,
         animationSpec = spring(dampingRatio = .7f, stiffness = 500f), label = "button-press")
-    Button(onClick = onClick, modifier = modifier.heightIn(min = 48.dp).graphicsLayer { scaleX = scale; scaleY = scale }, enabled = enabled,
-        interactionSource = interactions, shape = novaControlShape(), colors = colors, content = content)
+    Button(onClick = onClick, modifier = modifier.heightIn(min = 48.dp).graphicsLayer { scaleX = scale; scaleY = scale }.novaGlassControl(), enabled = enabled,
+        interactionSource = interactions, shape = novaControlShape(), colors = if (LocalDesignPreset.current == DesignStyle.IOS_LIQUID_GLASS) colors.copy(
+            containerColor = MaterialTheme.colorScheme.primary.copy(alpha = .12f),
+            contentColor = MaterialTheme.colorScheme.primary,
+            disabledContainerColor = MaterialTheme.colorScheme.surface.copy(alpha = .12f),
+            disabledContentColor = MaterialTheme.colorScheme.onSurface.copy(alpha = .38f)) else colors, content = content)
 }
 
 @Composable
 internal fun NovaOutlinedButton(onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true,
     content: @Composable RowScope.() -> Unit) {
-    OutlinedButton(onClick = onClick, modifier = modifier.heightIn(min = 48.dp), enabled = enabled,
+    OutlinedButton(onClick = onClick, modifier = modifier.heightIn(min = 48.dp).novaGlassControl(), enabled = enabled,
         shape = novaControlShape(),
         colors = ButtonDefaults.outlinedButtonColors(containerColor = if (LocalDesignPreset.current == DesignStyle.IOS_LIQUID_GLASS) MaterialTheme.colorScheme.primary.copy(alpha = .08f) else androidx.compose.ui.graphics.Color.Transparent),
         border = if (LocalDesignPreset.current == DesignStyle.IOS_LIQUID_GLASS) null else BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = if (enabled) 1f else .38f)), content = content)
@@ -57,7 +75,7 @@ internal fun NovaOutlinedButton(onClick: () -> Unit, modifier: Modifier = Modifi
 @Composable
 internal fun NovaTextButton(onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true,
     content: @Composable RowScope.() -> Unit) {
-    TextButton(onClick = onClick, modifier = modifier.heightIn(min = 48.dp), enabled = enabled,
+    TextButton(onClick = onClick, modifier = modifier.heightIn(min = 48.dp).novaGlassControl(), enabled = enabled,
         shape = novaControlShape(), content = content)
 }
 

@@ -149,6 +149,45 @@ class PreparedVpnConfigurationTest {
         val health=MultiExitHealthPlan.prepare(config,bindings,RoutePolicyIdentity.capture(settings)!!)
         assertTrue(health.probes.isEmpty());assertEquals(config,health.config)
     }
+    @Test fun connectSkipsAnUninstalledAppWithoutRemovingItsSavedRoute() {
+        val context = RuntimeEnvironment.getApplication()
+        val primary = ImportedProfile(id = "main", name = "Primary", protocol = "socks", server = "127.0.0.1", port = 1080,
+            outboundJson = """{"type":"socks","server":"127.0.0.1","server_port":1080}""")
+        val secondary = primary.copy(id = "second", name = "Secondary")
+        val target = ServerRouteTarget(ServerRouteKind.PROFILE, secondary.id)
+        val webApp = "org.chromium.webapk.example_v2"
+        val settings = AppRoutingSettings(multiServer = MultiServerSettings(3, primary.id, listOf(
+            MultiServerRule(packageName = webApp, target = target),
+            MultiServerRule(domain = "example.com", target = ServerRouteTarget(ServerRouteKind.DIRECT))
+        ), secondaryProfileId = secondary.id))
+        val store = AppRoutingStore(context)
+        store.save(settings)
+        fun compileSavedRoutes(): String {
+            val saved = store.loadPresets().active.settings
+            val unavailable = validateInstalledRoutingApps(requireNotNull(saved.multiServer),
+                context.packageManager, context.packageName)
+            return SingBoxConfigFactory.build(primary, saved, context.packageName, listOf(primary, secondary),
+                "/tmp/private-fixture-dns.db", unavailablePackages = unavailable)
+        }
+
+        val before = compileSavedRoutes()
+        val route = org.json.JSONObject(before).getJSONObject("route").getJSONArray("rules")
+        assertFalse(before.contains(webApp))
+        assertFalse(route.toString().contains("package_name"))
+        assertTrue(route.toString().contains("example.com"))
+        val bindings = RouteExitBindings.capture(settings.multiServer!!, listOf(primary, secondary), before)
+        assertEquals(setOf(primary.id, secondary.id), bindings.entries.keys)
+        assertEquals(settings, store.loadPresets().active.settings)
+
+        val info = android.content.pm.ApplicationInfo().apply { packageName = webApp; uid = 14001 }
+        org.robolectric.Shadows.shadowOf(context.packageManager).installPackage(
+            android.content.pm.PackageInfo().apply { packageName = webApp; applicationInfo = info }
+        )
+        val after = compileSavedRoutes()
+        assertTrue(SharedUidExitGuard.capture(after)!!.hasAssignment(webApp))
+        assertEquals(settings, store.loadPresets().active.settings)
+    }
+
     @Test fun selectedPrimaryRefusesMissingOrClearedOrdinaryChoice() {
         val fr=ImportedProfile(id="fr",name="FR",protocol="socks",server="127.0.0.1",port=1,outboundJson="{}")
         assertNull(PreparedVpnConfiguration.selectedPrimary(listOf(fr),AppRoutingSettings(),"missing"))

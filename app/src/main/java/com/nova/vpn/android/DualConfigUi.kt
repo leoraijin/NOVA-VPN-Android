@@ -65,21 +65,23 @@ internal fun DualModeControl(settings: AppRoutingSettings, busy: Boolean, onTogg
                     slotError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                 }
                 items(visible, key = { it.id }) { profile ->
-                    TextButton(enabled = !busy && profile.id != multi?.defaultProfileId && multi?.slots?.none { it.key != slot && it.value == profile.id } == true,
+                    NovaTextButton(enabled = !busy && profile.id != multi?.defaultProfileId && multi?.slots?.none { it.key != slot && it.value == profile.id } == true,
                         onClick = { runCatching { onChange(selectVpnSlot(settings, profile.id, slot)); choosingSlot = null }
                             .onFailure { slotError = it.message } }) { Text(profile.displayName) }
                 }
-            } }, confirmButton = { TextButton(onClick = { choosingSlot = null }) { Text("Отмена") } })
+            } }, confirmButton = { NovaTextButton(onClick = { choosingSlot = null }) { Text("Отмена") } })
     }
     removingSlot?.let { slot ->
         AlertDialog(onDismissRequest = { removingSlot = null }, title = { Text("Удалить VPN-$slot?") },
             text = { Text("Его отдельные правила сайтов и приложений будут удалены. Сам конфиг останется в списке серверов.") },
-            confirmButton = { TextButton(enabled = !busy, onClick = {
+            confirmButton = { NovaTextButton(enabled = !busy, onClick = {
                 onChange(updateDualSettings(settings, requireNotNull(multi).withSlot(slot, null))); removingSlot = null
-            }) { Text("Удалить") } }, dismissButton = { TextButton(onClick = { removingSlot = null }) { Text("Отмена") } })
+            }) { Text("Удалить") } }, dismissButton = { NovaTextButton(onClick = { removingSlot = null }) { Text("Отмена") } })
     }
     var expanded by rememberSaveable { mutableStateOf(false) }
-    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)) {
+    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)
+        .novaGlassControl(androidx.compose.foundation.shape.RoundedCornerShape(24.dp))
+        .then(if (LocalDesignPreset.current == DesignStyle.IOS_LIQUID_GLASS) Modifier.padding(horizontal = 12.dp, vertical = 8.dp) else Modifier)) {
         Row(Modifier.fillMaxWidth().heightIn(min = 56.dp)
             .clickable(onClickLabel = if (expanded) "Свернуть настройки VPN" else "Развернуть настройки VPN") { expanded = !expanded },
             horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -96,7 +98,7 @@ internal fun DualModeControl(settings: AppRoutingSettings, busy: Boolean, onTogg
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text("Использовать несколько VPN", modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
-                    Switch(checked = multi != null && !multi.secondaryPaused, onCheckedChange = onToggle, enabled = !busy)
+                    NovaSwitch(checked = multi != null && !multi.secondaryPaused, onCheckedChange = onToggle, enabled = !busy)
                 }
                 if (vpnState.connected || vpnState.connecting) {
                     val primaryName = profiles.firstOrNull { it.id == vpnState.appliedConfiguration?.profileId }?.displayName ?: "Выбранный сервер"
@@ -118,17 +120,17 @@ internal fun DualModeControl(settings: AppRoutingSettings, busy: Boolean, onTogg
                 if (multi != null) {
                     multi.slots.forEach { (slot, id) ->
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                            TextButton(modifier = Modifier.weight(1f), enabled = !busy, onClick = { slotError = null; choosingSlot = slot }) {
+                            NovaTextButton(modifier = Modifier.weight(1f), enabled = !busy, onClick = { slotError = null; choosingSlot = slot }) {
                                 Text("VPN-$slot · " + (profiles.firstOrNull { it.id == id }?.displayName ?: "Недоступен"))
                             }
-                            TextButton(enabled = !busy, onClick = { removingSlot = slot }) { Text("Удалить") }
+                            NovaTextButton(enabled = !busy, onClick = { removingSlot = slot }) { Text("Удалить") }
                         }
                     }
                     val free = (2..10).firstOrNull { it !in multi.slots }
-                    TextButton(enabled = !busy && free != null, onClick = { slotError = null; choosingSlot = free }) {
+                    NovaTextButton(enabled = !busy && free != null, onClick = { slotError = null; choosingSlot = free }) {
                         Text(if (free == null) "Добавлено 10 VPN" else "+ Добавить VPN")
                     }
-                    TextButton(onClick = onServers) { Text("Все серверы") }
+                    NovaTextButton(onClick = onServers) { Text("Все серверы") }
                 }
             }
         }
@@ -218,7 +220,7 @@ internal fun DualRoutingPage(settings: AppRoutingSettings, profiles: List<Import
                     DualRouteChoices(rule.target, multi, busy) { target ->
                         save(multi.rules.map { if (it == rule) it.copy(target = target) else it })
                     }
-                    TextButton(enabled = !busy, onClick = { save(multi.rules - rule) }) { Text("Удалить правило") }
+                    NovaTextButton(enabled = !busy, onClick = { save(multi.rules - rule) }) { Text("Удалить правило") }
                 }
             }
         } else {
@@ -255,11 +257,19 @@ internal fun DualRoutingPage(settings: AppRoutingSettings, profiles: List<Import
                             }
                         }
                     }
-                    group.unavailableReason?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                    group.unavailableReason?.let {
+                        Text(it, color = MaterialTheme.colorScheme.error)
+                        if (group.packages.any { name -> name in packageRules }) {
+                            NovaTextButton(enabled = !busy,
+                                onClick = { save(assignRoutingApps(multi.rules, group.packages, null)) }) {
+                                Text("Удалить сохранённое правило")
+                            }
+                        }
+                    }
                     if (tab in 2..10) {
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
                             Text("Через VPN-$tab", Modifier.weight(1f))
-                            Switch(checked = multi.slots[tab] != null && target.profileId == multi.slots[tab],
+                            NovaSwitch(checked = multi.slots[tab] != null && target.profileId == multi.slots[tab],
                                 enabled = !busy && group.unavailableReason == null && multi.slots[tab] != null,
                                 onCheckedChange = { enabled ->
                                     val route = if (enabled) ServerRouteTarget(ServerRouteKind.PROFILE, requireNotNull(multi.slots[tab]))

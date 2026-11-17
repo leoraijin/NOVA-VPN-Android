@@ -7,6 +7,8 @@ internal class SharedUidExitGuard private constructor(
     private val assignments: Map<String, String?>,
     private val defaultExit: String?
 ) {
+    fun hasAssignment(packageName: String): Boolean = packageName in assignments
+
     fun conflicts(packages: List<String>): Boolean {
         if (packages.size < 2 || assignments.isEmpty()) return false
         fun exit(name: String) = if (name in assignments) assignments[name] else defaultExit

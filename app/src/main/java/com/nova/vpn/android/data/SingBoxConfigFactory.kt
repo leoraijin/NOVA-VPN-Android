@@ -7,7 +7,7 @@ import org.json.JSONObject
 
 /** Produces the minimum full-tunnel sing-box config for a single selected profile. */
 object SingBoxConfigFactory {
-    fun build(profile: ImportedProfile, routing: AppRoutingSettings = AppRoutingSettings(), ownPackage: String? = null, profileSnapshot: List<ImportedProfile>? = null, cachePath: String? = null, quarantinedIds:Set<String> = emptySet()): String {
+    fun build(profile: ImportedProfile, routing: AppRoutingSettings = AppRoutingSettings(), ownPackage: String? = null, profileSnapshot: List<ImportedProfile>? = null, cachePath: String? = null, quarantinedIds:Set<String> = emptySet(), unavailablePackages: Set<String> = emptySet()): String {
         routing.multiServer?.let { settings ->
             require(routing.packages.isEmpty() && routing.sites.isEmpty()) { "Перенесите прежние правила в назначения серверов." }
             val snapshot = profileSnapshot?.toList() ?: error("Нет снимка серверов для маршрутизации")
@@ -29,7 +29,7 @@ object SingBoxConfigFactory {
                 AppRoutingSettings(ipv6Enabled=routing.ipv6Enabled),ownPackage,managedDns=true)
                 else JSONObject(build(prepared.getValue(baseProfile.id),AppRoutingSettings(ipv6Enabled=routing.ipv6Enabled),ownPackage))
             return MultiServerConfigFactory.build(base,settings,normalized,requireNotNull(ownPackage),routing.ipv6Enabled,
-                requireNotNull(cachePath) { "Нет приватного пути DNS-кэша" }).toString()
+                requireNotNull(cachePath) { "Нет приватного пути DNS-кэша" }, unavailablePackages).toString()
         }
         require(quarantinedIds.isEmpty())
         require(!profile.retiredFromSubscription) { "Сервер удалён из подписки. Назначьте доступный сервер или явно импортируйте конфиг заново." }

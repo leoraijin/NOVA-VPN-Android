@@ -1,5 +1,7 @@
 package com.nova.vpn.android.data
 
+import android.content.pm.PackageManager
+
 class SharedUidRoutingException(message: String) : IllegalArgumentException(message)
 
 /** Validates a caller-supplied complete UID inventory; does not query Android or change visibility. */
@@ -29,4 +31,27 @@ object SharedUidRouting {
                 throw SharedUidRoutingException("Приложения имеют общий сетевой идентификатор: ${members.sorted().take(8).joinToString()}. Назначьте им одинаковый маршрут.")
         }
     }
+}
+/** Returns saved package rules that should remain dormant until Android can resolve them. */
+internal fun validateInstalledRoutingApps(
+    settings: MultiServerSettings,
+    pm: PackageManager,
+    ownPackage: String
+): Set<String> {
+    val packageUids = mutableMapOf<String, Int?>()
+    fun uidOf(name: String): Int? {
+        if (!packageUids.containsKey(name)) {
+            packageUids[name] = try {
+                pm.getApplicationInfo(name, 0).uid
+            } catch (_: PackageManager.NameNotFoundException) {
+                null
+            }
+        }
+        return packageUids[name]
+    }
+    val missing = settings.rules.mapNotNull { it.packageName }.filter { uidOf(it) == null }.toSet()
+    val installedRules = settings.rules.filterNot { it.packageName in missing }
+    SharedUidRouting.validate(settings.copy(rules = installedRules),
+        ::uidOf, { uid -> pm.getPackagesForUid(uid)?.toSet().orEmpty() }, ownPackage)
+    return missing
 }

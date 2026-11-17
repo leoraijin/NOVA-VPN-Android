@@ -73,8 +73,12 @@ class ActiveRoutePreview private constructor(
                 .flatMap { server -> listOf("inet4_range", "inet6_range").mapNotNull { key ->
                     server.optString(key).takeIf(String::isNotEmpty)?.let { FakeIpNetworkPreflight.Prefix(it) }
                 } }
-            return ActiveRoutePreview(MultiServerPolicy(multi.revision, multi.defaultProfileId, multi.effectiveRules(), exits.entries.keys),
-                settings.ipv6Enabled, ranges, SharedUidExitGuard.capture(config))
+            val guard = SharedUidExitGuard.capture(config)
+            val rules = multi.effectiveRules().filter { rule ->
+                rule.packageName?.let { guard?.hasAssignment(it) == true } ?: true
+            }
+            return ActiveRoutePreview(MultiServerPolicy(multi.revision, multi.defaultProfileId, rules, exits.entries.keys),
+                settings.ipv6Enabled, ranges, guard)
         }
     }
 }
