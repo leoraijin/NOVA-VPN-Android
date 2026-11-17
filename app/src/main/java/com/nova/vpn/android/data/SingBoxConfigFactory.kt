@@ -29,7 +29,7 @@ object SingBoxConfigFactory {
                 AppRoutingSettings(ipv6Enabled=routing.ipv6Enabled),ownPackage,managedDns=true)
                 else JSONObject(build(prepared.getValue(baseProfile.id),AppRoutingSettings(ipv6Enabled=routing.ipv6Enabled),ownPackage))
             return CustomDnsConfig.apply(MultiServerConfigFactory.build(base,settings,normalized,requireNotNull(ownPackage),routing.ipv6Enabled,
-                requireNotNull(cachePath) { "Нет приватного пути DNS-кэша" }, unavailablePackages), routing.customDns, ownPackage).toString()
+                requireNotNull(cachePath) { "Нет приватного пути DNS-кэша" }, unavailablePackages), routing.customDns, ownPackage, unavailablePackages).toString()
         }
         require(quarantinedIds.isEmpty())
         require(!profile.retiredFromSubscription) { "Сервер удалён из подписки. Назначьте доступный сервер или явно импортируйте конфиг заново." }
@@ -41,7 +41,7 @@ object SingBoxConfigFactory {
             ensureVpnInbound(defaultConfig(outbound), routing, ownPackage, managedDns = true)
         }
         if (BuildConfig.DEBUG) logSafeOutboundSummary(config)
-        return CustomDnsConfig.apply(config, routing.customDns, ownPackage).toString()
+        return CustomDnsConfig.apply(config, routing.customDns, ownPackage, unavailablePackages).toString()
     }
 
     /** Report only non-secret transport metadata; never log credentials or Reality keys. */

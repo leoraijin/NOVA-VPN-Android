@@ -143,20 +143,21 @@ internal val LocalDualServerActions = staticCompositionLocalOf<DualServerActions
 
 @Composable
 internal fun DualRouteChoices(target: ServerRouteTarget, multi: MultiServerSettings, busy: Boolean,
-    onSelect: (ServerRouteTarget) -> Unit) {
+    dnsSelected: Boolean = false, dnsChoice: @Composable () -> Unit = {}, onSelect: (ServerRouteTarget) -> Unit) {
     if (target.kind == ServerRouteKind.BLOCK) Text("Текущий маршрут · заблокировано")
     if (target.kind == ServerRouteKind.PROFILE && target.profileId !in multi.slots.values)
         Text(if (target.profileId == multi.defaultProfileId) "Текущий маршрут · основной конфиг" else "Текущий маршрут · ранее назначенный конфиг")
     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         listOf("Напрямую" to ServerRouteTarget(ServerRouteKind.DIRECT),
             "Через VPN" to ServerRouteTarget(ServerRouteKind.DEFAULT)).forEach { (label, value) ->
-            FilterChip(selected = target == value, enabled = !busy, onClick = { onSelect(value) },
+            FilterChip(selected = !dnsSelected && target == value, enabled = !busy, onClick = { onSelect(value) },
                 label = { Text(label) })
         }
         multi.slots.forEach { (slot, id) ->
-            FilterChip(selected = target.profileId == id, enabled = !busy,
+            FilterChip(selected = !dnsSelected && target.profileId == id, enabled = !busy,
                 onClick = { onSelect(ServerRouteTarget(ServerRouteKind.PROFILE, id)) }, label = { Text("Через VPN-$slot") })
         }
+        dnsChoice()
     }
 }
 
@@ -173,7 +174,7 @@ internal fun DualRoutingPage(settings: AppRoutingSettings, profiles: List<Import
     val packageRules = remember(multi.rules) { multi.rules.filter { it.packageName != null }.groupBy { it.packageName!! } }
     val siteRules = remember(multi.rules) { multi.rules.filter { it.domain != null } }
     val siteNames = remember(siteRules) { siteRules.mapNotNull { it.domain }.toSet() }
-    val assignedPackages = packageRules.keys
+    val assignedPackages = packageRules.keys + settings.customDns.appServers.keys
     val groups by produceState<List<RoutingAppGroup>?>(null, apps, assignedPackages) {
         value = withContext(Dispatchers.IO) {
             runCatching { loadRoutingAppGroups(context.packageManager, context.packageName, apps, assignedPackages) }.getOrNull()
@@ -181,6 +182,11 @@ internal fun DualRoutingPage(settings: AppRoutingSettings, profiles: List<Import
     }
     fun save(rules: List<MultiServerRule>) {
         runCatching { onChange(updateDualSettings(settings, multi.copy(rules = rules))) }
+            .onFailure { error = it.message ?: "Не удалось изменить маршрут" }
+    }
+    fun saveApps(packages: Set<String>, target: ServerRouteTarget?) {
+        val cleared = clearDnsApps(settings, packages)
+        runCatching { onChange(updateDualSettings(cleared, multi.copy(rules = assignRoutingApps(multi.rules, packages, target)))) }
             .onFailure { error = it.message ?: "Не удалось изменить маршрут" }
     }
     PageFrame("Маршруты", "Основной VPN и дополнительные конфиги") {
@@ -259,9 +265,9 @@ internal fun DualRoutingPage(settings: AppRoutingSettings, profiles: List<Import
                     }
                     group.unavailableReason?.let {
                         Text(it, color = MaterialTheme.colorScheme.error)
-                        if (group.packages.any { name -> name in packageRules }) {
+                        if (group.packages.any { name -> name in assignedPackages }) {
                             NovaTextButton(enabled = !busy,
-                                onClick = { save(assignRoutingApps(multi.rules, group.packages, null)) }) {
+                                onClick = { saveApps(group.packages, null) }) {
                                 Text("Удалить сохранённое правило")
                             }
                         }
@@ -269,16 +275,18 @@ internal fun DualRoutingPage(settings: AppRoutingSettings, profiles: List<Import
                     if (tab in 2..10) {
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
                             Text("Через VPN-$tab", Modifier.weight(1f))
-                            NovaSwitch(checked = multi.slots[tab] != null && target.profileId == multi.slots[tab],
+                            NovaSwitch(checked = group.packages.none { it in settings.customDns.appServers } && multi.slots[tab] != null && target.profileId == multi.slots[tab],
                                 enabled = !busy && group.unavailableReason == null && multi.slots[tab] != null,
                                 onCheckedChange = { enabled ->
                                     val route = if (enabled) ServerRouteTarget(ServerRouteKind.PROFILE, requireNotNull(multi.slots[tab]))
                                         else ServerRouteTarget(ServerRouteKind.DEFAULT)
-                                    save(assignRoutingApps(multi.rules, group.packages, route))
+                                    saveApps(group.packages, route)
                                 })
                         }
-                    } else DualRouteChoices(target, multi, busy || group.unavailableReason != null) {
-                        save(assignRoutingApps(multi.rules, group.packages, it))
+                    } else DualRouteChoices(target, multi, busy || group.unavailableReason != null,
+                        dnsSelected = group.packages.any { it in settings.customDns.appServers },
+                        dnsChoice = { AppDnsRouteChip(settings, group.packages, busy || group.unavailableReason != null, onChange) }) {
+                        saveApps(group.packages, it)
                     }
                 }
             }

@@ -20,8 +20,12 @@ internal class SharedUidExitGuard private constructor(
         // This cannot be a valid installed Android package name.
         const val CONFLICT_PACKAGE = "<nova-shared-uid-conflict>"
 
+        fun hasManagedRules(config: String): Boolean = JSONObject(config).getJSONObject("route").optJSONArray("rules")
+            ?.optJSONObject(0)?.optJSONArray("package_name")?.optString(0) == CONFLICT_PACKAGE
+
         fun capture(config: String): SharedUidExitGuard? {
-            val rules = JSONObject(config).getJSONObject("route").getJSONArray("rules")
+            val route = JSONObject(config).getJSONObject("route")
+            val rules = route.getJSONArray("rules")
             val assignments = mutableMapOf<String, String?>()
             fun exit(rule: JSONObject): String? = when (rule.getString("action")) {
                 "route" -> rule.getString("outbound")
@@ -34,13 +38,23 @@ internal class SharedUidExitGuard private constructor(
                 return null
             }
             check(conflict.getString("action") == "reject")
-            for (index in 1 until rules.length()) {
-                val rule = rules.getJSONObject(index)
-                if (rule.optString("action") !in setOf("route", "reject")) continue
-                val names = rule.optJSONArray("package_name") ?: continue
-                for (packageIndex in 0 until names.length()) assignments[names.getString(packageIndex)] = exit(rule)
+            val terminal = (1 until rules.length()).map(rules::getJSONObject).filter {
+                it.optString("action") in setOf("route", "reject") &&
+                    it.keys().asSequence().all { key -> key in setOf("package_name", "invert", "action", "outbound") }
             }
-            return SharedUidExitGuard(assignments.toMap(), exit(rules.getJSONObject(rules.length() - 1)))
+            val defaultRule = terminal.firstOrNull { !it.has("package_name") || it.optBoolean("invert") }
+            val fallback = if (defaultRule == null) route.optString("final").takeIf { it.isNotEmpty() } else exit(defaultRule)
+            val names = terminal.flatMap { rule -> rule.optJSONArray("package_name")?.let { array ->
+                (0 until array.length()).map(array::getString)
+            }.orEmpty() }.toSet()
+            for (name in names) {
+                val first = terminal.firstOrNull { rule ->
+                    val packages = rule.optJSONArray("package_name")
+                    packages == null || ((0 until packages.length()).any { packages.getString(it) == name } != rule.optBoolean("invert"))
+                }
+                assignments[name] = if (first == null) fallback else exit(first)
+            }
+            return SharedUidExitGuard(assignments.toMap(), fallback)
         }
     }
 }

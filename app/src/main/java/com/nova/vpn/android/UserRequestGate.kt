@@ -44,12 +44,13 @@ internal data class PreparedVpnConfiguration(val config: String, val name: Strin
                 val frozen=settings.copy(packages=settings.packages.toSet(),sites=settings.sites.toList(),
                     multiServer=settings.multiServer?.let { it.copy(rules=it.rules.toList()) })
                 val multi = frozen.multiServer
+                require(frozen.customDns.appServers.isEmpty() || android.os.Build.VERSION.SDK_INT >= 29) { "DNS для приложений требует Android 10 или новее" }
                 if (multi != null) {
                     require(android.os.Build.VERSION.SDK_INT >= 29) { "Назначения серверов приложениям требуют Android 10 или новее." }
                 }
                 val unavailablePackages = multi?.let {
                     validateInstalledRoutingApps(it, context.packageManager, context.packageName)
-                }.orEmpty()
+                }.orEmpty() + com.nova.vpn.android.data.validateInstalledDnsApps(frozen.customDns, context.packageManager, context.packageName)
                 val snapshot = if (multi != null || frozen.history!=null) com.nova.vpn.android.data.ProfileVault(context).load().toList() else null
                 val primary = if(multi!=null) selectedPrimary(requireNotNull(snapshot), frozen, null) ?: throw MissingSelectedProfile()
                     else if(frozen.history!=null) requireNotNull(snapshot?.firstOrNull {it.id==profile.id}) {"Прежний сервер недоступен. Выберите сервер вручную."}
@@ -58,7 +59,7 @@ internal data class PreparedVpnConfiguration(val config: String, val name: Strin
                     val ids=com.nova.vpn.android.data.MultiServerPolicy(multi.revision,multi.defaultProfileId,multi.effectiveRules(),emptySet()).referencedProfileIds
                     requireNotNull(snapshot).filter {!it.retiredFromSubscription && it.id in ids && com.nova.vpn.android.data.MultiServerProfileAdapter.problem(it)!=null}.map {it.id}.toSet()
                 } else emptySet()
-                require(frozen.customDns.selected?.domains.isNullOrEmpty() ||
+                require(!frozen.customDns.hasRules ||
                     com.nova.vpn.android.data.AppPreferencesStore(context).vpnEngine() == com.nova.vpn.android.data.VpnEngine.SING_BOX) {
                     "Для пользовательского DNS выберите ядро sing-box в настройках"
                 }

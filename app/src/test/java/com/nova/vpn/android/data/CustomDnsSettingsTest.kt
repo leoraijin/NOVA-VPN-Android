@@ -70,6 +70,57 @@ class CustomDnsSettingsTest {
         val restored = RoutingModeTransitions.disable(multi.copy(customDns = changedDns)).settings
         assertEquals(changedDns, restored.customDns)
     }
+    @Test fun appAssignmentReplacesVpnAndPersistsAcrossModeChanges() {
+        val app = "org.example.chat"
+        val partner = "org.example.sibling"
+        val original = AppRoutingSettings(customDns = dns)
+        val multi = RoutingModeTransitions.enable(original, "first", "first", listOf(
+            MultiServerRule(packageName = app, target = ServerRouteTarget(ServerRouteKind.DEFAULT))
+        ), false)
+        val changed = assignDnsApps(multi, setOf(app, partner), server.id)
+        assertTrue(changed.multiServer!!.rules.none { it.packageName == app })
+        assertEquals(mapOf(app to server.id, partner to server.id), changed.customDns.appServers)
+        assertEquals(changed, RoutingPresets.readSettings(RoutingPresets.settingsJson(changed)))
+        assertEquals(changed.customDns, RoutingModeTransitions.disable(changed).settings.customDns)
+        assertTrue(clearDnsApps(changed, setOf(app, partner)).customDns.appServers.isEmpty())
+    }
+    @Test fun eachAppUsesItsOwnDnsBeforeFakeIpAndGuardRejectsDifferentResolversOnOneUid() {
+        val first = "org.example.chat"
+        val second = "org.example.browser"
+        val third = "org.example.direct"
+        val other = server.copy(id = "other", address = "9.9.9.9")
+        val appDns = CustomDnsSettings(listOf(server, other), appServers = mapOf(first to server.id, second to other.id))
+        val multi = MultiServerSettings(1, "first", listOf(MultiServerRule(domain = "blocked.example", target = ServerRouteTarget(ServerRouteKind.BLOCK))))
+        val root = JSONObject(SingBoxConfigFactory.build(profile(), AppRoutingSettings(multiServer = multi, customDns = appDns),
+            "com.nova.vpn.android", listOf(profile()), "/private/fixture-dns.db"))
+        val dnsRules = items(root, "dns", "rules")
+        val appRules = dnsRules.filter { it.has("package_name") && it.optString("action") == "route" }
+        assertEquals(listOf(first, second), appRules.map { it.getJSONArray("package_name").getString(0) })
+        assertEquals(2, appRules.map { it.getString("server") }.distinct().size)
+        assertTrue(dnsRules.indexOf(appRules.last()) < dnsRules.indexOfFirst { it.optString("server") == "nova-fakeip" })
+        val guard = requireNotNull(SharedUidExitGuard.capture(root.toString()))
+        assertTrue(guard.conflicts(listOf(first, second)))
+        assertTrue(guard.conflicts(listOf(first, third)))
+        assertFalse(guard.conflicts(listOf(first, first)))
+        System.getenv("NOVA_DNS_FIXTURE_DIRECTORY")?.let { directory ->
+            File(directory).mkdirs()
+            File(directory, "custom-dns-apps-multi.json").writeText(root.toString())
+        }
+    }
+    @Test fun dnsAppJoinsIncludedPackagesWithoutCapturingOtherApps() {
+        val app = "org.example.chat"
+        val proxyApp = "org.example.proxy"
+        val settings = AppRoutingSettings(mode = AppRoutingMode.INCLUDE_SELECTED, packages = setOf(proxyApp),
+            customDns = dns.copy(selectedId = null, appServers = mapOf(app to server.id)))
+        val root = config(settings)
+        val included = root.getJSONArray("inbounds").getJSONObject(0).getJSONArray("include_package")
+        assertEquals(setOf(app, proxyApp), (0 until included.length()).map(included::getString).toSet())
+        assertTrue(items(root, "route", "rules").any { it.optString("action") == "sniff" })
+        System.getenv("NOVA_DNS_FIXTURE_DIRECTORY")?.let { directory ->
+            File(directory).mkdirs()
+            File(directory, "custom-dns-apps-single.json").writeText(root.toString())
+        }
+    }
     @Test fun rejectsMissingSelectionAndDuplicateIds() {
         assertTrue(runCatching { dns.copy(selectedId = "missing").validate() }.isFailure)
         assertTrue(runCatching { dns.copy(servers = listOf(server, server)).validate() }.isFailure)

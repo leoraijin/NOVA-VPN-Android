@@ -39,11 +39,13 @@ internal fun CustomDnsDialog(settings: CustomDnsSettings, onDismiss: () -> Unit,
                             Text((if (draft.selectedId == server.id) "✓ " else "") + server.name)
                         }
                         Text(server.address, style = MaterialTheme.typography.bodySmall)
-                        Text("Сайтов — ${server.domains.size}", style = MaterialTheme.typography.bodySmall)
+                        Text("Сайтов — ${server.domains.size} · приложений — ${draft.appServers.values.count { it == server.id }}",
+                            style = MaterialTheme.typography.bodySmall)
                         Row {
                             NovaTextButton(onClick = { editing = server }) { Text("Изменить") }
                             NovaTextButton(onClick = { draft = draft.copy(servers = draft.servers.filterNot { it.id == server.id },
-                                selectedId = draft.selectedId.takeUnless { it == server.id }) }) { Text("Удалить") }
+                                selectedId = draft.selectedId.takeUnless { it == server.id },
+                                appServers = draft.appServers.filterValues { it != server.id }) }) { Text("Удалить") }
                         }
                     }
                 }
@@ -60,7 +62,7 @@ internal fun CustomDnsDialog(settings: CustomDnsSettings, onDismiss: () -> Unit,
 }
 
 @Composable
-private fun DnsServerEditor(server: CustomDnsServer?, onDismiss: () -> Unit, onSave: (CustomDnsServer) -> Unit) {
+internal fun DnsServerEditor(server: CustomDnsServer?, onDismiss: () -> Unit, editSites: Boolean = true, onSave: (CustomDnsServer) -> Unit) {
     var name by remember { mutableStateOf(server?.name.orEmpty()) }
     var address by remember { mutableStateOf(server?.address.orEmpty()) }
     var domains by remember { mutableStateOf(server?.domains?.joinToString("\n").orEmpty()) }
@@ -70,7 +72,7 @@ private fun DnsServerEditor(server: CustomDnsServer?, onDismiss: () -> Unit, onS
             OutlinedTextField(name, { name = it }, label = { Text("Название") }, singleLine = true)
             OutlinedTextField(address, { address = it }, label = { Text("Адрес DNS") },
                 supportingText = { Text("9.9.9.9 · tls://dns.quad9.net · https://dns.google/dns-query") }, singleLine = true)
-            OutlinedTextField(domains, { domains = it }, label = { Text("Сайты через DNS") },
+            if (editSites) OutlinedTextField(domains, { domains = it }, label = { Text("Сайты через DNS") },
                 supportingText = { Text("По одному домену в строке, например example.com") }, minLines = 3, maxLines = 6)
             error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         }

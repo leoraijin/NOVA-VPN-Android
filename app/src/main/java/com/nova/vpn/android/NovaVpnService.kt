@@ -356,7 +356,7 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
                 }
                 val multi = healthPlan
                 trafficProbe = probe;exitHealthPlan=multi
-                val uidGuard = if (request.identity.policy != null)
+                val uidGuard = if (request.identity.policy != null || com.nova.vpn.android.data.SharedUidExitGuard.hasManagedRules(config))
                     com.nova.vpn.android.data.SharedUidExitGuard.capture(config) else null
                 if (!commands.current(ticket)) return@execute
                 stage = "command-server-create"

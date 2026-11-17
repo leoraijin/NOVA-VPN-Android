@@ -55,3 +55,19 @@ internal fun validateInstalledRoutingApps(
         ::uidOf, { uid -> pm.getPackagesForUid(uid)?.toSet().orEmpty() }, ownPackage)
     return missing
 }
+
+/** Missing app assignments remain saved. Installed shared-UID members must use one DNS. */
+internal fun validateInstalledDnsApps(settings: CustomDnsSettings, pm: PackageManager, ownPackage: String): Set<String> {
+    val missing = mutableSetOf<String>()
+    val checked = mutableSetOf<String>()
+    fun uidOf(name: String): Int? = try { pm.getApplicationInfo(name, 0).uid } catch (_: PackageManager.NameNotFoundException) { null }
+    for (name in settings.appServers.keys) {
+        if (name in checked) continue
+        if (uidOf(name) == null) { missing += name; continue }
+        val group = SharedUidRouting.groupFor(name, ::uidOf) { pm.getPackagesForUid(it)?.toSet().orEmpty() }
+        require(ownPackage !in group) { "Группе NOVA VPN нельзя назначить отдельный DNS" }
+        require(group.map { settings.appServers[it] }.distinct().size == 1) { "Приложения с общим UID должны использовать один DNS" }
+        checked += group
+    }
+    return missing
+}

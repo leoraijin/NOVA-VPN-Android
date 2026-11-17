@@ -26,7 +26,9 @@ class ActiveRoutePreview private constructor(
     private val policy: MultiServerPolicy,
     private val ipv6Enabled: Boolean,
     private val fakeIpRanges: List<FakeIpNetworkPreflight.Prefix>,
-    private val uidGuard: SharedUidExitGuard?
+    private val uidGuard: SharedUidExitGuard?,
+    private val customDns: CustomDnsSettings,
+    private val siteRules: List<MultiServerRule>
 ) {
     internal data class Result(val text: String, val profileId: String? = null)
 
@@ -47,6 +49,16 @@ class ActiveRoutePreview private constructor(
             return Result("Блокируется · у приложений с общим UID разные назначения.")
         val packageName = app.trim().takeIf { it.isNotEmpty() && it in uidPackages }
         val decision = policy.decide(packageName, domain, ownerKnown = packageName != null)
+        if (decision.requested.kind != ServerRouteKind.BLOCK) {
+            val siteDns = customDns.selected?.takeIf { server ->
+                domain != null && server.domains.any { domain == it || domain.endsWith(".$it") }
+            }
+            if (siteDns != null) return Result("DNS · " + siteDns.name + " · правило сайта")
+            if (uidGuard?.hasAssignment(packageName.orEmpty()) == true && siteRules.none { it.matches(null, domain) }) {
+                val appDns = customDns.servers.firstOrNull { customDns.appServers[packageName] == it.id }
+                if (appDns != null) return Result("DNS · " + appDns.name + " · правило приложения")
+            }
+        }
         val source = when (decision.reason) {
             "site" -> "правило сайта"
             "application" -> "правило приложения"
@@ -78,7 +90,7 @@ class ActiveRoutePreview private constructor(
                 rule.packageName?.let { guard?.hasAssignment(it) == true } ?: true
             }
             return ActiveRoutePreview(MultiServerPolicy(multi.revision, multi.defaultProfileId, rules, exits.entries.keys),
-                settings.ipv6Enabled, ranges, guard)
+                settings.ipv6Enabled, ranges, guard, settings.customDns, rules.filter { it.domain != null })
         }
     }
 }

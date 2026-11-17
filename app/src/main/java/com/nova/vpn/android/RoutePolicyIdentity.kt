@@ -23,6 +23,9 @@ class RoutePolicyIdentity(val revision: Long, profiles: Set<String>, val digest:
             val canonical=JSONArray().put(1).put(multi.revision).put(multi.defaultProfileId).put(settings.mode.name)
                 .put(settings.ipv6Enabled).put(JSONArray(settings.packages.sorted())).put(sites).put(rules)
             if (settings.customDns != com.nova.vpn.android.data.CustomDnsSettings()) {
+                if (settings.customDns.appServers.isNotEmpty()) canonical.put(JSONArray().apply {
+                    settings.customDns.appServers.toSortedMap().forEach { (name, id) -> put(JSONArray().put(name).put(id)) }
+                })
                 canonical.put(settings.customDns.selectedId ?: JSONObject.NULL)
                 canonical.put(JSONArray().apply { settings.customDns.servers.forEach { server ->
                     put(JSONArray().put(server.id).put(server.address).put(JSONArray(server.domains)))

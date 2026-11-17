@@ -1893,10 +1893,20 @@ internal fun RoutingPage(
         if (visibleApps.isEmpty()) item {
             SoftCard { Text("Ничего не найдено. Проверьте запрос или очистите поиск.", color = MaterialTheme.colorScheme.onSurfaceVariant) }
         } else items(visibleApps, key = { it.packageName }, contentType = { "application" }) { app ->
-        val checked = app.packageName in settings.packages
+        val checked = app.packageName in settings.packages && app.packageName !in settings.customDns.appServers
         val iconContext = LocalContext.current.applicationContext
         val appIcon by produceState(AppIconCache.peek(app.packageName), app.packageName) {
             value = AppIconCache.load(iconContext.packageManager, app.packageName)
+        }
+        fun setAppRoute(enabled: Boolean) {
+            runCatching {
+                val group = if (settings.customDns.appServers.isEmpty()) setOf(app.packageName) else com.nova.vpn.android.data.SharedUidRouting.groupFor(app.packageName,
+                    { name -> runCatching { iconContext.packageManager.getApplicationInfo(name, 0).uid }.getOrNull() },
+                    { uid -> iconContext.packageManager.getPackagesForUid(uid)?.toSet().orEmpty() })
+                require(iconContext.packageName !in group) { "Группа содержит NOVA VPN" }
+                val cleared = com.nova.vpn.android.data.clearDnsApps(settings, group)
+                publishSettings(cleared.copy(packages = if (enabled) cleared.packages + group else cleared.packages - group))
+            }.onFailure { android.widget.Toast.makeText(iconContext, it.message ?: "Не удалось изменить маршрут", android.widget.Toast.LENGTH_LONG).show() }
         }
         SoftCard {
             Row(
@@ -1904,10 +1914,7 @@ internal fun RoutingPage(
                     .fillMaxWidth()
                     .heightIn(min = 64.dp)
                     .clickable(role = Role.Button) {
-                        val next = settings.packages.toMutableSet().apply {
-                            if (checked) remove(app.packageName) else add(app.packageName)
-                        }
-                        publishSettings(settings.copy(packages = next))
+                        setAppRoute(!checked)
                     },
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -1921,16 +1928,18 @@ internal fun RoutingPage(
                     Text(app.label, fontWeight = FontWeight.Medium)
                     Text(app.packageName, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                Switch(
+                if (app.packageName !in settings.customDns.appServers) Switch(
                     checked = checked,
-                    onCheckedChange = { enabled ->
-                        val next = settings.packages.toMutableSet().apply {
-                            if (enabled) add(app.packageName) else remove(app.packageName)
-                        }
-                        publishSettings(settings.copy(packages = next))
-                    }
+                    onCheckedChange = { enabled -> setAppRoute(enabled) }
                 )
             }
+            if (app.packageName in settings.customDns.appServers) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TextButton(onClick = { setAppRoute(settings.mode == AppRoutingMode.EXCLUDE_SELECTED) }, enabled = !assignmentBusy) { Text("Напрямую") }
+                    TextButton(onClick = { setAppRoute(settings.mode == AppRoutingMode.INCLUDE_SELECTED) }, enabled = !assignmentBusy) { Text("Через VPN") }
+                }
+            }
+            AppDnsRouteChip(settings, setOf(app.packageName), assignmentBusy, ::publishSettings)
         }
     }
     }
