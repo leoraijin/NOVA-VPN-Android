@@ -1,5 +1,5 @@
 diff --git a/core/src/app/dns/fakeip.rs b/core/src/app/dns/fakeip.rs
-index 4fa06f9af25e9b6d7b361a246418879a0c476282..1d540e73c0ac41394ec9690c1594f7ef514fc90b 100644
+index 4fa06f9af25e9b6d7b361a246418879a0c476282..247df744e3bd735d4a5efe07581a48c6f389506d 100644
 --- a/core/src/app/dns/fakeip.rs
 +++ b/core/src/app/dns/fakeip.rs
 @@ -14,7 +14,11 @@
@@ -128,24 +128,27 @@ index 4fa06f9af25e9b6d7b361a246418879a0c476282..1d540e73c0ac41394ec9690c1594f7ef
      }
  
      fn load(&self, f: &Path) -> Result<usize> {
-@@ -403,6 +463,22 @@ mod tests {
+@@ -403,6 +463,25 @@ mod tests {
          std::fs::remove_dir_all(&dir).ok();
      }
  
 +    #[test]
 +    fn failed_write_keeps_mappings_pending_for_retry() {
-+        let dir = tempfile::tempdir().unwrap();
-+        let parent = dir.path().join("cache");
++        let dir = std::env::temp_dir().join(format!("vpn-core-fakeip-retry-{}", std::process::id()));
++        let parent = dir.join("cache");
 +        let path = parent.join("fakeip.txt");
 +        let table = fake("198.18.0.0/15", None, Some(path.clone()));
 +        let addr = table.ipv4_for("keep.example");
 +        assert!(table.save().is_err());
 +
 +        // Retry without allocating any further names.
-+        std::fs::create_dir(&parent).unwrap();
++        std::fs::create_dir_all(&parent).unwrap();
 +        table.save().unwrap();
-+        let reloaded = fake("198.18.0.0/15", None, Some(path));
++        let reloaded = fake("198.18.0.0/15", None, Some(path.clone()));
 +        assert_eq!(reloaded.reverse(IpAddr::V4(addr)), Reverse::Name("keep.example".into()));
++        std::fs::remove_file(path).unwrap();
++        std::fs::remove_dir(parent).unwrap();
++        std::fs::remove_dir(dir).unwrap();
 +    }
 +
      #[test]
