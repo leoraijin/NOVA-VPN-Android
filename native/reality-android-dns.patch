@@ -155,10 +155,28 @@ index 4fa06f9af25e9b6d7b361a246418879a0c476282..247df744e3bd735d4a5efe07581a48c6
      fn rejects_bad_ranges() {
          assert!(FakeIp::new("10.0.0.0/25".parse().unwrap(), None, None).is_err());
 diff --git a/core/src/app/dns/mod.rs b/core/src/app/dns/mod.rs
-index 0f48cd8b8d256b1b793e8659511d219ffbdf3fea..bb7f4c8fcfba9b104c8cf21e3a8b9daa18e19654 100644
+index 0f48cd8b8d256b1b793e8659511d219ffbdf3fea..661d69d07dbcafa95906391c43ac45f1627b30f3 100644
 --- a/core/src/app/dns/mod.rs
 +++ b/core/src/app/dns/mod.rs
-@@ -242,6 +242,14 @@ impl Dns {
+@@ -26,6 +26,7 @@ pub mod cache;
+ pub mod fakeip;
+ pub mod upstream;
+ 
++use std::future::Future;
+ use std::net::IpAddr;
+ use std::path::PathBuf;
+ use std::sync::atomic::{AtomicU64, Ordering};
+@@ -49,6 +50,9 @@ pub use upstream::DNS_INTERNAL;
+ 
+ /// Потолок на ответ модуля целиком (выбор сервера, запрос, повторы).
+ const QUERY_TIMEOUT: Duration = Duration::from_secs(10);
++// Keep both answers when they arrive close together for Happy Eyeballs.
++// Once a family has a usable address, a stalled companion can't hold it up.
++const ADDRESS_FAMILY_GRACE: Duration = Duration::from_millis(150);
+ /// TTL ответов fake-IP: программа не должна надолго запоминать адрес.
+ const FAKE_TTL: u32 = 1;
+ 
+@@ -242,6 +246,14 @@ impl Dns {
                      "dns.bootstrap требует UDP-сервер с IP-адресом и прямой detour".into(),
                  ));
              }
@@ -173,7 +191,55 @@ index 0f48cd8b8d256b1b793e8659511d219ffbdf3fea..bb7f4c8fcfba9b104c8cf21e3a8b9daa
              let needs_detour = !matches!(kind, upstream::Kind::Local | upstream::Kind::FakeIp);
              if needs_detour && detour.is_none() {
                  return Err(Error::Config(format!(
-@@ -778,22 +786,10 @@ impl Dns {
+@@ -715,6 +727,7 @@ impl Dns {
+         name: &str,
+         server: Option<(&Arc<Upstream>, Strategy, bool)>,
+     ) -> Result<Vec<IpAddr>> {
++        let network_generation = self.network_generation.load(Ordering::Acquire);
+         let name = normalize(name);
+         // Bootstrap не наследует правила приложений и их IPv6-only стратегию.
+         let strategy = if let Some((_, strategy, _)) = server {
+@@ -748,27 +761,26 @@ impl Dns {
+                 Ok::<Vec<IpAddr>, Error>(
+                     resp.answers
+                         .iter()
+-                        .filter_map(|r| match &r.data {
+-                            RData::A(a) => Some(IpAddr::V4(a.0)),
+-                            RData::AAAA(a) => Some(IpAddr::V6(a.0)),
++                        .filter_map(|r| match (t, &r.data) {
++                            (RecordType::A, RData::A(a)) => Some(IpAddr::V4(a.0)),
++                            (RecordType::AAAA, RData::AAAA(a)) => Some(IpAddr::V6(a.0)),
+                             _ => None,
+                         })
+                         .collect::<Vec<_>>(),
+                 )
+             }
+         };
+-        let (v4, v6) = match strategy {
+-            Strategy::Ipv4Only => (ask(RecordType::A).await?, Vec::new()),
+-            Strategy::Ipv6Only => (Vec::new(), ask(RecordType::AAAA).await?),
+-            _ => {
+-                let (v4, v6) = tokio::join!(ask(RecordType::A), ask(RecordType::AAAA));
+-                (v4?, v6?)
+-            }
+-        };
+         let mut out = match strategy {
+-            Strategy::PreferIpv6 | Strategy::Ipv6Only => [v6, v4].concat(),
+-            _ => [v4, v6].concat(),
++            Strategy::Ipv4Only => ask(RecordType::A).await?,
++            Strategy::Ipv6Only => ask(RecordType::AAAA).await?,
++            Strategy::PreferIpv4 => lookup_both(ask(RecordType::A), ask(RecordType::AAAA)).await?,
++            Strategy::PreferIpv6 => lookup_both(ask(RecordType::AAAA), ask(RecordType::A)).await?,
+         };
++        if self.network_generation.load(Ordering::Acquire) != network_generation {
++            return Err(Error::Protocol(
++                "DNS query invalidated by network change".into(),
++            ));
++        }
+         out.dedup();
+         if out.is_empty() {
+             tracing::debug!(%name, "DNS: имя не разрешилось");
+@@ -778,22 +790,10 @@ impl Dns {
      }
  
      /// Сохранять таблицу fake-IP раз в полминуты (если менялась).
@@ -199,6 +265,108 @@ index 0f48cd8b8d256b1b793e8659511d219ffbdf3fea..bb7f4c8fcfba9b104c8cf21e3a8b9daa
      }
  
      /// Сохранить таблицу fake-IP сейчас (при выходе).
+@@ -806,6 +806,39 @@ impl Dns {
+     }
+ }
+ 
++async fn lookup_both<F>(preferred: F, alternate: F) -> Result<Vec<IpAddr>>
++where
++    F: Future<Output = Result<Vec<IpAddr>>>,
++{
++    tokio::pin!(preferred, alternate);
++    let (first, pending, preferred_first) = tokio::select! {
++        biased;
++        result = &mut preferred => (result, alternate, true),
++        result = &mut alternate => (result, preferred, false),
++    };
++    let second = if first.as_ref().is_ok_and(|addresses| !addresses.is_empty()) {
++        match tokio::time::timeout(ADDRESS_FAMILY_GRACE, pending).await {
++            Ok(result) => result,
++            Err(_) => return first,
++        }
++    } else {
++        pending.await
++    };
++    let (preferred, alternate) = if preferred_first {
++        (first, second)
++    } else {
++        (second, first)
++    };
++    match (preferred, alternate) {
++        (Ok(mut addresses), Ok(alternate)) => {
++            addresses.extend(alternate);
++            Ok(addresses)
++        }
++        (Ok(addresses), Err(_)) | (Err(_), Ok(addresses)) if !addresses.is_empty() => Ok(addresses),
++        (Err(error), _) | (_, Err(error)) => Err(error),
++    }
++}
++
+ /// Пустой ответ на запрос с кодом `rcode`.
+ pub fn reply(query: &Message, rcode: ResponseCode) -> Message {
+     let mut m = Message::response(query.metadata.id, query.metadata.op_code);
+@@ -1311,7 +1344,22 @@ mod rule_strategy_tests {
+                     .lock()
+                     .unwrap()
+                     .push((question.name().to_ascii(), qtype));
++                let host = question.name().to_ascii();
++                if matches!(
++                    (host.as_str(), qtype),
++                    ("slow-v6.example.", RecordType::AAAA) | ("slow-v4.example.", RecordType::A)
++                ) {
++                    continue;
++                }
+                 let mut answer = reply(&query, ResponseCode::NoError);
++                if host == "invalid-v6.example." && qtype == RecordType::AAAA {
++                    // The ID still matches, but the message is truncated.
++                    socket
++                        .send_to(&query.metadata.id.to_be_bytes(), peer)
++                        .await
++                        .unwrap();
++                    continue;
++                }
+                 let data = match qtype {
+                     RecordType::A => RData::A(A::new(203, 0, 113, 42)),
+                     RecordType::AAAA => RData::AAAA(AAAA("2001:db8::42".parse().unwrap())),
+@@ -1376,6 +1424,38 @@ mod rule_strategy_tests {
+         serde_json::json!({"domain": [name], "server": "test", "strategy": strategy})
+     }
+ 
++    #[tokio::test]
++    async fn a_stalled_dns_family_does_not_delay_an_available_cdn_address() {
++        let server = loopback_dns().await;
++        let dns = build(config(&server.address, "prefer_ipv4", serde_json::json!([])).unwrap());
++        let v4 = "203.0.113.42".parse::<IpAddr>().unwrap();
++        let v6 = "2001:db8::42".parse::<IpAddr>().unwrap();
++
++        for (name, strategy, expected) in [
++            ("slow-v6.example", Strategy::PreferIpv6, v4),
++            ("slow-v4.example", Strategy::PreferIpv4, v6),
++            ("invalid-v6.example", Strategy::PreferIpv4, v4),
++        ] {
++            let ips = tokio::time::timeout(
++                Duration::from_secs(1),
++                dns.lookup_via(name, "test", strategy, false),
++            )
++            .await
++            .expect("a working family must not wait for the DNS timeout")
++            .unwrap();
++            assert_eq!(ips, vec![expected], "{name}");
++        }
++
++        let ips = tokio::time::timeout(
++            Duration::from_secs(1),
++            dns.lookup_server_host("slow-v6.example"),
++        )
++        .await
++        .expect("a working VPN endpoint must not wait for the DNS timeout")
++        .unwrap();
++        assert_eq!(ips, vec![v4]);
++    }
++
+     #[test]
+     fn parser_preserves_optional_strategy_and_rejects_invalid_values() {
+         let cfg = config(
 diff --git a/core/src/app/dns/upstream.rs b/core/src/app/dns/upstream.rs
 index d6f6c28e09a702341fe7c31e53341dd05e37ad9c..a8e6e03bb14bc64ee51c886a28dedf54591ac116 100644
 --- a/core/src/app/dns/upstream.rs
@@ -636,11 +804,87 @@ index f024f73ea6d76c4c7b17a4a9a33008daa3799597..73a09892e1a866182532dfe8b9a345b9
              });
          }
          Err(Error::Protocol("слишком много перенаправлений".into()))
+diff --git a/core/src/app/router.rs b/core/src/app/router.rs
+index fba68a3463be1d47ed18661d79ea5f780bbdb397..526d8ad49b701d3ad84fb82f6a9b2929a4cde1c1 100644
+--- a/core/src/app/router.rs
++++ b/core/src/app/router.rs
+@@ -215,10 +215,8 @@ impl Router {
+         Ok(())
+     }
+ 
+-    /// Выход для соединения с учётом fake-IP и `domain_strategy`.
+-    /// `meta.target` с fake-IP заменяется именем. Ошибка — адрес из
+-    /// диапазона fake-IP, для которого имя неизвестно.
+-    pub async fn route(&self, meta: &mut Metadata) -> Result<Arc<dyn Outbound>> {
++    /// Restore the authoritative FakeIP name before routing or waiting for payload.
++    pub(super) fn restore_fake_destination(&self, meta: &mut Metadata) -> Result<()> {
+         if let Some(dns) = &self.dns {
+             let ip = match &meta.target {
+                 Address::Ipv4(v4) => Some(std::net::IpAddr::V4(*v4)),
+@@ -240,6 +238,16 @@ impl Router {
+                 }
+             }
+         }
++        Ok(())
++    }
++
++    /// Выход для соединения с учётом fake-IP и `domain_strategy`.
++    pub async fn route(&self, meta: &mut Metadata) -> Result<Arc<dyn Outbound>> {
++        self.restore_fake_destination(meta)?;
++        self.route_restored(meta).await
++    }
++
++    pub(super) async fn route_restored(&self, meta: &mut Metadata) -> Result<Arc<dyn Outbound>> {
+         // Длина имени в заголовках VLESS, Mux.Cool, XUDP и Trojan — один
+         // байт: длиннее 255 закодировалось бы с обрезанной длиной (битый
+         // заголовок) или обрезанным именем. Такое имя бывает из fake-IP:
+diff --git a/core/src/app/sniff_quic.rs b/core/src/app/sniff_quic.rs
+index 4f36d621d4b1fbe52fa2ef5f26b5cbbe3536440c..dad190c641a1b165bb8084a3ad74db65bd42f9c1 100644
+--- a/core/src/app/sniff_quic.rs
++++ b/core/src/app/sniff_quic.rs
+@@ -390,7 +390,7 @@ fn frames(pl: &[u8]) -> Option<Vec<(u64, Vec<u8>)>> {
+ }
+ 
+ #[cfg(test)]
+-mod tests {
++pub(super) mod tests {
+     use super::*;
+ 
+     fn unhex(s: &str) -> Vec<u8> {
+@@ -550,6 +550,13 @@ mod tests {
+         assert_eq!(QuicSniffer::default().push(&far), Sniff::No);
+     }
+ 
++    pub(in crate::app) fn incomplete_initial_datagram() -> Vec<u8> {
++        let ch = client_hello("outer-name.example", 1500);
++        let packet = protect(&[9u8; 8], 0, &crypto(0, &ch[..800]));
++        assert_eq!(QuicSniffer::default().push(&packet), Sniff::NeedMore);
++        packet
++    }
++
+     #[tokio::test]
+     async fn reads_flow_and_keeps_datagrams() {
+         let dcid = [9u8; 8];
 diff --git a/core/src/app/tun/mod.rs b/core/src/app/tun/mod.rs
-index 5e09e015b6cf83a88425a6061141b0c4739fb83d..8cc913eb8246501fadd93035f835cf81fc58aa17 100644
+index 5e09e015b6cf83a88425a6061141b0c4739fb83d..85dcc723abc6a7a2107294b378afc63f845c6330 100644
 --- a/core/src/app/tun/mod.rs
 +++ b/core/src/app/tun/mod.rs
-@@ -414,19 +414,15 @@ impl TunInbound {
+@@ -383,11 +383,12 @@ impl TunInbound {
+             inbound_type: "tun",
+             rule: None,
+         };
++        router.restore_fake_destination(&mut meta)?;
+         let mut initial = Vec::new();
+-        if self.settings.sniff {
++        if self.settings.sniff && !matches!(meta.target, Address::Domain(_)) {
+             meta.sniffed = sniff::read_and_sniff(&mut t, &mut initial).await?;
+         }
+-        let outbound = router.route(&mut meta).await?;
++        let outbound = router.route_restored(&mut meta).await?;
+         if self.settings.sniff_override && !matches!(meta.target, Address::Domain(_)) {
+             if let Some(d) = &meta.sniffed {
+                 meta.target = Address::Domain(d.clone());
+@@ -414,19 +415,15 @@ impl TunInbound {
          if is_local_only(dst.ip()) {
              return Ok(());
          }
@@ -664,7 +908,28 @@ index 5e09e015b6cf83a88425a6061141b0c4739fb83d..8cc913eb8246501fadd93035f835cf81
              }
          }
          if in_tun_net(&self.settings, dst) {
-@@ -484,13 +480,10 @@ impl TunInbound {
+@@ -452,9 +449,10 @@ impl TunInbound {
+             inbound_type: "tun",
+             rule: None,
+         };
++        router.restore_fake_destination(&mut meta)?;
+         // QUIC (HTTP/3): домен из ClientHello в первых Initial-пакетах.
+         let mut pending = Vec::new();
+-        if self.settings.sniff {
++        if self.settings.sniff && !matches!(meta.target, Address::Domain(_)) {
+             meta.sniffed = sniff_quic::read_and_sniff(&mut u, &mut pending).await?;
+             if pending.is_empty() {
+                 return Ok(());
+@@ -463,7 +461,7 @@ impl TunInbound {
+                 tracing::debug!(ip = %meta.target, domain = %d, "sniffing QUIC: найден домен");
+             }
+         }
+-        let outbound = router.route(&mut meta).await?;
++        let outbound = router.route_restored(&mut meta).await?;
+         if outbound.capabilities().udp == Some(false) {
+             return Err(crate::error::Error::Protocol(format!(
+                 "выход {} не поддерживает UDP",
+@@ -484,13 +482,10 @@ impl TunInbound {
          }
          loop {
              tokio::select! {
@@ -682,7 +947,7 @@ index 5e09e015b6cf83a88425a6061141b0c4739fb83d..8cc913eb8246501fadd93035f835cf81
                  }
                  r = session.recv() => {
                      match r? {
-@@ -498,7 +491,7 @@ impl TunInbound {
+@@ -498,7 +493,7 @@ impl TunInbound {
                          // приложение (так устроен [`udp::UdpFlow`]).
                          Some((_, _, data)) => {
                              conn.add_down(data.len() as u64);
@@ -692,7 +957,7 @@ index 5e09e015b6cf83a88425a6061141b0c4739fb83d..8cc913eb8246501fadd93035f835cf81
                          None => return Ok(()),
                      }
 diff --git a/core/src/app/tun/udp.rs b/core/src/app/tun/udp.rs
-index 65642b708aedf92576195724d1173da0ca73c2ce..ef6b128b7ddf2c5f8149976e74a83941e18021cf 100644
+index 65642b708aedf92576195724d1173da0ca73c2ce..ff1f5c0ab33d03d5f60a75d1fc927fd9b05e0ece 100644
 --- a/core/src/app/tun/udp.rs
 +++ b/core/src/app/tun/udp.rs
 @@ -2,12 +2,12 @@
@@ -825,6 +1090,129 @@ index 65642b708aedf92576195724d1173da0ca73c2ce..ef6b128b7ddf2c5f8149976e74a83941
          idle,
          deadline: Box::pin(tokio::time::sleep(idle)),
          _permit: permit,
+@@ -192,3 +181,122 @@ fn open(
+         Err(mpsc::error::TrySendError::Closed(_)) => false,
+     }
+ }
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++    use crate::app::{
++        config::Config,
++        outbound::{BlockOutbound, Outbound, OutboundCapabilities, Packet, UdpSession, UDP_IDLE},
++        router::Router,
++        rules::GeoFiles,
++        sniff_quic::tests::incomplete_initial_datagram,
++        tun::{settings, TunInbound},
++        App, Metadata,
++    };
++    use crate::error::Result;
++    use crate::transport::AsyncStream;
++    use crate::vless::Address;
++    use futures_util::future::BoxFuture;
++
++    #[derive(Clone)]
++    struct MediaExit(mpsc::Sender<Packet>);
++
++    impl Outbound for MediaExit {
++        fn tag(&self) -> &str {
++            "media-exit"
++        }
++
++        fn clash_type(&self) -> &'static str {
++            "test"
++        }
++
++        fn capabilities(&self) -> OutboundCapabilities {
++            OutboundCapabilities::TCP_UDP
++        }
++
++        fn connect<'a>(&'a self, _: &'a Metadata) -> BoxFuture<'a, Result<Box<dyn AsyncStream>>> {
++            unreachable!("fixture only handles UDP")
++        }
++
++        fn udp<'a>(&'a self, _: &'a Metadata) -> BoxFuture<'a, Result<Arc<dyn UdpSession>>> {
++            Box::pin(async { Ok(Arc::new(self.clone()) as Arc<dyn UdpSession>) })
++        }
++    }
++
++    impl UdpSession for MediaExit {
++        fn send(&self, address: Address, port: u16, data: Vec<u8>) -> BoxFuture<'_, Result<()>> {
++            Box::pin(async move {
++                self.0.send((address, port, data)).await.unwrap();
++                Ok(())
++            })
++        }
++
++        fn recv(&self) -> BoxFuture<'_, Result<Option<Packet>>> {
++            Box::pin(std::future::pending())
++        }
++    }
++
++    #[tokio::test(start_paused = true)]
++    async fn known_fake_ip_forwards_the_first_quic_datagram_to_the_assigned_exit_immediately() {
++        let config = Config::parse(
++            r#"{
++            "inbounds":[{"type":"tun","tag":"tun","sniff":true}],
++            "outbounds":[{"type":"direct","tag":"media-exit"},{"type":"block","tag":"other"}],
++            "dns":{"servers":[
++                {"tag":"remote","address":"127.0.0.1:53","detour":"media-exit"},
++                {"tag":"fake","address":"fakeip"}
++            ],"final":"remote"},
++            "route":{"final":"other","rules":[{"domain":["media.example"],"outbound":"media-exit"}]}
++        }"#,
++        )
++        .unwrap();
++        let app = App::build(&config).unwrap();
++        let dns = app.routers.get().dns().unwrap().clone();
++        let fake = dns.fakeip().unwrap().ipv4_for("media.example");
++
++        let (packets, mut sent) = mpsc::channel(1);
++        let geo =
++            GeoFiles::load(Vec::new(), Vec::new(), "unused".as_ref(), "unused".as_ref()).unwrap();
++        let mut router = Router::new(
++            vec![
++                Arc::new(MediaExit(packets)),
++                Arc::new(BlockOutbound::new("other")),
++            ],
++            &config.route,
++            &["tun".into()],
++            &geo,
++        )
++        .unwrap();
++        router.set_dns(dns);
++        let inbound = TunInbound {
++            tag: "tun".into(),
++            settings: settings(&config.inbounds[0]).unwrap(),
++        };
++        assert!(inbound.settings.sniff);
++        let packet = incomplete_initial_datagram();
++        let (replies, _replies_rx) = mpsc::channel(1);
++        let (accept, mut accepted) = mpsc::channel(1);
++        let mut flows = HashMap::new();
++        assert!(open(
++            &mut flows,
++            (
++                "172.19.0.2:54321".parse().unwrap(),
++                SocketAddr::from((fake, 443))
++            ),
++            packet.clone(),
++            &Arc::new(Semaphore::new(1)),
++            UDP_IDLE,
++            &replies,
++            &accept,
++        ));
++        let flow = accepted.recv().await.unwrap();
++        let tunnel = tokio::spawn(async move { inbound.udp(flow, &router).await });
++        let first = tokio::time::timeout(Duration::from_millis(50), sent.recv()).await;
++        tunnel.abort();
++        assert_eq!(
++            first.expect("a known destination must not wait for more QUIC fragments"),
++            Some((Address::Domain("media.example".into()), 443, packet)),
++        );
++    }
++}
 diff --git a/core/src/transport/tcp_tls.rs b/core/src/transport/tcp_tls.rs
 index 1f1997a1e1ae1977724ee544003e16e870aafe69..1df2e32e7cc5a351170c6ecd2d65e578e110b912 100644
 --- a/core/src/transport/tcp_tls.rs
