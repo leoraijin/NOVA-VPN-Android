@@ -866,10 +866,72 @@ index 4f36d621d4b1fbe52fa2ef5f26b5cbbe3536440c..dad190c641a1b165bb8084a3ad74db65
      async fn reads_flow_and_keeps_datagrams() {
          let dcid = [9u8; 8];
 diff --git a/core/src/app/tun/mod.rs b/core/src/app/tun/mod.rs
-index 5e09e015b6cf83a88425a6061141b0c4739fb83d..85dcc723abc6a7a2107294b378afc63f845c6330 100644
+index 5e09e015b6cf83a88425a6061141b0c4739fb83d..4eba5471ad7a813a19ee46163c8fb87104f7f272 100644
 --- a/core/src/app/tun/mod.rs
 +++ b/core/src/app/tun/mod.rs
-@@ -383,11 +383,12 @@ impl TunInbound {
+@@ -28,7 +28,8 @@ use std::net::{IpAddr, SocketAddr};
+ use std::sync::Arc;
+ use std::time::Duration;
+ 
+-use futures_util::{SinkExt, StreamExt};
++use futures_util::{stream::SplitSink, SinkExt, StreamExt};
++use netstack_smoltcp::smoltcp::wire::{IpProtocol, IpVersion, Ipv4Packet, Ipv6Packet, UdpPacket};
+ use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+ 
+ use super::access::IpNet;
+@@ -81,6 +82,37 @@ const TCP_WINDOW: u32 = 256 * 1024;
+ /// Очереди пакетов между устройством и стеком.
+ const PACKET_QUEUE: usize = 4096;
+ 
++async fn forward_tun_packet(
++    stack: &mut SplitSink<netstack_smoltcp::Stack, Vec<u8>>,
++    packet: &[u8],
++) -> std::io::Result<()> {
++    if packet.is_empty() {
++        return Ok(());
++    }
++    // netstack-smoltcp 0.2.4 treats a UDP parse error as end of stream. Its
++    // UDP path does not reassemble IPv4 fragments. Drop an unusable packet
++    // before it can stop delivery of all subsequent DNS and QUIC datagrams.
++    if invalid_udp_datagram(packet) {
++        return Ok(());
++    }
++    stack.send(packet.to_vec()).await
++}
++
++fn invalid_udp_datagram(packet: &[u8]) -> bool {
++    match IpVersion::of_packet(packet) {
++        Ok(IpVersion::Ipv4) => Ipv4Packet::new_checked(packet).is_ok_and(|ip| {
++            ip.next_header() == IpProtocol::Udp
++                && (ip.more_frags()
++                    || ip.frag_offset() != 0
++                    || UdpPacket::new_checked(ip.payload()).is_err())
++        }),
++        Ok(IpVersion::Ipv6) => Ipv6Packet::new_checked(packet).is_ok_and(|ip| {
++            ip.next_header() == IpProtocol::Udp && UdpPacket::new_checked(ip.payload()).is_err()
++        }),
++        Err(_) => false,
++    }
++}
++
+ /// Перекачка пакетов между устройством и стеком в обе стороны.
+ async fn pump(dev: tun_rs::AsyncDevice, stack: netstack_smoltcp::Stack, mtu: u16) -> Result<()> {
+     let dev = Arc::new(dev);
+@@ -91,12 +123,9 @@ async fn pump(dev: tun_rs::AsyncDevice, stack: netstack_smoltcp::Stack, mtu: u16
+         let mut buf = vec![0u8; mtu as usize + 256];
+         loop {
+             let n = rx_dev.recv(&mut buf).await?;
+-            if n == 0 {
+-                continue;
+-            }
+             // Битый пакет стек отвергает ошибкой — это не повод
+             // останавливать весь TUN.
+-            if let Err(e) = to_stack.send(buf[..n].to_vec()).await {
++            if let Err(e) = forward_tun_packet(&mut to_stack, &buf[..n]).await {
+                 if e.kind() == std::io::ErrorKind::BrokenPipe {
+                     return Err::<(), std::io::Error>(e);
+                 }
+@@ -383,11 +412,12 @@ impl TunInbound {
              inbound_type: "tun",
              rule: None,
          };
@@ -884,7 +946,7 @@ index 5e09e015b6cf83a88425a6061141b0c4739fb83d..85dcc723abc6a7a2107294b378afc63f
          if self.settings.sniff_override && !matches!(meta.target, Address::Domain(_)) {
              if let Some(d) = &meta.sniffed {
                  meta.target = Address::Domain(d.clone());
-@@ -414,19 +415,15 @@ impl TunInbound {
+@@ -414,19 +444,15 @@ impl TunInbound {
          if is_local_only(dst.ip()) {
              return Ok(());
          }
@@ -908,7 +970,7 @@ index 5e09e015b6cf83a88425a6061141b0c4739fb83d..85dcc723abc6a7a2107294b378afc63f
              }
          }
          if in_tun_net(&self.settings, dst) {
-@@ -452,9 +449,10 @@ impl TunInbound {
+@@ -452,9 +478,10 @@ impl TunInbound {
              inbound_type: "tun",
              rule: None,
          };
@@ -920,7 +982,7 @@ index 5e09e015b6cf83a88425a6061141b0c4739fb83d..85dcc723abc6a7a2107294b378afc63f
              meta.sniffed = sniff_quic::read_and_sniff(&mut u, &mut pending).await?;
              if pending.is_empty() {
                  return Ok(());
-@@ -463,7 +461,7 @@ impl TunInbound {
+@@ -463,7 +490,7 @@ impl TunInbound {
                  tracing::debug!(ip = %meta.target, domain = %d, "sniffing QUIC: найден домен");
              }
          }
@@ -929,7 +991,7 @@ index 5e09e015b6cf83a88425a6061141b0c4739fb83d..85dcc723abc6a7a2107294b378afc63f
          if outbound.capabilities().udp == Some(false) {
              return Err(crate::error::Error::Protocol(format!(
                  "выход {} не поддерживает UDP",
-@@ -484,13 +482,10 @@ impl TunInbound {
+@@ -484,13 +511,10 @@ impl TunInbound {
          }
          loop {
              tokio::select! {
@@ -947,7 +1009,7 @@ index 5e09e015b6cf83a88425a6061141b0c4739fb83d..85dcc723abc6a7a2107294b378afc63f
                  }
                  r = session.recv() => {
                      match r? {
-@@ -498,7 +493,7 @@ impl TunInbound {
+@@ -498,7 +522,7 @@ impl TunInbound {
                          // приложение (так устроен [`udp::UdpFlow`]).
                          Some((_, _, data)) => {
                              conn.add_down(data.len() as u64);
@@ -956,6 +1018,89 @@ index 5e09e015b6cf83a88425a6061141b0c4739fb83d..85dcc723abc6a7a2107294b378afc63f
                          }
                          None => return Ok(()),
                      }
+@@ -581,3 +605,82 @@ pub fn settings(i: &super::config::InboundConfig) -> Result<TunSettings> {
+ pub fn in_tun_net(s: &TunSettings, ip: SocketAddr) -> bool {
+     s.inet4.contains(ip.ip()) || s.inet6.is_some_and(|n| n.contains(ip.ip()))
+ }
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++
++    #[tokio::test]
++    async fn invalid_udp_does_not_end_tun_udp_stream() {
++        let (stack, _, udp, _) = netstack_smoltcp::StackBuilder::default()
++            .enable_udp(true)
++            .build()
++            .unwrap();
++        let (mut to_stack, _from_stack) = stack.split();
++        let (mut read, _write) = udp.unwrap().split();
++
++        let mut valid = vec![
++            0x45, 0, 0, 32, 0, 1, 0, 0, 64, 17, 0, 0, 10, 191, 0, 1, 198, 51, 100, 2, 0xc3, 0x50,
++            0x01, 0xbb, 0, 12, 0, 0, 1, 2, 3, 4,
++        ];
++        Ipv4Packet::new_unchecked(&mut valid).fill_checksum();
++
++        let mut first_fragment = valid.clone();
++        first_fragment[2..4].copy_from_slice(&36u16.to_be_bytes());
++        first_fragment[6] = 0x20;
++        first_fragment[24..26].copy_from_slice(&28u16.to_be_bytes());
++        first_fragment.extend([0; 4]);
++        Ipv4Packet::new_unchecked(&mut first_fragment).fill_checksum();
++
++        let mut later_fragment = valid.clone();
++        later_fragment[7] = 2;
++        later_fragment[28] = 10;
++        Ipv4Packet::new_unchecked(&mut later_fragment).fill_checksum();
++
++        let mut invalid_length = valid.clone();
++        invalid_length[24..26].copy_from_slice(&4u16.to_be_bytes());
++
++        let mut valid_ipv6 = vec![0; 40];
++        valid_ipv6[0] = 0x60;
++        valid_ipv6[5] = 12;
++        valid_ipv6[6] = 17;
++        valid_ipv6[7] = 64;
++        let src_v6: std::net::Ipv6Addr = "2001:db8::1".parse().unwrap();
++        let dst_v6: std::net::Ipv6Addr = "2001:db8::2".parse().unwrap();
++        valid_ipv6[8..24].copy_from_slice(&src_v6.octets());
++        valid_ipv6[24..40].copy_from_slice(&dst_v6.octets());
++        valid_ipv6.extend_from_slice(&valid[20..]);
++        UdpPacket::new_unchecked(&mut valid_ipv6[40..])
++            .fill_checksum(&src_v6.into(), &dst_v6.into());
++
++        let mut invalid_ipv6 = valid_ipv6.clone();
++        invalid_ipv6[44..46].copy_from_slice(&13u16.to_be_bytes());
++
++        for packet in [
++            &first_fragment,
++            &later_fragment,
++            &invalid_length,
++            &invalid_ipv6,
++            &valid,
++            &valid_ipv6,
++        ] {
++            forward_tun_packet(&mut to_stack, packet).await.unwrap();
++        }
++
++        let (payload, src, dst) = tokio::time::timeout(Duration::from_secs(1), read.next())
++            .await
++            .expect("UDP stopped delivering packets")
++            .expect("a single invalid packet ended the UDP stream");
++        assert_eq!(payload, [1, 2, 3, 4]);
++        assert_eq!(src, "10.191.0.1:50000".parse().unwrap());
++        assert_eq!(dst, "198.51.100.2:443".parse().unwrap());
++
++        let (payload, src, dst) = tokio::time::timeout(Duration::from_secs(1), read.next())
++            .await
++            .expect("UDP stopped delivering IPv6 packets")
++            .expect("a single invalid packet ended the UDP stream");
++        assert_eq!(payload, [1, 2, 3, 4]);
++        assert_eq!(src, "[2001:db8::1]:50000".parse().unwrap());
++        assert_eq!(dst, "[2001:db8::2]:443".parse().unwrap());
++    }
++}
 diff --git a/core/src/app/tun/udp.rs b/core/src/app/tun/udp.rs
 index 65642b708aedf92576195724d1173da0ca73c2ce..ff1f5c0ab33d03d5f60a75d1fc927fd9b05e0ece 100644
 --- a/core/src/app/tun/udp.rs
