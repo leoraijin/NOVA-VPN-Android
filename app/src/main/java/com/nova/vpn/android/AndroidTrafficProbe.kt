@@ -22,11 +22,14 @@ internal class AndroidTrafficProbe private constructor(
     // Response headers over an established TLS channel; never includes SOCKS/TLS setup.
     @Volatile var responseMillis: Int? = null
         private set
+    @Volatile var listenerRefused: Boolean = false
+        private set
     @Volatile private var socket: Socket? = null
     fun cancel() { cancelled.set(true); runCatching { socket?.close() } }
     fun check(timeoutMillis: Int = 18_000, target: ProbeTarget = ProbeTarget.CLOUDFLARE): Boolean {
         require(timeoutMillis > 0)
         responseMillis = null
+        listenerRefused = false
         val expired = AtomicBoolean()
         val attemptSocket = java.util.concurrent.atomic.AtomicReference<Socket?>()
         var stage = "local_socket"
@@ -92,6 +95,8 @@ internal class AndroidTrafficProbe private constructor(
             }
         }
         } catch (error: Exception) {
+            listenerRefused = stage == "local_socket" && error is java.net.ConnectException &&
+                !cancelled.get() && !expired.get()
             val category = if (expired.get()) "timeout" else when (error) {
                 is java.net.SocketTimeoutException -> "timeout"
                 is javax.net.ssl.SSLException -> "tls_error"

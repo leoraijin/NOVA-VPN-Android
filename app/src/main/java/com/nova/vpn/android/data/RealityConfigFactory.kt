@@ -105,6 +105,13 @@ object RealityConfigFactory {
             "Правила приложений VPN-интерфейса не соответствуют маршрутизации."
         }
         if (customDns) prepareCustomSiteDns(dns, managedDual)
+        if (managedDual) {
+            // The Rust parser ignores sing-box's experimental.cache_file.
+            // Use a separate native-format file in the app's private base directory.
+            objects(dns.getJSONArray("servers")).singleOrNull {
+                it.opt("type") == "fakeip" && it.opt("tag") == "nova-fakeip"
+            }?.put("cache_file", "reality-multi-fakeip-v1.txt")
+        }
         if (!managedDual) {
             if (!customDns) prepareSiteDns(route, dns, outbounds)
             normalizeTerminalDirectRoute(route, dns, outbounds)
@@ -209,8 +216,7 @@ object RealityConfigFactory {
             paired.put(JSONObject(original.toString()).put("server", SITE_FAKEIP))
             paired.put(original)
         }
-        dns.getJSONArray("servers").put(JSONObject().put("type", "fakeip").put("tag", SITE_FAKEIP)
-            .put("inet4_range", "198.18.0.0/15").put("inet6_range", "fc00::/18"))
+        dns.getJSONArray("servers").put(siteFakeIpServer())
         dns.put("rules", paired)
         // dns.final and every route remain unchanged: non-site names get ordinary DNS.
     }
@@ -320,8 +326,7 @@ object RealityConfigFactory {
             it.opt("address") == "fakeip" || it.opt("tag") == fake } == if (managedDual) 1 else 0) {
             "Конфликт настроек DNS для правил сайтов."
         }
-        if (!managedDual) servers.put(JSONObject().put("type", "fakeip").put("tag", fake)
-            .put("inet4_range", "198.18.0.0/15").put("inet6_range", "fc00::/18"))
+        if (!managedDual) servers.put(siteFakeIpServer())
         val paired = JSONArray()
         rules.forEach { rule ->
             if (rule in routedSites) paired.put(JSONObject(rule.toString()).put("server", fake)
@@ -330,6 +335,10 @@ object RealityConfigFactory {
         }
         dns.put("rules", paired)
     }
+
+    private fun siteFakeIpServer() = JSONObject().put("type", "fakeip").put("tag", SITE_FAKEIP)
+        .put("inet4_range", "198.18.0.0/15").put("inet6_range", "fc00::/18")
+        .put("cache_file", "reality-site-fakeip-v1.txt")
 
     private fun prepareDualPackages(
         route: JSONObject, dns: JSONObject, ownPackage: String, packageUid: ((String) -> Int)?,

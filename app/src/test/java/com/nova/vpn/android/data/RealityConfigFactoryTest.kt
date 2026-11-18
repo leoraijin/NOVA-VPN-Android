@@ -62,6 +62,11 @@ class RealityConfigFactoryTest {
         assertTrue(routeItems.any { it.optBoolean("owner_unknown") })
         assertTrue(dnsItems.any { it.optBoolean("owner_unknown") })
         assertEquals("nova-bootstrap-dns", dns.getString("bootstrap"))
+        val dnsServers = servers(output)
+        val fakeIp = (0 until dnsServers.length()).map(dnsServers::getJSONObject)
+            .single { it.optString("tag") == "nova-fakeip" }
+        assertEquals("reality-multi-fakeip-v1.txt", fakeIp.getString("cache_file"))
+        assertEquals("198.19.0.0/16", fakeIp.getString("inet4_range"))
         assertThrows(IllegalArgumentException::class.java) {
             RealityConfigFactory.prepare(dual.toString(), own, { 10001 }, managedDual = true)
         }
@@ -346,7 +351,8 @@ class RealityConfigFactoryTest {
         assertEquals(expectedRoutes.toString(), rules(output).toString())
         assertEquals(snapshot, source.toString())
         val fake = servers(output).getJSONObject(servers(output).length() - 1)
-        assertEquals(setOf("type", "tag", "inet4_range", "inet6_range"), fake.keySet())
+        assertEquals(setOf("type", "tag", "inet4_range", "inet6_range", "cache_file"), fake.keySet())
+        assertEquals("reality-site-fakeip-v1.txt", fake.getString("cache_file"))
         assertEquals("fakeip", fake.getString("type"))
         assertEquals("nova-site-fakeip", fake.getString("tag"))
         assertEquals("198.18.0.0/15", fake.getString("inet4_range"))

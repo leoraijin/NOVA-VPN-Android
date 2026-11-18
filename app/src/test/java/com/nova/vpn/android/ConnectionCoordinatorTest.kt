@@ -4,6 +4,50 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class ConnectionCoordinatorTest {
+    @Test fun startPublishesRequestBeforeConcurrentNetworkCallbackCanScheduleRecovery() {
+        val coordinator = ConnectionCoordinator()
+        coordinator.networkChanged("wifi", true)
+        val queue = java.util.concurrent.Executors.newSingleThreadExecutor()
+        val callbackStarted = java.util.concurrent.CountDownLatch(1)
+        var request = ""
+        try {
+            lateinit var recovery: java.util.concurrent.Future<String>
+            val initial = coordinator.connect {
+                recovery = queue.submit<String> {
+                    callbackStarted.countDown()
+                    val handover = coordinator.networkChanged("cellular", true)!!
+                    var scheduled = ""
+                    assertTrue(coordinator.accept(handover) { scheduled = request })
+                    scheduled
+                }
+                assertTrue(callbackStarted.await(5, java.util.concurrent.TimeUnit.SECONDS))
+                request = "new request"
+            }
+            assertEquals("new request", recovery.get(5, java.util.concurrent.TimeUnit.SECONDS))
+            assertFalse(coordinator.current(initial))
+        } finally { queue.shutdownNow() }
+    }
+
+    @Test fun localListenerRecoveryRequiresRepeatedRefusalsAndIsRateLimited() {
+        val coordinator = ConnectionCoordinator()
+        coordinator.networkChanged("wifi", true)
+        val initial = coordinator.connect()
+        assertTrue(coordinator.succeeded(initial))
+        assertFalse(coordinator.recoverMissingListener(initial, true, 10))
+        assertFalse(coordinator.recoverMissingListener(initial, false, 20))
+        assertFalse(coordinator.recoverMissingListener(initial, true, 30))
+        assertTrue(coordinator.recoverMissingListener(initial, true, 40))
+
+        val retry = coordinator.failed(initial, .5)!!.ticket
+        assertTrue(coordinator.succeeded(retry))
+        assertFalse(coordinator.recoverMissingListener(initial, true, 200_000))
+        assertFalse(coordinator.recoverMissingListener(retry, true, 1_000))
+        assertFalse(coordinator.recoverMissingListener(retry, true, 2_000))
+        assertTrue(coordinator.recoverMissingListener(retry, true, 130_000))
+        coordinator.stop()
+        assertFalse(coordinator.recoverMissingListener(retry, true, 260_000))
+    }
+
     @Test fun staleQueuedNetworkEffectsCannotCancelLatestRetryOrReviveStop() {
         val coordinator = ConnectionCoordinator()
         coordinator.networkChanged("wifi", true)

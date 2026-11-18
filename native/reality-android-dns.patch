@@ -1,5 +1,5 @@
 diff --git a/core/src/app/dns/fakeip.rs b/core/src/app/dns/fakeip.rs
-index 4fa06f9af25e9b6d7b361a246418879a0c476282..bf0dc10e80b9c865a74ad3c49885576cf9b3f642 100644
+index 4fa06f9af25e9b6d7b361a246418879a0c476282..1d540e73c0ac41394ec9690c1594f7ef514fc90b 100644
 --- a/core/src/app/dns/fakeip.rs
 +++ b/core/src/app/dns/fakeip.rs
 @@ -14,7 +14,11 @@
@@ -15,7 +15,7 @@ index 4fa06f9af25e9b6d7b361a246418879a0c476282..bf0dc10e80b9c865a74ad3c49885576c
  
  use crate::app::access::IpNet;
  use crate::error::{Error, Result};
-@@ -37,6 +41,20 @@ struct Inner {
+@@ -37,6 +41,21 @@ struct Inner {
      dirty: bool,
  }
  
@@ -23,6 +23,7 @@ index 4fa06f9af25e9b6d7b361a246418879a0c476282..bf0dc10e80b9c865a74ad3c49885576c
 +struct Persistence {
 +    changed: Arc<Notify>,
 +    task: OnceLock<AbortHandle>,
++    write_lock: Mutex<()>,
 +}
 +
 +impl Drop for Persistence {
@@ -36,7 +37,7 @@ index 4fa06f9af25e9b6d7b361a246418879a0c476282..bf0dc10e80b9c865a74ad3c49885576c
  pub struct FakeIp {
      v4_base: u32,
      v4_prefix: u8,
-@@ -46,6 +64,7 @@ pub struct FakeIp {
+@@ -46,6 +65,7 @@ pub struct FakeIp {
      last: u32,
      file: Option<PathBuf>,
      inner: Mutex<Inner>,
@@ -44,7 +45,7 @@ index 4fa06f9af25e9b6d7b361a246418879a0c476282..bf0dc10e80b9c865a74ad3c49885576c
  }
  
  fn net_bounds4(n: &IpNet) -> Option<u32> {
-@@ -124,6 +143,7 @@ impl FakeIp {
+@@ -124,6 +144,7 @@ impl FakeIp {
              v6_base,
              first,
              last,
@@ -52,7 +53,7 @@ index 4fa06f9af25e9b6d7b361a246418879a0c476282..bf0dc10e80b9c865a74ad3c49885576c
              file,
              inner: Mutex::new(Inner {
                  by_name: HashMap::new(),
-@@ -147,6 +167,26 @@ impl FakeIp {
+@@ -147,6 +168,26 @@ impl FakeIp {
          Ok(fake)
      }
  
@@ -79,7 +80,7 @@ index 4fa06f9af25e9b6d7b361a246418879a0c476282..bf0dc10e80b9c865a74ad3c49885576c
      pub fn capacity(&self) -> u32 {
          self.last - self.first + 1
      }
-@@ -180,7 +220,12 @@ impl FakeIp {
+@@ -180,7 +221,12 @@ impl FakeIp {
          }
          g.by_off.insert(off, name.clone());
          g.by_name.insert(name, off);
@@ -93,6 +94,63 @@ index 4fa06f9af25e9b6d7b361a246418879a0c476282..bf0dc10e80b9c865a74ad3c49885576c
          off
      }
  
+@@ -239,7 +285,14 @@ impl FakeIp {
+ 
+     /// Сохранить таблицу, если она менялась.
+     pub fn save(&self) -> Result<()> {
+-        let Some(f) = &self.file else { return Ok(()) };
++        let Some((f, persistence)) = self.file.as_ref().zip(self.persistence.as_ref()) else {
++            return Ok(());
++        };
++        // A periodic write may overlap the final save during core shutdown.
++        let _write = persistence
++            .write_lock
++            .lock()
++            .unwrap_or_else(std::sync::PoisonError::into_inner);
+         let text = {
+             let mut g = self
+                 .inner
+@@ -259,8 +312,15 @@ impl FakeIp {
+         };
+         // Сначала во временный файл, потом переименование: оборванная
+         // запись не портит прежнюю таблицу.
+-        crate::fsutil::write_atomic(f, text.as_bytes(), 0o600)?;
+-        Ok(())
++        let result = crate::fsutil::write_atomic(f, text.as_bytes(), 0o600);
++        if result.is_err() {
++            self.inner
++                .lock()
++                .unwrap_or_else(std::sync::PoisonError::into_inner)
++                .dirty = true;
++            persistence.changed.notify_one();
++        }
++        result.map_err(Into::into)
+     }
+ 
+     fn load(&self, f: &Path) -> Result<usize> {
+@@ -403,6 +463,22 @@ mod tests {
+         std::fs::remove_dir_all(&dir).ok();
+     }
+ 
++    #[test]
++    fn failed_write_keeps_mappings_pending_for_retry() {
++        let dir = tempfile::tempdir().unwrap();
++        let parent = dir.path().join("cache");
++        let path = parent.join("fakeip.txt");
++        let table = fake("198.18.0.0/15", None, Some(path.clone()));
++        let addr = table.ipv4_for("keep.example");
++        assert!(table.save().is_err());
++
++        // Retry without allocating any further names.
++        std::fs::create_dir(&parent).unwrap();
++        table.save().unwrap();
++        let reloaded = fake("198.18.0.0/15", None, Some(path));
++        assert_eq!(reloaded.reverse(IpAddr::V4(addr)), Reverse::Name("keep.example".into()));
++    }
++
+     #[test]
+     fn rejects_bad_ranges() {
+         assert!(FakeIp::new("10.0.0.0/25".parse().unwrap(), None, None).is_err());
 diff --git a/core/src/app/dns/mod.rs b/core/src/app/dns/mod.rs
 index 0f48cd8b8d256b1b793e8659511d219ffbdf3fea..bb7f4c8fcfba9b104c8cf21e3a8b9daa18e19654 100644
 --- a/core/src/app/dns/mod.rs

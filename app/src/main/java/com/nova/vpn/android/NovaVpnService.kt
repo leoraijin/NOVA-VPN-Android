@@ -242,13 +242,8 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
             ?.trim()?.replace(Regex("\\s+"), " ")?.take(48)?.takeIf(String::isNotBlank)
             ?: "Выбранная конфигурация"
 
-        val ticket = commands.connect()
-        val supersededAutomatic = AutomaticProbePause.requestsFor(serviceIdentity) - identity.requestId
-        // Old generations can no longer start. The queue barrier also waits for
-        // any native call already in progress to unwind before releasing them.
-        serviceQueue.execute { supersededAutomatic.forEach(AutomaticProbePause::settled) }
         try {
-            commands.accept(ticket, requireNetwork = false) { startForegroundCompat() }
+            startForegroundCompat()
         } catch (error: Throwable) {
             commands.stop()
             VpnApplyRequests.tracker.failed(identity.requestId)
@@ -270,9 +265,15 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
             return START_NOT_STICKY
         }
         val request = Configuration(config, requestedProfileName, AppPreferencesStore(this).vpnEngine(), startId, identity, exits=exits.getOrNull(),commitBinding=binding.getOrNull(),automatic=intent?.getBooleanExtra(VpnUserRequests.EXTRA_AUTOMATIC,false)==true)
-        desiredConfiguration = request
-        cancelRecovery()
-        cancelTrafficChecks()
+        // Publish the new request and cancel old work before the network monitor
+        // can claim a newer epoch and schedule its recovery.
+        val ticket = commands.connect {
+            desiredConfiguration = request
+            cancelRecovery()
+            cancelTrafficChecks()
+        }
+        val supersededAutomatic = AutomaticProbePause.requestsFor(serviceIdentity) - identity.requestId
+        serviceQueue.execute { supersededAutomatic.forEach(AutomaticProbePause::settled) }
         if (commands.current(ticket)) enqueueConfiguration(request, ticket, recovery = false)
         else publishRecovery(ticket, waiting = true)
         return START_NOT_STICKY
@@ -631,6 +632,7 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
         val job = ScheduledExitProbe(primary = true) {
             if (!commands.current(ticket) || trafficProbe !== probe) return@ScheduledExitProbe null
             val success = probe.check()
+            checkCoreListener(probe, ticket)
             commands.accept(ticket) {
                 if (trafficProbe === probe && VpnRuntime.state.value.trafficVerified != success) {
                     VpnRuntime.setTrafficResult(success)
@@ -667,6 +669,7 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
                 }
                 if (!checking) return@ScheduledExitProbe null
                 val success = channel.check()
+                if (id == primaryId) checkCoreListener(channel, ticket)
                 commands.accept(ticket) {
                     if (exitHealthPlan === multi) {
                         VpnRuntime.setExitResult(revision, id, fingerprint, success, channel.responseMillis)
@@ -730,7 +733,7 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
         if (!commands.current(ticket)) return
         activeEngine = VpnEngine.REALITY_CORE
         VpnDiagnostics.record("engine_reality_core")
-        VpnDiagnostics.record("reality_revision_5feb936_nova_dns1")
+        VpnDiagnostics.record("reality_revision_5feb936_nova_dns2")
         registerRealityNetworkMonitor()
         val builder = Builder().setSession("NOVA VPN · Reality Core").setMtu(1500)
             .addAddress("172.19.0.1", 30).addRoute("0.0.0.0", 0).addDnsServer("172.19.0.2")
@@ -842,7 +845,21 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
         }
     }
 
+    private fun checkCoreListener(probe: AndroidTrafficProbe, ticket: ConnectionCoordinator.Ticket) {
+        if (!commands.recoverMissingListener(ticket, probe.listenerRefused, android.os.SystemClock.elapsedRealtime())) return
+        serviceQueue.execute {
+            if (commands.current(ticket)) {
+                closeEngine(keepTun = true)
+                VpnDiagnostics.record("recovery_listener_unavailable")
+                retryAfterFailure(ticket)
+            }
+        }
+    }
+
     private fun retryAfterFailure(ticket: ConnectionCoordinator.Ticket) {
+        // Keep traffic contained until establish() replaces the descriptor.
+        // A failed core or TUN must not reuse the same descriptor on its retry.
+        tunPolicyKey = null
         val retry = commands.failed(ticket) ?: return
         VpnDiagnostics.record("recovery_retry_${retry.number}")
         publishRecovery(retry.ticket, waiting = false)

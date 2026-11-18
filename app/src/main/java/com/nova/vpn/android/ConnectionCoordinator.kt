@@ -15,11 +15,15 @@ internal class ConnectionCoordinator {
     private var signature: String? = null
     private var failures = 0
     private var phase = Phase.STOPPED
+    private var refusedListenerChecks = 0
+    private var lastListenerRecovery: Long? = null
     private fun ticket() = Ticket(intent, network, attempt)
 
-    @Synchronized fun connect(): Ticket {
+    @Synchronized fun connect(publishRequest: () -> Unit = {}): Ticket {
         intent++; attempt++; wanted = true; failures = 0
+        refusedListenerChecks = 0; lastListenerRecovery = null
         phase = if (ready) Phase.CONNECTING else Phase.WAITING_NETWORK
+        publishRequest()
         return ticket()
     }
 
@@ -38,6 +42,7 @@ internal class ConnectionCoordinator {
     @Synchronized fun networkChanged(value: String?, isReady: Boolean): Ticket? {
         if (signature == value && ready == isReady) return null
         signature = value; ready = isReady; network++; attempt++; failures = 0
+        refusedListenerChecks = 0
         if (wanted) phase = if (ready) Phase.RECOVERING else Phase.WAITING_NETWORK
         return ticket()
     }
@@ -51,7 +56,17 @@ internal class ConnectionCoordinator {
 
     @Synchronized fun succeeded(value: Ticket): Boolean {
         if (!current(value)) return false
-        failures = 0; phase = Phase.ACTIVE
+        failures = 0; refusedListenerChecks = 0; phase = Phase.ACTIVE
+        return true
+    }
+
+    /** Only a missing local listener can trigger this recovery, not an upstream HTTPS failure. */
+    @Synchronized fun recoverMissingListener(value: Ticket, refused: Boolean, elapsedMillis: Long): Boolean {
+        if (!current(value) || phase != Phase.ACTIVE) return false
+        refusedListenerChecks = if (refused) (refusedListenerChecks + 1).coerceAtMost(2) else 0
+        if (refusedListenerChecks < 2 || lastListenerRecovery?.let { elapsedMillis - it < 120_000 } == true) return false
+        lastListenerRecovery = elapsedMillis
+        refusedListenerChecks = 0
         return true
     }
 
