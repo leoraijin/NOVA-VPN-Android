@@ -103,6 +103,22 @@ public final class RealityProbeClientActivity extends Activity {
     }
 
     private static void udpEcho(boolean ipv6, boolean site, String host, int packets, String nonce) throws Exception {
+        if (!ipv6 && !site) {
+            // The isolated test app sends fragments to its synthetic TUN destination.
+            // Linux UAPI values IP_MTU_DISCOVER=10 and IP_PMTUDISC_DONT=0.
+            java.io.FileDescriptor fd = android.system.Os.socket(
+                    android.system.OsConstants.AF_INET, android.system.OsConstants.SOCK_DGRAM, 0);
+            try {
+                android.system.Os.setsockoptInt(fd, android.system.OsConstants.IPPROTO_IP, 10, 0);
+                byte[] fragmented = new byte[4096];
+                int sent = android.system.Os.sendto(fd, fragmented, 0, fragmented.length, 0,
+                        java.net.InetAddress.getByName("198.51.100.7"), 4434);
+                if (sent != fragmented.length) throw new IllegalStateException("Fragment fixture send failed");
+                android.util.Log.i("NovaUdpProbe", "sent IPv4 datagram with fragmentation enabled");
+            } finally {
+                android.system.Os.close(fd);
+            }
+        }
         try (java.net.DatagramSocket socket=new java.net.DatagramSocket()) {
             socket.setSoTimeout(5000);
             socket.connect(new InetSocketAddress(site ? host : ipv6 ? "2001:db8::7" : "198.51.100.7",4433));
