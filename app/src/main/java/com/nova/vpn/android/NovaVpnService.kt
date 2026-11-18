@@ -74,7 +74,7 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
     private var automaticServers: AutomaticServerController? = null
     @Volatile private var foregroundStarted = false
     @Volatile private var physicalNetwork: PhysicalNetworkSnapshot? = null
-    private var tunPolicyKey: String? = null
+    @Volatile private var tunPolicyKey: String? = null
     @Volatile private var latestStartId = 0
     @Volatile private var activeProfileName = "Выбранная конфигурация"
     private var commandServer: CommandServer? = null
