@@ -37,7 +37,7 @@ jobs:
       - name: Build the isolated VpnService and independent-UID test app
         run: |
           set -euo pipefail
-          bash gradlew --no-daemon -PnovaOfficialRepositoriesOnly=true '-Dorg.gradle.jvmargs=-Xmx4g -Dfile.encoding=UTF-8' :app:assembleRealitypreview :app:assembleRealitypreviewAndroidTest -PnovaRealitySmoke -PnovaUsbTest -PnovaRealityAbi=x86_64 -PnovaRealityDualSmoke 2>&1 | tee work/acceptance/build.log
+          bash gradlew --no-daemon -PnovaOfficialRepositoriesOnly=true '-Dorg.gradle.jvmargs=-Xmx4g -Dfile.encoding=UTF-8' :app:assembleRealitypreview :app:assembleRealitypreviewAndroidTest -PnovaRealitySmoke -PnovaUsbTest -PnovaRealityAbi=x86_64 -PnovaRealityDualSmoke -PnovaUsbTestSlot=completionpreview 2>&1 | tee work/acceptance/build.log
       - name: Enable KVM in disposable test runner
         run: sudo chmod 666 /dev/kvm
       - name: Check real Android TUN after IPv4 fragments and try HTTP/3

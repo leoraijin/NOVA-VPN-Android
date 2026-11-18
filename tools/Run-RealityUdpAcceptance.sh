@@ -2,7 +2,7 @@
 set -euo pipefail
 export ANDROID_SERIAL=emulator-5554
 out=work/acceptance
-package=com.nova.vpn.android.usbtest.realitypreview
+package=com.nova.vpn.android.usbtest.completionpreview
 runner="$package.test/com.nova.vpn.android.RealityCoreSmokeRunner"
 trap 'adb logcat -d > "$out/emulator-logcat.txt" 2>&1 || true' EXIT
 adb install -r app/build/outputs/apk/realitypreview/app-x86_64-realitypreview.apk
@@ -32,6 +32,7 @@ if before is not None and after is not None:
 PY
 # The local UDP case above is deterministic. The HTTP/3 case also depends on
 # access to the existing public fixture and is reported independently.
+adb shell am instrument -w -r -e http3PhysicalOnly true "$runner" | tee "$out/http3-physical.log"
 adb shell am instrument -w -r -e multiExitOnly true -e isolatedEngine REALITY_CORE -e multiQuicOnly true "$runner" | tee "$out/http3.log"
 if grep -q 'Native actual HTTP3 app case app-second PASS' "$out/http3.log" && grep -q 'INSTRUMENTATION_CODE: -1' "$out/http3.log"; then
   printf 'PASS\n' | tee "$out/http3-status.txt"
