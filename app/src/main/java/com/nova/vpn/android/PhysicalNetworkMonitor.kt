@@ -5,6 +5,8 @@ import android.net.LinkProperties
 import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.NetworkRequest
+import android.net.RouteInfo
+import android.os.Build
 import java.security.MessageDigest
 
 internal data class PhysicalNetworkSnapshot(val network: Network?, val signature: String?)
@@ -12,9 +14,17 @@ internal data class PhysicalNetworkSnapshot(val network: Network?, val signature
 /** One source of physical-network readiness. onAvailable alone never means ready. */
 internal class PhysicalNetworkMonitor(private val connectivity: ConnectivityManager,
     private val publish: (PhysicalNetworkSnapshot) -> Unit) : AutoCloseable {
-    private data class Links(val name: String?, val addresses: List<String>, val dns: List<String>, val routes: List<String>, val mtu: Int) {
-        companion object { fun from(value: LinkProperties) = Links(value.interfaceName, value.linkAddresses.map { it.toString() },
-            value.dnsServers.map { it.hostAddress.orEmpty() }, value.routes.map { it.toString() }, value.mtu) }
+    private data class Links(val name: String?, val addresses: List<String>, val routes: List<String>) {
+        companion object {
+            fun from(value: LinkProperties) = Links(
+                value.interfaceName,
+                value.linkAddresses.map { it.toString() }.sorted(),
+                value.routes.map { route ->
+                    val type = if (Build.VERSION.SDK_INT >= 33) route.type else RouteInfo.RTN_UNICAST
+                    listOf(route.destination, route.gateway?.hostAddress, route.getInterface(), type).joinToString("|")
+                }.sorted()
+            )
+        }
     }
     private data class Entry(val caps: NetworkCapabilities? = null, val links: Links? = null)
     private val entries = linkedMapOf<Network, Entry>()
@@ -73,9 +83,10 @@ internal class PhysicalNetworkMonitor(private val connectivity: ConnectivityMana
         } }.thenBy { it.key.networkHandle })
         if (chosen == null) { publish(PhysicalNetworkSnapshot(null, null)); return }
         val links = chosen.value.links!!
+        // DNS and MTU updates do not invalidate sockets bound to this Android Network.
+        // Keep address, gateway and interface changes eligible for recovery and FakeIP checks.
         val material = listOf(chosen.key.networkHandle.toString(), links.name.orEmpty(),
-            links.addresses.sorted().joinToString(), links.dns.sorted().joinToString(),
-            links.routes.sorted().joinToString(), links.mtu.toString()).joinToString("\n")
+            links.addresses.joinToString(), links.routes.joinToString()).joinToString("\n")
         // The signature stays in memory; interface names, addresses and DNS never enter diagnostics.
         val signature = MessageDigest.getInstance("SHA-256").digest(material.toByteArray()).joinToString("") { "%02x".format(it) }
         publish(PhysicalNetworkSnapshot(chosen.key, signature))

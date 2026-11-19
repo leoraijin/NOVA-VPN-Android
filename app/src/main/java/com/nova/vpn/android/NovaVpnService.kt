@@ -320,7 +320,7 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
                 }
                 if (engine == VpnEngine.REALITY_CORE) {
                     stage = "reality-start"
-                    startReality(request, ticket)
+                    startReality(request, ticket) { nativeMutationStarted = true }
                     return@execute
                 }
                 activeEngine = VpnEngine.SING_BOX
@@ -398,7 +398,19 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
                 if (multi != null && commands.current(ticket)) checkManagedExits(multi, request, ticket)
                 if (probe != null && commands.current(ticket)) checkSingleExit(probe, ticket)
             } catch (error: Throwable) {
-                if (!commands.current(ticket)) { closeEngine(keepTun = commands.view().wanted); return@execute }
+                if (!commands.current(ticket)) {
+                    if (nativeMutationStarted) closeEngine(keepTun = commands.view().wanted)
+                    return@execute
+                }
+                if (recovery && error is FakeIpNetworkPreflight.SnapshotUnavailable) {
+                    // LinkProperties can disappear between listing and inspecting a network.
+                    // Retry preflight with the same configuration and retained Android TUN.
+                    val retry = commands.failed(ticket) ?: return@execute
+                    VpnDiagnostics.record("recovery_network_snapshot_pending")
+                    publishRecovery(retry.ticket, waiting = false)
+                    scheduleRecovery(retry.ticket, retry.delayMillis)
+                    return@execute
+                }
                 // Keep the owned automatic request and rebuild its exact assignments even
                 // if the catalog changed during native reload, before durable commit.
                 if (error is CatalogChanged && previous != null &&
@@ -689,7 +701,11 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
         startProbeBatch(ticket, jobs)
     }
 
-    private fun startReality(request: Configuration, ticket: ConnectionCoordinator.Ticket) {
+    private fun startReality(
+        request: Configuration,
+        ticket: ConnectionCoordinator.Ticket,
+        onNativeMutation: () -> Unit
+    ) {
         val config = request.config
         runCatching { RealityCoreBridge.requireAvailable() }.getOrElse { throw InvalidConfiguration() }
         // Conversion and native validation happen BEFORE closing an existing tunnel.
@@ -727,13 +743,14 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
             runCatching { packageManager.getApplicationInfo(name, 0).uid }.getOrElse { throw InvalidConfiguration() }
         }
         validateRoutingSnapshot(request)
+        if (!commands.current(ticket)) return
         val retainedTun = tunDescriptor.takeIf { tunPolicyKey == policyKey }
-        cancelTrafficChecks()
+        onNativeMutation()
         closeEngine(keepTun = true)
         if (!commands.current(ticket)) return
         activeEngine = VpnEngine.REALITY_CORE
         VpnDiagnostics.record("engine_reality_core")
-        VpnDiagnostics.record("reality_revision_5feb936_nova_media2")
+        VpnDiagnostics.record("reality_revision_5feb936_nova_recovery1")
         registerRealityNetworkMonitor()
         val builder = Builder().setSession("NOVA VPN · Reality Core").setMtu(1500)
             .addAddress("172.19.0.1", 30).addRoute("0.0.0.0", 0).addDnsServer("172.19.0.2")

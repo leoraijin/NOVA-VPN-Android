@@ -9,6 +9,7 @@ import org.json.JSONObject
 /** Read-only preflight; addresses stay in memory and never enter diagnostics. */
 internal object FakeIpNetworkPreflight {
     class Conflict : IllegalArgumentException("Диапазон FakeIP пересекается с подключённой сетью. Измените конфликтующую сеть и повторите подключение.")
+    class SnapshotUnavailable : IllegalStateException("Сеть изменилась во время проверки. Повторите подключение.")
     class Prefix(text: String) {
         private val bytes: ByteArray
         private val bits: Int
@@ -41,7 +42,7 @@ internal object FakeIpNetworkPreflight {
         connectivity.allNetworks.forEach { network ->
             val caps=connectivity.getNetworkCapabilities(network) ?: return@forEach
             if(caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN) || !caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN))return@forEach
-            val links=requireNotNull(connectivity.getLinkProperties(network)) { "Сеть изменилась во время проверки. Повторите подключение." }
+            val links=connectivity.getLinkProperties(network) ?: throw SnapshotUnavailable()
             links.linkAddresses.forEach { address -> append(address.address.hostAddress.orEmpty().substringBefore('%')+"/"+address.prefixLength) }
             links.routes.forEach { route ->
                 val destination=route.destination
