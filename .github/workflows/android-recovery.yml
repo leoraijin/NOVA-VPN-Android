@@ -1,24 +1,17 @@
-name: Android data recovery and diagnostics
+name: Android Reality Core VPN-2 recovery acceptance
 on:
   workflow_dispatch:
-    inputs:
-      library_only:
-        description: 'Run only the unresolved library background-process saved-state check'
-        type: boolean
-        default: false
 permissions:
   contents: read
-concurrency:
-  group: android-recovery-${{ github.ref }}
-  cancel-in-progress: false
+  actions: read
 jobs:
-  recovery:
+  recovery-acceptance:
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
-    env:
-      NOVA_LIBRARY_ONLY: ${{ inputs.library_only && 'true' || 'false' }}
+    timeout-minutes: 28
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -28,29 +21,43 @@ jobs:
         with:
           packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
           log-accepted-android-sdk-licenses: false
-      - name: Build isolated recovery instrumentation
-        shell: bash
+      - name: Fetch x86_64 core from the candidate native build
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          set -o pipefail
-          mkdir -p work/recovery
-          bash gradlew --no-daemon -PnovaOfficialRepositoriesOnly=true '-Dorg.gradle.jvmargs=-Xmx4g -Dfile.encoding=UTF-8' :app:assembleRealitypreview :app:assembleRealitypreviewAndroidTest -PnovaRealitySmoke -PnovaUsbTest -PnovaRealityAbi=x86_64 2>&1 | tee work/recovery/build.log
-      - name: Enable disposable runner KVM
+          set -euo pipefail
+          gh run view 44463594459 --repo "$GITHUB_REPOSITORY" --json headSha --jq .headSha | grep -Fx '8b5c66fcf873a70d536255217aabf10f8a764a55'
+          mkdir -p work/acceptance/native app/src/main/jniLibs/x86_64
+          for attempt in $(seq 1 32); do
+            if gh run download 44463594459 --repo "$GITHUB_REPOSITORY" --name reality-android-native-x86_64 --dir work/acceptance/native; then break; fi
+            sleep 15
+          done
+          cp work/acceptance/native/app/src/main/jniLibs/x86_64/*.so app/src/main/jniLibs/x86_64/
+          sha256sum app/src/main/jniLibs/x86_64/*.so | tee work/acceptance/core-sha256.txt
+      - name: Build the isolated VpnService and independent-UID test app
+        run: |
+          set -euo pipefail
+          bash gradlew --no-daemon -PnovaOfficialRepositoriesOnly=true '-Dorg.gradle.jvmargs=-Xmx4g -Dfile.encoding=UTF-8' :app:assembleRealitypreview :app:assembleRealitypreviewAndroidTest -PnovaRealitySmoke -PnovaUsbTest -PnovaRealityAbi=x86_64 -PnovaRealityDualSmoke 2>&1 | tee work/acceptance/build.log
+      - name: Enable KVM in disposable test runner
         run: sudo chmod 666 /dev/kvm
-      - name: Check process death and diagnostic exports
+      - name: Check VPN-2 after a silent DNS connection and underlay interruption
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 35
           target: default
           arch: x86_64
           profile: pixel_2
+          emulator-port: 5554
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none -memory 2048
           disable-animations: true
-          script: bash tools/Run-RecoveryChecksCi.sh
-      - name: Retain recovery evidence
+          script: bash tools/Run-RealityRecoveryAcceptance.sh
+      - name: Keep Android test logs
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
-          name: android-recovery-lifecycle-evidence
-          path: work/recovery/
+          name: android-reality-recovery-acceptance
+          path: |
+            work/acceptance/*.log
+            work/acceptance/*.txt
           if-no-files-found: warn
           retention-days: 14

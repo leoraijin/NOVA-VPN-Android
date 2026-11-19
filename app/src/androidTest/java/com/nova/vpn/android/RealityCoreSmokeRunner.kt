@@ -635,7 +635,7 @@ class RealityCoreSmokeRunner : Instrumentation() {
         val tlsFixture = TestTlsFixture(context)
         tlsFixture.serverSocket(previousCut?.getInt("firstPort") ?: 0).use { listener ->
             val firstDoh=if(multiExitOnly)TestDohFixture(tlsFixture, multiQuicSiteOnly, "first".takeIf { multiTxtDnsOnly }, http2 = isolatedEngine == VpnEngine.REALITY_CORE) else null
-            val secondDoh=if(multiExitOnly)TestDohFixture(tlsFixture, multiQuicSiteOnly, "second".takeIf { multiTxtDnsOnly }, http2 = isolatedEngine == VpnEngine.REALITY_CORE) else null
+            val secondDoh=if(multiExitOnly)TestDohFixture(tlsFixture, multiQuicSiteOnly, "second".takeIf { multiTxtDnsOnly }, http2 = isolatedEngine == VpnEngine.REALITY_CORE, stallOnReuseOf = "probe-2.native.test") else null
             val quicUploads=java.util.concurrent.ConcurrentHashMap<String,AtomicInteger>()
             val quicDownloads=java.util.concurrent.ConcurrentHashMap<String,AtomicInteger>()
             val quicActive=AtomicInteger()
@@ -1244,6 +1244,46 @@ class RealityCoreSmokeRunner : Instrumentation() {
                         check(VpnRuntime.state.value.appliedConfiguration?.policy==policy){"Prepared policy was not applied"}
                         check(routingStore.loadPresets().activeId=="fixture-multi" && routingStore.loadPresets().pending==null)
                         check(SelectedProfileStore(context).load()==profile.id){"Prepared selection was not committed"}
+                        if (caseName == "app-second" && isolatedEngine == VpnEngine.REALITY_CORE) {
+                            val session = VpnRuntime.state.value
+                            val warm = "probe-1.native.test"
+                            val stalled = "probe-2.native.test"
+                            val resolver = requireNotNull(secondDoh)
+                            val mainResolver = requireNotNull(firstDoh)
+                            val mainBefore = count(firstKey)
+                            val secondBefore = count(secondKey)
+                            val warmResult = routedClientResult(site = true, siteHost = warm)
+                            check(warmResult == "ok") { "VPN-2 warm request: $warmResult; fixture=${fixtureFailure.get()}; DNS=${resolver.failures}" }
+                            val retryResult = routedClientResult(site = true, siteHost = stalled)
+                            check(retryResult == "ok") { "VPN-2 request after stall: $retryResult; fixture=${fixtureFailure.get()}; DNS=${resolver.failures}" }
+                            check(resolver.stalledRequests.get() == 1 && resolver.queriesFor(stalled) > 0)
+                            check(mainResolver.queriesFor(warm) == 0 && mainResolver.queriesFor(stalled) == 0)
+                            check(count(firstKey) == mainBefore && count(secondKey) == secondBefore + 2)
+                            check(VpnRuntime.state.value.sessionRevision == session.sessionRevision &&
+                                VpnRuntime.state.value.appliedConfiguration == session.appliedConfiguration)
+                            sendStatus(0, Bundle().apply {
+                                putString("stream", "VPN-2 DoH recovered from a silent reused connection without a restart PASS\n")
+                            })
+    
+                            runCatching {
+                                recoverMultiExitOverWifi()
+                                val after = "probe-3.native.test"
+                                val oldFirst = count(firstKey)
+                                val oldSecond = count(secondKey)
+                                check(routedClientResult(site = true, siteHost = after) == "ok")
+                                check(count(firstKey) == oldFirst && count(secondKey) == oldSecond + 1)
+                                check(VpnRuntime.state.value.appliedConfiguration == session.appliedConfiguration)
+                            }.fold(
+                                onSuccess = { sendStatus(0, Bundle().apply {
+                                    putString("stream", "Wi-Fi interruption retained TUN and restored VPN-2 app traffic PASS\n")
+                                }) },
+                                onFailure = { failure -> sendStatus(0, Bundle().apply {
+                                    putString("stream", "Wi-Fi interruption UNVERIFIED: ${failure.message}\n")
+                                }) }
+                            )
+                            stop()
+                            return@use
+                        }
                         if(multiQuicOnly) {
                             check(!multiConcurrentOnly)
                             waitUntil("previous QUIC relay cleanup") { quicActive.get()==0 }

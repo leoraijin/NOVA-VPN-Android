@@ -6,10 +6,11 @@ import java.util.concurrent.atomic.AtomicInteger
 import kotlin.concurrent.thread
 
 /** Synthetic HTTPS DNS endpoint; only native.test, no upstream forwarding. */
-internal class TestDohFixture(tls:TestTlsFixture, private val quicHost:Boolean=false, private val txtValue:String?=null, private val http2:Boolean=false):AutoCloseable {
+internal class TestDohFixture(tls:TestTlsFixture, private val quicHost:Boolean=false, private val txtValue:String?=null, private val http2:Boolean=false, private val stallOnReuseOf: String? = null):AutoCloseable {
     private val listener=tls.serverSocket()
     val port:Int get()=listener.localPort
     val requests=AtomicInteger()
+    val stalledRequests = AtomicInteger()
     private val hosts=java.util.concurrent.ConcurrentHashMap<String,AtomicInteger>()
     fun queriesFor(host:String)=hosts[host]?.get()?:0
     val failures=java.util.concurrent.ConcurrentLinkedQueue<String>()
@@ -44,7 +45,7 @@ internal class TestDohFixture(tls:TestTlsFixture, private val quicHost:Boolean=f
                     }
                     check(contentType && length in 17..4096)
                     val query=ByteArray(length);input.readFully(query)
-                    val answer = answer(query)
+                    val answer = requireNotNull(answer(query, 1))
                     val output=socket.getOutputStream()
                     output.write(("HTTP/1.1 200 OK\r\nContent-Type: application/dns-message\r\nContent-Length: ${answer.size}\r\nConnection: close\r\n\r\n").toByteArray(Charsets.US_ASCII))
                     output.write(answer);output.flush();requests.incrementAndGet()
@@ -91,7 +92,7 @@ internal class TestDohFixture(tls:TestTlsFixture, private val quicHost:Boolean=f
                     query.write(payload)
                     if (flags and 1 != 0) {
                         queries.remove(stream)
-                        val answer = answer(query.toByteArray())
+                        val answer = answer(query.toByteArray(), stream) ?: continue
                         // HPACK static table entry 8 is :status 200.
                         frame(1, 4, stream, byteArrayOf(0x88.toByte()))
                         frame(0, 1, stream, answer)
@@ -102,7 +103,7 @@ internal class TestDohFixture(tls:TestTlsFixture, private val quicHost:Boolean=f
         }
     }
 
-    private fun answer(query: ByteArray): ByteArray {
+    private fun answer(query: ByteArray, stream: Int): ByteArray? {
         check(query.size in 17..4096)
         check(query[4].toInt()==0 && query[5].toInt()==1) { "DNS question count" }
         var end=12;val labels=mutableListOf<String>()
@@ -113,6 +114,7 @@ internal class TestDohFixture(tls:TestTlsFixture, private val quicHost:Boolean=f
         end++;check(end+4<=query.size)
         val type=(query[end].toInt() and 255)*256+(query[end+1].toInt() and 255)
         val hostname=labels.joinToString(".")
+        if (stream > 1 && hostname == stallOnReuseOf && stalledRequests.compareAndSet(0, 1)) return null
         val known = ((quicHost && hostname == "one.one.one.one") || hostname == "native.test" ||
             hostname.matches(Regex("probe-[a-f0-9-]+[.]native[.]test"))) &&
             (type == 1 || type == 28 || type == 16 && txtValue != null)
