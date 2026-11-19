@@ -27,7 +27,7 @@ jobs:
         run: |
           set -euo pipefail
           gh run view 44473405174 --repo "$GITHUB_REPOSITORY" --json headSha --jq .headSha | grep -Fx '82d8dc34f046b9d205378c66e1ae504de385f3c7'
-          mkdir -p work/direct/native
+          mkdir -p work/direct/native app/src/main/jniLibs/x86_64
           for attempt in $(seq 1 44); do
             if gh run download 44473405174 --repo "$GITHUB_REPOSITORY" --name reality-android-native-x86_64 --dir work/direct/native; then break; fi
             sleep 15
