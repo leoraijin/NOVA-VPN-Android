@@ -194,6 +194,7 @@ class RealityCoreSmokeRunner : Instrumentation() {
         check(recoveryCycles in 1..30 && (recoveryOnly || recoveryCycles == 2))
         isolatedEngine = arguments?.getString("isolatedEngine")?.let { VpnEngine.valueOf(it) }
         check(isolatedEngine == null || recoveryOnly || bypassVisibilityOnly ||
+            (multiSystemDirectOnly && isolatedEngine == VpnEngine.SING_BOX) ||
             (BuildConfig.REALITY_DUAL_SMOKE && multiExitOnly && isolatedEngine == VpnEngine.REALITY_CORE))
         liveReloadOnly = arguments?.getString("liveReloadOnly") == "true"
         allowWifiToggle = arguments?.getString("allowWifiToggle") == "true"
