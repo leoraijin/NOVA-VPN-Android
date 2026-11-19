@@ -1,7 +1,9 @@
 package com.nova.vpn.android
 
 import com.nova.vpn.android.data.AppRoutingSettings
+import com.nova.vpn.android.data.CustomDnsConfig
 import com.nova.vpn.android.data.MultiServerConfigFactory
+import com.nova.vpn.android.data.SharedUidExitGuard
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -50,8 +52,14 @@ internal object NativeExitIsolation {
 
         val healthy = bindings.entries.filterKeys { it !in rejected }
         val cache = root.getJSONObject("experimental").getJSONObject("cache_file").getString("path")
-        val rebuilt = MultiServerConfigFactory.build(root, multi, healthy.mapValues { byTag.getValue(it.value.tag) },
-            ownPackage, settings.ipv6Enabled, cache).toString()
+        val originalApps = SharedUidExitGuard.capture(config)
+        val unavailable = (multi.rules.mapNotNull { it.packageName } + settings.customDns.appServers.keys)
+            .filterNot { originalApps?.hasAssignment(it) == true }.toSet()
+        val rebuilt = CustomDnsConfig.apply(
+            MultiServerConfigFactory.build(root, multi, healthy.mapValues { byTag.getValue(it.value.tag) },
+                ownPackage, settings.ipv6Enabled, cache, unavailable),
+            settings.customDns, ownPackage, unavailable
+        ).toString()
         return Candidate(rebuilt, bindings.withNativeRejected(rebuilt, rejected).also { it.validate(rebuilt, referenced) })
     }
 }

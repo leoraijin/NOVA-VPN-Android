@@ -15,9 +15,12 @@ class NativeExitIsolationTest {
         val profiles = listOf(fr, us)
         val multi = MultiServerSettings(7, fr.id, listOf(
             MultiServerRule(packageName = "example.chat", target = ServerRouteTarget(ServerRouteKind.PROFILE, us.id)),
+            MultiServerRule(packageName = "example.removed", target = ServerRouteTarget(ServerRouteKind.DIRECT)),
             MultiServerRule(domain = "keep.example.test", target = ServerRouteTarget(ServerRouteKind.PROFILE, fr.id))))
-        val settings = AppRoutingSettings(multiServer = multi)
-        val config = SingBoxConfigFactory.build(fr, settings, "com.nova.fixture", profiles, "/private/native-fixture.db")
+        val resolver = CustomDnsServer("fixture", "Fixture DNS", "https://dns.example/dns-query", listOf("dns-site.example.test"))
+        val settings = AppRoutingSettings(multiServer = multi, customDns = CustomDnsSettings(listOf(resolver), resolver.id))
+        val config = SingBoxConfigFactory.build(fr, settings, "com.nova.fixture", profiles, "/private/native-fixture.db",
+            unavailablePackages = setOf("example.removed"))
         val bindings = RouteExitBindings.capture(multi, profiles, config)
         val checked = mutableListOf<String>()
         val result = requireNotNull(NativeExitIsolation.rebuild(config, bindings, settings, "com.nova.fixture", { true }) {
@@ -34,6 +37,8 @@ class NativeExitIsolationTest {
         }
         assertThrows(IllegalStateException::class.java) { result.bindings.encode() }
         assertFalse(result.config.contains("fixture-invalid"))
+        assertFalse(result.config.contains("example.removed"))
+        assertTrue(result.config.contains("dns-site.example.test"))
         val rules = JSONObject(result.config).getJSONObject("route").getJSONArray("rules")
         val ruleList = (0 until rules.length()).map(rules::getJSONObject)
         assertTrue(ruleList.any { it.optJSONArray("package_name")?.optString(0) == "example.chat" && it.optString("action") == "reject" })

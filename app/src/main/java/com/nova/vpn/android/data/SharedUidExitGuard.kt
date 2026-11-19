@@ -5,7 +5,8 @@ import org.json.JSONObject
 /** Mirrors effective application exits from the generated configuration. */
 internal class SharedUidExitGuard private constructor(
     private val assignments: Map<String, String?>,
-    private val defaultExit: String?
+    private val defaultExit: String?,
+    val androidDirectCandidates: Set<String>
 ) {
     fun hasAssignment(packageName: String): Boolean = packageName in assignments
 
@@ -38,7 +39,8 @@ internal class SharedUidExitGuard private constructor(
                 return null
             }
             check(conflict.getString("action") == "reject")
-            val terminal = (1 until rules.length()).map(rules::getJSONObject).filter {
+            val ordered = (1 until rules.length()).map(rules::getJSONObject)
+            val terminal = ordered.filter {
                 it.optString("action") in setOf("route", "reject") &&
                     it.keys().asSequence().all { key -> key in setOf("package_name", "invert", "action", "outbound") }
             }
@@ -54,7 +56,17 @@ internal class SharedUidExitGuard private constructor(
                 }
                 assignments[name] = if (first == null) fallback else exit(first)
             }
-            return SharedUidExitGuard(assignments.toMap(), fallback)
+            val directTag = MultiServerConfigFactory.DIRECT_TAG
+            // A site override needs to see traffic from direct apps too. Preserve
+            // VPN and block rules, as well as explicit site DNS outbounds.
+            val siteNeedsTunnel = ordered.any { rule ->
+                (rule.has("domain") || rule.has("domain_suffix")) &&
+                    (rule.optString("action") == "reject" ||
+                        rule.optString("action") == "route" && rule.optString("outbound") != directTag)
+            }
+            val androidDirect = if (siteNeedsTunnel) emptySet()
+                else assignments.filterValues { it == directTag }.keys.toSet()
+            return SharedUidExitGuard(assignments.toMap(), fallback, androidDirect)
         }
     }
 }

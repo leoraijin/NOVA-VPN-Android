@@ -5,6 +5,8 @@ import org.json.JSONObject
 
 /** Compiles captured assignments into one TUN config. Native check is still required. */
 object MultiServerConfigFactory {
+    internal const val DIRECT_TAG = "nova-direct"
+
     fun build(base: JSONObject, settings: MultiServerSettings, profileOutbounds: Map<String, JSONObject>,
         ownPackage: String, ipv6: Boolean, cachePath: String, unavailablePackages: Set<String> = emptySet()): JSONObject {
         settings.validate()
@@ -21,7 +23,7 @@ object MultiServerConfigFactory {
         tun.put("address", JSONArray().put("172.19.0.1/30").put("fdfe:dcba:9876::1/126"))
         val referenced = MultiServerPolicy(settings.revision, settings.defaultProfileId, settings.effectiveRules(), profileOutbounds.keys).referencedProfileIds.sorted()
         val tags = referenced.filter { it in profileOutbounds }.mapIndexed { index, id -> id to "nova-exit-$index" }.toMap()
-        val outbounds = JSONArray().put(JSONObject().put("type", "direct").put("tag", "nova-direct").put("domain_resolver", "nova-bootstrap-dns"))
+        val outbounds = JSONArray().put(JSONObject().put("type", "direct").put("tag", DIRECT_TAG).put("domain_resolver", "nova-bootstrap-dns"))
         tags.forEach { (id, tag) ->
             val outbound = JSONObject(profileOutbounds.getValue(id).toString())
             require(outbound.optString("type") in setOf("vless","vmess","trojan","shadowsocks","hysteria","hysteria2","tuic","socks","http","anytls")) { "Профиль несовместим с назначением сервера" }
@@ -36,7 +38,7 @@ object MultiServerConfigFactory {
         fun resolver(tag: String) = JSONObject().put("type","https").put("tag","dns-$tag")
             .put("server","1.1.1.1").put("path","/dns-query").put("detour",tag)
             .put("tls",JSONObject().put("enabled",true).put("server_name","cloudflare-dns.com"))
-        servers.put(resolver("nova-direct"))
+        servers.put(resolver(DIRECT_TAG))
         tags.values.forEach { servers.put(resolver(it)) }
         // Preserve saved intent and exit identities. Only installed apps enter the live rules.
         val activeRules = settings.effectiveRules().filterNot { it.packageName in unavailablePackages }
@@ -80,7 +82,7 @@ object MultiServerConfigFactory {
         dnsRules.put(JSONObject().put("query_type",JSONArray().put("A").put("AAAA")).put("action","route").put("server","nova-fakeip"))
         fun exit(target: ServerRouteTarget): String? = when (target.kind) {
             ServerRouteKind.BLOCK -> null
-            ServerRouteKind.DIRECT -> "nova-direct"
+            ServerRouteKind.DIRECT -> DIRECT_TAG
             ServerRouteKind.PROFILE -> tags[target.profileId]
             ServerRouteKind.DEFAULT -> tags[settings.defaultProfileId]
         }
@@ -112,7 +114,7 @@ object MultiServerConfigFactory {
         val defaultTag = tags[settings.defaultProfileId]
         if (defaultTag == null) dnsRules.put(JSONObject().put("action","reject"))
         config.put("route",JSONObject().put("auto_detect_interface",true).put("default_domain_resolver","nova-bootstrap-dns")
-            .put("rules",routeRules).put("final",defaultTag ?: "nova-direct"))
+            .put("rules",routeRules).put("final",defaultTag ?: DIRECT_TAG))
         config.put("dns",JSONObject().put("servers",servers).put("rules",dnsRules)
             .put("final",defaultTag?.let { "dns-$it" } ?: "nova-bootstrap-dns").put("independent_cache",true))
         val experimental = config.optJSONObject("experimental") ?: JSONObject()

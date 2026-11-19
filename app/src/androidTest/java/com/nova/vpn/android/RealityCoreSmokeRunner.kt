@@ -33,6 +33,7 @@ class RealityCoreSmokeRunner : Instrumentation() {
     private var multiUdpOnly=false
     private var multiDirectQuicOnly=false
     private var multiDirectTraceOnly=false
+    private var multiSystemDirectOnly = false
     private var lastTraceIpHash=""
     private var physicalTraceIpHash=""
     private var multiDirectHost:String?=null
@@ -134,9 +135,11 @@ class RealityCoreSmokeRunner : Instrumentation() {
         multiDirectQuicOnly=arguments?.getString("multiDirectQuicOnly")=="true"
         check(!multiDirectQuicOnly || (multiQuicOnly && !multiQuicSiteOnly))
         multiDirectTraceOnly=arguments?.getString("multiDirectTraceOnly")=="true"
+        multiSystemDirectOnly = arguments?.getString("multiSystemDirectOnly") == "true"
         multiDirectHost=arguments?.getString("multiDirectHost")
         multiDirectPort=arguments?.getString("multiDirectPort")?.toIntOrNull()?:0
-        if(multiDirectHost!=null)check(multiDirectHost!!.matches(Regex("192[.]168[.]0[.]([1-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-4])")) && multiDirectPort in 1024..65535)
+        if (multiSystemDirectOnly) check(multiDirectHost == "10.0.2.2" && multiDirectPort in 1024..65535)
+        else if (multiDirectHost != null) check(multiDirectHost!!.matches(Regex("192[.]168[.]0[.]([1-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-4])")) && multiDirectPort in 1024..65535)
         multiPostWriteFaultOnly=arguments?.getString("multiPostWriteFaultOnly")=="true"
         multiSaveFaultOnly=arguments?.getString("multiSaveFaultOnly")=="true"
         multiQueuedCatalogOnly=arguments?.getString("multiQueuedCatalogOnly")=="true"
@@ -146,6 +149,7 @@ class RealityCoreSmokeRunner : Instrumentation() {
         multiLiveReloadOnly=arguments?.getString("multiLiveReloadOnly")=="true"
         multiConcurrentOnly=arguments?.getString("multiConcurrentOnly")=="true"
         multiExitOnly=arguments?.getString("multiExitOnly")=="true"
+        check(!multiSystemDirectOnly || multiExitOnly)
         idleProbeSeconds = arguments?.getString("idleProbeSeconds")?.toInt() ?: 0
         idleExitCount = arguments?.getString("idleExitCount")?.toInt() ?: 10
         check(idleExitCount == 1 || idleExitCount == 2 || idleExitCount == 10)
@@ -958,6 +962,65 @@ class RealityCoreSmokeRunner : Instrumentation() {
                                     })
                         }
                     }.toString()
+
+                    if (multiSystemDirectOnly) {
+                        val companion = "com.nova.vpn.routingprobe"
+                        val pm = context.packageManager
+                        check(listOf(context.packageName, testPackage, companion)
+                            .map { pm.getApplicationInfo(it, 0).uid }.distinct().size == 3)
+                        val preset = "fixture-system-direct"
+                        var revision = 200L
+                        val direct = ServerRouteTarget(ServerRouteKind.DIRECT)
+                        val vpn1 = ServerRouteTarget(ServerRouteKind.DEFAULT)
+                        val vpn2 = ServerRouteTarget(ServerRouteKind.PROFILE, second.id)
+                        fun applyPolicy(target: ServerRouteTarget, siteOverride: Boolean = false) {
+                            val rules = listOf(
+                                MultiServerRule(packageName = testPackage, target = target),
+                                MultiServerRule(packageName = companion, target = vpn2)
+                            ) + if (siteOverride) listOf(MultiServerRule(domain = "native.test", target = vpn1)) else emptyList()
+                            val multi = MultiServerSettings(revision++, profile.id, rules, second.id)
+                            val settings = AppRoutingSettings(ipv6Enabled = true, multiServer = multi)
+                            routingStore.updatePresets { current ->
+                                if (current.presets.any { it.id == preset }) current
+                                else current.copy(presets = current.presets + RoutingPreset(preset, "System direct fixture", settings))
+                            }
+                            val prepared = PreparedVpnConfiguration.prepare(context, profile, settings, preset)
+                            val json = withFixtureDoh(prepared.config)
+                            start(json, presetId = preset, preparedSettings = settings,
+                                prepared = prepared.copy(config = json,
+                                    exits = RouteExitBindings.capture(multi, ProfileVault(context).load(), json),
+                                    commitBinding = RouteCommitBinding.capture(settings, profile.id, json)))
+                        }
+
+                        check(routedClientResult(expectPhysical = true, lanFixture = true, clientPackage = testPackage) == "ok")
+                        val physicalHandle = lastProbeNetworkHandle
+                        applyPolicy(vpn1)
+                        val initialPrimary = count(firstKey)
+                        val initialSecondary = count(secondKey)
+                        check(routedClientResult(clientPackage = testPackage) == "ok" && count(firstKey) == initialPrimary + 1)
+                        check(routedClientResult(clientPackage = companion) == "ok" && count(secondKey) == initialSecondary + 1)
+
+                        applyPolicy(direct)
+                        val beforeDirectPrimary = count(firstKey)
+                        val beforeDirectSecondary = count(secondKey)
+                        check(VpnRuntime.state.value.activeRoutePreview?.explain("10.0.2.2", testPackage)
+                            ?.text?.contains("системное исключение") == true)
+                        check(routedClientResult(expectPhysical = true, lanFixture = true, clientPackage = testPackage) == "ok")
+                        check(physicalHandle != 0L && lastProbeNetworkHandle == physicalHandle &&
+                            count(firstKey) == beforeDirectPrimary && count(secondKey) == beforeDirectSecondary)
+                        check(routedClientResult(clientPackage = companion) == "ok" && count(secondKey) == beforeDirectSecondary + 1)
+                        sendStatus(0, Bundle().apply { putString("stream", "System DIRECT physical TCP and independent VPN-1 / VPN-2 exits PASS\n") })
+
+                        applyPolicy(direct, siteOverride = true)
+                        val beforeSite = count(firstKey)
+                        check(routedClientResult(site = true, clientPackage = testPackage) == "ok" && count(firstKey) == beforeSite + 1)
+                        applyPolicy(vpn2)
+                        val beforeRestore = count(secondKey)
+                        check(routedClientResult(clientPackage = testPackage) == "ok" && count(secondKey) == beforeRestore + 1)
+                        sendStatus(0, Bundle().apply { putString("stream", "Site VPN priority and DIRECT to VPN-2 live transition PASS\n") })
+                        stop()
+                        return@use
+                    }
 
                     if (multiTxtDnsOnly) {
                         val companion = "com.nova.vpn.routingprobe"

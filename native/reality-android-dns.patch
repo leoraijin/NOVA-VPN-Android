@@ -155,7 +155,7 @@ index 4fa06f9af25e9b6d7b361a246418879a0c476282..247df744e3bd735d4a5efe07581a48c6
      fn rejects_bad_ranges() {
          assert!(FakeIp::new("10.0.0.0/25".parse().unwrap(), None, None).is_err());
 diff --git a/core/src/app/dns/mod.rs b/core/src/app/dns/mod.rs
-index 0f48cd8b8d256b1b793e8659511d219ffbdf3fea..661d69d07dbcafa95906391c43ac45f1627b30f3 100644
+index 0f48cd8b8d256b1b793e8659511d219ffbdf3fea..a857f2b1c714a26e07aa35034031b6783946d811 100644
 --- a/core/src/app/dns/mod.rs
 +++ b/core/src/app/dns/mod.rs
 @@ -26,6 +26,7 @@ pub mod cache;
@@ -305,7 +305,106 @@ index 0f48cd8b8d256b1b793e8659511d219ffbdf3fea..661d69d07dbcafa95906391c43ac45f1
  /// Пустой ответ на запрос с кодом `rcode`.
  pub fn reply(query: &Message, rcode: ResponseCode) -> Message {
      let mut m = Message::response(query.metadata.id, query.metadata.op_code);
-@@ -1311,7 +1344,22 @@ mod rule_strategy_tests {
+@@ -1231,6 +1264,98 @@ mod bootstrap_tests {
+         }
+     }
+ 
++    #[tokio::test]
++    async fn tun_direct_tcp_tries_other_addresses_from_its_selected_dns() {
++        use crate::app::{config::Config, router::Router, Metadata, Network};
++        use crate::vless::Address;
++
++        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
++        let mut query = Message::query();
++        let name = "media.example";
++        let fqdn = Name::from_ascii("media.example.").unwrap();
++        query.add_query(Query::query(fqdn.clone(), RecordType::A));
++        let mut answer = reply(&query, ResponseCode::NoError);
++        for last in [2, 1] {
++            answer.add_answer(Record::from_rdata(
++                fqdn.clone(),
++                60,
++                RData::A(A::new(127, 0, 0, last)),
++            ));
++        }
++        let dns = Arc::new(build_bootstrap("127.0.0.1:9", "direct", BOOTSTRAP_DNS).unwrap());
++        dns.cache
++            .as_ref()
++            .unwrap()
++            .put(&format!("{BOOTSTRAP_DNS}|{name}"), RecordType::A, &answer);
++
++        for with_ip_rule in [false, true] {
++            let mut rules = vec![
++                serde_json::json!({
++                    "domain":[name], "action":"resolve", "server":BOOTSTRAP_DNS,
++                    "strategy":"ipv4_only"
++                }),
++                serde_json::json!({"domain":[name], "action":"route", "outbound":"direct"}),
++            ];
++            if with_ip_rule {
++                rules.insert(
++                    1,
++                    serde_json::json!({"ip_cidr":["127.0.0.1/32"],"action":"reject"}),
++                );
++            }
++            let config = Config::parse(
++                &serde_json::json!({
++                    "outbounds": [{"type":"direct","tag":"direct"}],
++                    "route": {"final":"direct", "rules":rules}
++                })
++                .to_string(),
++            )
++            .unwrap();
++            let geo = GeoFiles::load(Vec::new(), Vec::new(), "unused".as_ref(), "unused".as_ref())
++                .unwrap();
++            let mut router = Router::new(
++                vec![
++                    Arc::new(DirectOutbound::new("direct")),
++                    Arc::new(crate::app::outbound::BlockOutbound::new("__reject")),
++                ],
++                &config.route,
++                &[],
++                &geo,
++            )
++            .unwrap();
++            router.set_dns(dns.clone());
++            let mut meta = Metadata {
++                inbound: "tun".into(),
++                source: "127.0.0.1:12345".parse().unwrap(),
++                network: Network::Tcp,
++                target: Address::Domain(name.into()),
++                port: listener.local_addr().unwrap().port(),
++                sniffed: None,
++                inbound_type: "tun",
++                user_id: None,
++                process_path: None,
++                destination_ip_version: Some(4),
++                rule: None,
++            };
++            let (outbound, addresses) = router.route_restored(&mut meta).await.unwrap();
++            assert_eq!(outbound.tag(), "direct");
++            assert_eq!(addresses[0], "127.0.0.2".parse::<IpAddr>().unwrap());
++            assert_eq!(addresses.len(), if with_ip_rule { 1 } else { 2 });
++            if !with_ip_rule {
++                let _connected = tokio::time::timeout(
++                    Duration::from_secs(2),
++                    router.dial_resolved(&outbound, &meta, &addresses),
++                )
++                .await
++                .expect("direct TCP should try the other DNS address")
++                .unwrap();
++                tokio::time::timeout(Duration::from_secs(1), listener.accept())
++                    .await
++                    .unwrap()
++                    .unwrap();
++            }
++        }
++    }
++
+     #[tokio::test]
+     async fn bootstrap_queries_direct_ip_when_default_dns_is_blocked() {
+         let socket = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
+@@ -1311,7 +1436,22 @@ mod rule_strategy_tests {
                      .lock()
                      .unwrap()
                      .push((question.name().to_ascii(), qtype));
@@ -328,7 +427,7 @@ index 0f48cd8b8d256b1b793e8659511d219ffbdf3fea..661d69d07dbcafa95906391c43ac45f1
                  let data = match qtype {
                      RecordType::A => RData::A(A::new(203, 0, 113, 42)),
                      RecordType::AAAA => RData::AAAA(AAAA("2001:db8::42".parse().unwrap())),
-@@ -1376,6 +1424,38 @@ mod rule_strategy_tests {
+@@ -1376,6 +1516,38 @@ mod rule_strategy_tests {
          serde_json::json!({"domain": [name], "server": "test", "strategy": strategy})
      }
  
@@ -988,11 +1087,206 @@ index 4cbc1a2bdb1c07f8a86b3a3c814431e5f169f785..e7054c291b2ebfd91453da8d16261947
          }
      }
  }
+diff --git a/core/src/app/outbound.rs b/core/src/app/outbound.rs
+index f37909359700da36ba1885f5c83230af5fd41ac4..f414f722c33d79440c45b48c6b58c3d3c36b5f64 100644
+--- a/core/src/app/outbound.rs
++++ b/core/src/app/outbound.rs
+@@ -137,6 +137,14 @@ pub trait Outbound: Send + Sync {
+     fn network_changed(&self) {}
+     /// TCP-соединение с `meta.target:meta.port`.
+     fn connect<'a>(&'a self, meta: &'a Metadata) -> BoxFuture<'a, Result<Box<dyn AsyncStream>>>;
++    /// Direct TCP can try other addresses from the same scoped route lookup.
++    fn connect_resolved<'a>(
++        &'a self,
++        meta: &'a Metadata,
++        _addresses: &'a [IpAddr],
++    ) -> BoxFuture<'a, Result<Box<dyn AsyncStream>>> {
++        self.connect(meta)
++    }
+     /// UDP-сессия для ассоциации, которую открыл `meta.source`.
+     fn udp<'a>(&'a self, meta: &'a Metadata) -> BoxFuture<'a, Result<Arc<dyn UdpSession>>>;
+     /// Выход `dns` (перехват DNS) — через него нельзя ходить к DNS-серверам.
+@@ -279,6 +287,14 @@ impl Outbound for DirectOutbound {
+     }
+ 
+     fn connect<'a>(&'a self, meta: &'a Metadata) -> BoxFuture<'a, Result<Box<dyn AsyncStream>>> {
++        self.connect_resolved(meta, &[])
++    }
++
++    fn connect_resolved<'a>(
++        &'a self,
++        meta: &'a Metadata,
++        addresses: &'a [IpAddr],
++    ) -> BoxFuture<'a, Result<Box<dyn AsyncStream>>> {
+         Box::pin(async move {
+             if let Address::Domain(d) = &meta.target {
+                 if d.eq_ignore_ascii_case("localhost") {
+@@ -286,8 +302,11 @@ impl Outbound for DirectOutbound {
+                 }
+             }
+             let s = tokio::time::timeout(DIRECT_CONNECT_TIMEOUT, async {
+-                let mut addrs =
+-                    resolve(dns_for(&self.dns, meta), &meta.target, meta.port).await?;
++                let mut addrs = if addresses.is_empty() {
++                    resolve(dns_for(&self.dns, meta), &meta.target, meta.port).await?
++                } else {
++                    addresses.iter().map(|ip| SocketAddr::new(*ip, meta.port)).collect()
++                };
+                 // Запрещённые адреса — до подключения: иначе соединение
+                 // успевало бы установиться (оракул для сканирования портов).
+                 if !is_local_host(meta.source.ip()) {
+@@ -332,6 +351,7 @@ impl Outbound for DirectOutbound {
+                 dns: dns_for(&self.dns, meta).cloned(),
+                 noises: self.noises.clone(),
+                 noised: Mutex::new(std::collections::HashSet::new()),
++                receive_buffer: Mutex::new(vec![0; 65536]),
+             }) as Arc<dyn UdpSession>)
+         })
+     }
+@@ -349,6 +369,7 @@ struct DirectUdp {
+     noises: Arc<Vec<Noise>>,
+     /// Адреса, к которым шум уже отправлен.
+     noised: Mutex<std::collections::HashSet<SocketAddr>>,
++    receive_buffer: Mutex<Vec<u8>>,
+ }
+ 
+ impl DirectUdp {
+@@ -448,7 +469,11 @@ impl UdpSession for DirectUdp {
+                         }
+                     }
+                 }
+-                let _ = sock.send_to(&data, to).await;
++                sock.send_to(&data, to).await?;
++            } else {
++                return Err(Error::Protocol(
++                    "direct UDP: address family unavailable".into(),
++                ));
+             }
+             Ok(())
+         })
+@@ -456,22 +481,21 @@ impl UdpSession for DirectUdp {
+ 
+     fn recv(&self) -> BoxFuture<'_, Result<Option<Packet>>> {
+         Box::pin(async move {
+-            let mut b4 = vec![0u8; 65536];
+-            let mut b6 = vec![0u8; 65536];
++            let mut buffer = self.receive_buffer.lock().await;
+             loop {
+                 let deadline = *self
+                     .last
+                     .lock()
+                     .unwrap_or_else(std::sync::PoisonError::into_inner)
+                     + UDP_IDLE;
+-                let got = tokio::select! {
+-                    r = self.v4.recv_from(&mut b4) => r.map(|(n, a)| (b4[..n].to_vec(), a)),
++                let ready = tokio::select! {
++                    r = self.v4.readable() => r.map(|()| &self.v4),
+                     r = async {
+                         match &self.v6 {
+-                            Some(s) => s.recv_from(&mut b6).await,
++                            Some(socket) => socket.readable().await.map(|()| socket),
+                             None => std::future::pending().await,
+                         }
+-                    } => r.map(|(n, a)| (b6[..n].to_vec(), a)),
++                    } => r,
+                     _ = tokio::time::sleep_until(deadline) => {
+                         if tokio::time::Instant::now() >= *self.last.lock().unwrap_or_else(std::sync::PoisonError::into_inner) + UDP_IDLE {
+                             return Ok(None);
+@@ -479,17 +503,22 @@ impl UdpSession for DirectUdp {
+                         continue;
+                     }
+                 };
+-                match got {
+-                    Ok((data, from)) => {
++                match ready.and_then(|socket| socket.try_recv_from(&mut buffer)) {
++                    Ok((length, from)) => {
+                         self.touch();
+-                        return Ok(Some((ip_to_address(from.ip()), from.port(), data)));
++                        return Ok(Some((
++                            ip_to_address(from.ip()),
++                            from.port(),
++                            buffer[..length].to_vec(),
++                        )));
+                     }
+                     // Ошибки отдельных датаграмм (ICMP «порт недоступен»)
+                     // не закрывают сессию.
+                     Err(e)
+                         if matches!(
+                             e.kind(),
+-                            std::io::ErrorKind::ConnectionReset
++                            std::io::ErrorKind::WouldBlock
++                                | std::io::ErrorKind::ConnectionReset
+                                 | std::io::ErrorKind::ConnectionRefused
+                         ) =>
+                     {
+@@ -780,6 +809,36 @@ mod tests {
+         }
+     }
+ 
++    #[tokio::test]
++    async fn direct_udp_reports_send_error_and_receives_consecutive_datagrams() {
++        let socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
++        let port = socket.local_addr().unwrap().port();
++        let direct = DirectOutbound::new("direct");
++        let target = Address::Ipv4(Ipv4Addr::LOCALHOST);
++        let meta = meta("127.0.0.1:12345", target.clone(), port, Network::Udp);
++        let session = direct.udp(&meta).await.unwrap();
++        assert!(session
++            .send(target.clone(), port, vec![0; 65536])
++            .await
++            .is_err());
++        tokio::time::timeout(Duration::from_secs(2), async {
++            let mut packet = [0; 16];
++            for bytes in [b"one".as_slice(), b"second".as_slice()] {
++                session
++                    .send(target.clone(), port, bytes.to_vec())
++                    .await
++                    .unwrap();
++                let (length, peer) = socket.recv_from(&mut packet).await.unwrap();
++                assert_eq!(&packet[..length], bytes);
++                socket.send_to(bytes, peer).await.unwrap();
++                let (_, _, received) = session.recv().await.unwrap().unwrap();
++                assert_eq!(received, bytes);
++            }
++        })
++        .await
++        .unwrap();
++    }
++
+     #[tokio::test]
+     async fn direct_udp_drops_this_host_for_lan_clients() {
+         let target = UdpSocket::bind("127.0.0.1:0").await.unwrap();
 diff --git a/core/src/app/router.rs b/core/src/app/router.rs
-index fba68a3463be1d47ed18661d79ea5f780bbdb397..526d8ad49b701d3ad84fb82f6a9b2929a4cde1c1 100644
+index fba68a3463be1d47ed18661d79ea5f780bbdb397..7dfe10563a618c1232777dcda7924ff747e03985 100644
 --- a/core/src/app/router.rs
 +++ b/core/src/app/router.rs
-@@ -215,10 +215,8 @@ impl Router {
+@@ -9,6 +9,7 @@
+ //! (например, `"geoip": ["ru"]` для сайта, которого нет в geosite).
+ 
+ use std::collections::HashMap;
++use std::net::IpAddr;
+ use std::sync::{Arc, RwLock};
+ 
+ use super::config::{DomainStrategy, RouteConfig};
+@@ -186,7 +187,16 @@ impl Router {
+         outbound: &Arc<dyn Outbound>,
+         meta: &Metadata,
+     ) -> Result<(Box<dyn AsyncStream>, Arc<ConnInfo>)> {
+-        let s = outbound.connect(meta).await?;
++        self.dial_resolved(outbound, meta, &[]).await
++    }
++
++    pub(super) async fn dial_resolved(
++        &self,
++        outbound: &Arc<dyn Outbound>,
++        meta: &Metadata,
++        addresses: &[IpAddr],
++    ) -> Result<(Box<dyn AsyncStream>, Arc<ConnInfo>)> {
++        let s = outbound.connect_resolved(meta, addresses).await?;
+         let member = outbound.as_group().and_then(|g| g.current());
+         let guard = self.tracker.open(meta, outbound.tag(), member);
+         let info = guard.info.clone();
+@@ -215,10 +225,8 @@ impl Router {
          Ok(())
      }
  
@@ -1005,7 +1299,7 @@ index fba68a3463be1d47ed18661d79ea5f780bbdb397..526d8ad49b701d3ad84fb82f6a9b2929
          if let Some(dns) = &self.dns {
              let ip = match &meta.target {
                  Address::Ipv4(v4) => Some(std::net::IpAddr::V4(*v4)),
-@@ -240,6 +238,16 @@ impl Router {
+@@ -240,6 +248,21 @@ impl Router {
                  }
              }
          }
@@ -1015,13 +1309,85 @@ index fba68a3463be1d47ed18661d79ea5f780bbdb397..526d8ad49b701d3ad84fb82f6a9b2929
 +    /// Выход для соединения с учётом fake-IP и `domain_strategy`.
 +    pub async fn route(&self, meta: &mut Metadata) -> Result<Arc<dyn Outbound>> {
 +        self.restore_fake_destination(meta)?;
-+        self.route_restored(meta).await
++        self.route_restored(meta)
++            .await
++            .map(|(outbound, _)| outbound)
 +    }
 +
-+    pub(super) async fn route_restored(&self, meta: &mut Metadata) -> Result<Arc<dyn Outbound>> {
++    pub(super) async fn route_restored(
++        &self,
++        meta: &mut Metadata,
++    ) -> Result<(Arc<dyn Outbound>, Vec<IpAddr>)> {
          // Длина имени в заголовках VLESS, Mux.Cool, XUDP и Trojan — один
          // байт: длиннее 255 закодировалось бы с обрезанной длиной (битый
          // заголовок) или обрезанным именем. Такое имя бывает из fake-IP:
+@@ -271,7 +294,7 @@ impl Router {
+                 .find(|r| r.resolver.is_none() && r.outbound.is_dns() && r.matches(meta))
+             {
+                 meta.rule = Some(r.label.clone());
+-                return Ok(r.outbound.clone());
++                return Ok((r.outbound.clone(), Vec::new()));
+             }
+             let out = match mode {
+                 Mode::Global => self.global.clone(),
+@@ -279,11 +302,17 @@ impl Router {
+             };
+             if let Some(o) = out {
+                 meta.rule = Some(format!("mode={}", mode.clash_name().to_ascii_lowercase()).into());
+-                return Ok(o);
++                return Ok((o, Vec::new()));
+             }
+         }
+-        if let Some(o) = self.match_rules_resolving(meta).await? {
+-            return Ok(o);
++        let mut resolved = Vec::new();
++        if let Some(outbound) = self.match_rules_resolving(meta, &mut resolved).await? {
++            // An IP-based policy evaluated the first address. Alternatives may
++            // use the same exit only when there are no destination IP rules.
++            if resolved.len() > 1 && self.rules.iter().any(Rule::has_ip) {
++                resolved.truncate(1);
++            }
++            return Ok((outbound, resolved));
+         }
+         if self.domain_strategy == DomainStrategy::IpIfNonMatch
+             && self.rules.iter().any(Rule::has_ip)
+@@ -299,7 +328,7 @@ impl Router {
+                             };
+                             if let Some(o) = self.match_rules(&mut m) {
+                                 meta.rule = m.rule;
+-                                return Ok(o);
++                                return Ok((o, Vec::new()));
+                             }
+                         }
+                     }
+@@ -309,7 +338,7 @@ impl Router {
+                 }
+             }
+         }
+-        Ok(self.final_.clone())
++        Ok((self.final_.clone(), Vec::new()))
+     }
+ 
+     /// Выход для соединения только по правилам (без DNS).
+@@ -322,6 +351,7 @@ impl Router {
+     async fn match_rules_resolving(
+         &self,
+         meta: &mut Metadata,
++        resolved: &mut Vec<IpAddr>,
+     ) -> Result<Option<Arc<dyn Outbound>>> {
+         for rule in &self.rules {
+             if rule.missing_owner(meta) {
+@@ -339,8 +369,8 @@ impl Router {
+                 let dns = self.dns.as_ref().ok_or_else(|| {
+                     Error::Config("route.resolve требует DNS-конфигурацию".into())
+                 })?;
+-                let addresses = dns.lookup_via(name, server, *strategy, *use_cache).await?;
+-                let ip = addresses
++                *resolved = dns.lookup_via(name, server, *strategy, *use_cache).await?;
++                let ip = resolved
+                     .first()
+                     .ok_or_else(|| Error::Protocol("DNS вернул пустой ответ".into()))?;
+                 meta.sniffed = Some(name.clone());
 diff --git a/core/src/app/sniff_quic.rs b/core/src/app/sniff_quic.rs
 index 4f36d621d4b1fbe52fa2ef5f26b5cbbe3536440c..dad190c641a1b165bb8084a3ad74db65bd42f9c1 100644
 --- a/core/src/app/sniff_quic.rs
@@ -1050,7 +1416,7 @@ index 4f36d621d4b1fbe52fa2ef5f26b5cbbe3536440c..dad190c641a1b165bb8084a3ad74db65
      async fn reads_flow_and_keeps_datagrams() {
          let dcid = [9u8; 8];
 diff --git a/core/src/app/tun/mod.rs b/core/src/app/tun/mod.rs
-index 5e09e015b6cf83a88425a6061141b0c4739fb83d..4eba5471ad7a813a19ee46163c8fb87104f7f272 100644
+index 5e09e015b6cf83a88425a6061141b0c4739fb83d..9639b2653ef4f452f8135fb55eae24d555c19e4b 100644
 --- a/core/src/app/tun/mod.rs
 +++ b/core/src/app/tun/mod.rs
 @@ -28,7 +28,8 @@ use std::net::{IpAddr, SocketAddr};
@@ -1115,7 +1481,7 @@ index 5e09e015b6cf83a88425a6061141b0c4739fb83d..4eba5471ad7a813a19ee46163c8fb871
                  if e.kind() == std::io::ErrorKind::BrokenPipe {
                      return Err::<(), std::io::Error>(e);
                  }
-@@ -383,11 +412,12 @@ impl TunInbound {
+@@ -383,17 +412,18 @@ impl TunInbound {
              inbound_type: "tun",
              rule: None,
          };
@@ -1126,10 +1492,17 @@ index 5e09e015b6cf83a88425a6061141b0c4739fb83d..4eba5471ad7a813a19ee46163c8fb871
              meta.sniffed = sniff::read_and_sniff(&mut t, &mut initial).await?;
          }
 -        let outbound = router.route(&mut meta).await?;
-+        let outbound = router.route_restored(&mut meta).await?;
++        let (outbound, addresses) = router.route_restored(&mut meta).await?;
          if self.settings.sniff_override && !matches!(meta.target, Address::Domain(_)) {
              if let Some(d) = &meta.sniffed {
                  meta.target = Address::Domain(d.clone());
+             }
+         }
+-        let (mut remote, conn) = match router.dial(&outbound, &meta).await {
++        let (mut remote, conn) = match router.dial_resolved(&outbound, &meta, &addresses).await {
+             Ok(r) => r,
+             Err(Error::Blocked) => return Ok(()),
+             Err(e) => return Err(e),
 @@ -414,19 +444,15 @@ impl TunInbound {
          if is_local_only(dst.ip()) {
              return Ok(());
@@ -1171,7 +1544,7 @@ index 5e09e015b6cf83a88425a6061141b0c4739fb83d..4eba5471ad7a813a19ee46163c8fb871
              }
          }
 -        let outbound = router.route(&mut meta).await?;
-+        let outbound = router.route_restored(&mut meta).await?;
++        let (outbound, _) = router.route_restored(&mut meta).await?;
          if outbound.capabilities().udp == Some(false) {
              return Err(crate::error::Error::Protocol(format!(
                  "выход {} не поддерживает UDP",

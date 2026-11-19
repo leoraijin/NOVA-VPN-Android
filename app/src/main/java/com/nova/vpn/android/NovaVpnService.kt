@@ -46,6 +46,8 @@ import com.nova.vpn.android.data.AppPreferencesStore
 import com.nova.vpn.android.data.AppRoutingStore
 import com.nova.vpn.android.data.VpnEngine
 import com.nova.vpn.android.data.RealityConfigFactory
+import com.nova.vpn.android.data.SharedUidExitGuard
+import org.json.JSONObject
 import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.NetworkInterface as JNetworkInterface
@@ -359,6 +361,13 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
                 trafficProbe = probe;exitHealthPlan=multi
                 val uidGuard = if (request.identity.policy != null || com.nova.vpn.android.data.SharedUidExitGuard.hasManagedRules(config))
                     com.nova.vpn.android.data.SharedUidExitGuard.capture(config) else null
+                val androidDirect = if (request.identity.policy != null) managedAndroidDirect(uidGuard) else emptySet()
+                if (androidDirect.isNotEmpty()) {
+                    val runtime = JSONObject(runtimeConfig)
+                    val exclusions = runtime.getJSONArray("inbounds").getJSONObject(0).getJSONArray("exclude_package")
+                    androidDirect.forEach { exclusions.put(it) }
+                    runtimeConfig = runtime.toString()
+                }
                 if (!commands.current(ticket)) return@execute
                 stage = "command-server-create"
                 Log.i(TAG, "VPN engine startup stage=$stage")
@@ -384,7 +393,7 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
                 VpnDiagnostics.record("engine_started")
                 startDebugLogStream()
                 if (!commands.accept(ticket) {
-                    val preview = commitRouting(request)
+                    val preview = commitRouting(request, androidDirect)
                     sharedUidGuards = nextUidGuards
                     commands.succeeded(ticket)
                     appliedConfiguration = request
@@ -701,6 +710,24 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
         startProbeBatch(ticket, jobs)
     }
 
+    @Suppress("DEPRECATION")
+    private fun managedAndroidDirect(guard: SharedUidExitGuard?): Set<String> {
+        val candidates = guard?.androidDirectCandidates.orEmpty()
+        if (candidates.isEmpty() || Build.VERSION.SDK_INT < 29 || isLockdownEnabled) return emptySet()
+        return candidates.filterTo(sortedSetOf()) { name ->
+            try {
+                // Android excludes UIDs. A shared UID must stay subject to the
+                // core's live group validation, even if it has only one member now.
+                val info = packageManager.getPackageInfo(name, 0)
+                val uid = info.applicationInfo?.uid
+                info.sharedUserId == null && uid != null &&
+                    packageManager.getPackagesForUid(uid)?.singleOrNull() == name
+            } catch (_: PackageManager.NameNotFoundException) {
+                false
+            }
+        }
+    }
+
     private fun startReality(
         request: Configuration,
         ticket: ConnectionCoordinator.Ticket,
@@ -739,7 +766,9 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
         val runtimeConfig = prepared.config
         if (!runCatching { RealityCoreBridge.validate(runtimeConfig, filesDir.absolutePath) }.getOrDefault(false)) throw InvalidConfiguration()
         if (!commands.current(ticket)) return
-        val policyKey = TunReusePolicy.reality(prepared.includedPackages, prepared.excludedPackages) { name ->
+        val androidDirect = if (managedDual) managedAndroidDirect(dualUidGuard) else emptySet()
+        val exclusions = prepared.excludedPackages + androidDirect
+        val policyKey = TunReusePolicy.reality(prepared.includedPackages, exclusions) { name ->
             runCatching { packageManager.getApplicationInfo(name, 0).uid }.getOrElse { throw InvalidConfiguration() }
         }
         validateRoutingSnapshot(request)
@@ -758,7 +787,7 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
         builder.addAddress("fdfe:dcba:9876::1", 126).addRoute("::", 0)
         if (Build.VERSION.SDK_INT >= 29) builder.setMetered(false)
         prepared.includedPackages.forEach { builder.addAllowedApplication(it) }
-        prepared.excludedPackages.forEach { builder.addDisallowedApplication(it) }
+        exclusions.forEach { builder.addDisallowedApplication(it) }
         val descriptor = retainedTun ?: (builder.establish() ?: error("Android не создал TUN-интерфейс")).also {
             val previous = tunDescriptor
             tunDescriptor = it
@@ -790,7 +819,7 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
         exitHealthPlan = multi
         VpnDiagnostics.record("engine_started")
         if (!commands.accept(ticket) {
-            val preview = commitRouting(request)
+            val preview = commitRouting(request, androidDirect)
             commands.succeeded(ticket)
             appliedConfiguration = request
             VpnApplyRequests.tracker.applied(request.identity, request.rollbackFor)
@@ -1076,7 +1105,7 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
 
     // The writer uses this same lock: a provider update cannot land between the
     // final catalog check and the durable routing/selection transaction.
-    private fun commitRouting(request: Configuration) = synchronized(com.nova.vpn.android.data.ProfileVault.lock) {
+    private fun commitRouting(request: Configuration, androidDirect: Set<String>) = synchronized(com.nova.vpn.android.data.ProfileVault.lock) {
         validateCatalog(request)
         val store = AppRoutingStore(this)
         if (request.rollbackFor != null) {
@@ -1091,7 +1120,7 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
         if (policy == null || exits == null) null else runCatching {
             val active = store.loadPresets().active
             if (active.id != request.identity.routingPresetId) null
-            else ActiveRoutePreview.capture(active.settings, policy, exits, request.config)
+            else ActiveRoutePreview.capture(active.settings, policy, exits, request.config, androidDirect)
         }.getOrNull()
     }
 

@@ -152,7 +152,9 @@ public final class RealityProbeClientActivity extends Activity {
         final String siteHost = requestedHost != null && requestedHost.matches("probe-[a-f0-9-]+[.]native[.]test") ? requestedHost : "native.test";
         final String fixtureHost = getIntent().getStringExtra("lanFixtureHost");
         final int fixturePort = getIntent().getIntExtra("lanFixturePort", 0);
-        final boolean lanFixture = fixtureHost != null && fixtureHost.matches("192[.]168[.]0[.]([1-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-4])") && fixturePort >= 1024 && fixturePort <= 65535;
+        final boolean lanFixture = fixtureHost != null
+            && (fixtureHost.equals("10.0.2.2") || fixtureHost.matches("192[.]168[.]0[.]([1-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-4])"))
+            && fixturePort >= 1024 && fixturePort <= 65535;
         if (fixtureHost != null && !fixtureHost.isEmpty() && !lanFixture) { finish(); return; }
         final boolean expectPhysical = getIntent().getBooleanExtra("expectPhysical", false);
         final boolean callbacks = getIntent().getBooleanExtra("useNetworkCallbacks", true);

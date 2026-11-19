@@ -28,7 +28,8 @@ class ActiveRoutePreview private constructor(
     private val fakeIpRanges: List<FakeIpNetworkPreflight.Prefix>,
     private val uidGuard: SharedUidExitGuard?,
     private val customDns: CustomDnsSettings,
-    private val siteRules: List<MultiServerRule>
+    private val siteRules: List<MultiServerRule>,
+    private val androidDirect: Set<String>
 ) {
     internal data class Result(val text: String, val profileId: String? = null)
 
@@ -38,16 +39,18 @@ class ActiveRoutePreview private constructor(
         val numeric = runCatching {
             FakeIpNetworkPreflight.Prefix(input + if (':' in input) "/128" else "/32")
         }.getOrNull()
-        if (numeric != null && fakeIpRanges.any { it.overlaps(numeric) })
-            return Result("Это адрес FakeIP. Введите исходный домен назначения.")
-        if (numeric?.ipv6 == true && !ipv6Enabled) return Result("Блокируется · IPv6 отключён.")
         val domain = if (numeric != null) null else {
             SiteDomain.normalize(input)?.takeUnless { it.all { ch -> ch.isDigit() || ch == '.' } }
                 ?: return Result("Введите домен без URL или корректный IP-адрес.")
         }
+        val packageName = app.trim().takeIf { it.isNotEmpty() && it in uidPackages }
+        if (packageName in androidDirect && uidPackages.size == 1)
+            return Result("Напрямую · системное исключение Android")
+        if (numeric != null && fakeIpRanges.any { it.overlaps(numeric) })
+            return Result("Это адрес FakeIP. Введите исходный домен назначения.")
+        if (numeric?.ipv6 == true && !ipv6Enabled) return Result("Блокируется · IPv6 отключён.")
         if (uidGuard?.conflicts(uidPackages) == true)
             return Result("Блокируется · у приложений с общим UID разные назначения.")
-        val packageName = app.trim().takeIf { it.isNotEmpty() && it in uidPackages }
         val decision = policy.decide(packageName, domain, ownerKnown = packageName != null)
         if (decision.requested.kind != ServerRouteKind.BLOCK) {
             val siteDns = customDns.selected?.takeIf { server ->
@@ -76,7 +79,8 @@ class ActiveRoutePreview private constructor(
     }
 
     internal companion object {
-        fun capture(settings: AppRoutingSettings, identity: RoutePolicyIdentity, exits: RouteExitBindings, config: String): ActiveRoutePreview? {
+        fun capture(settings: AppRoutingSettings, identity: RoutePolicyIdentity, exits: RouteExitBindings,
+                    config: String, androidDirect: Set<String> = emptySet()): ActiveRoutePreview? {
             val multi = settings.multiServer ?: return null
             if (identity != RoutePolicyIdentity.capture(settings)) return null
             val servers = JSONObject(config).getJSONObject("dns").getJSONArray("servers")
@@ -90,7 +94,8 @@ class ActiveRoutePreview private constructor(
                 rule.packageName?.let { guard?.hasAssignment(it) == true } ?: true
             }
             return ActiveRoutePreview(MultiServerPolicy(multi.revision, multi.defaultProfileId, rules, exits.entries.keys),
-                settings.ipv6Enabled, ranges, guard, settings.customDns, rules.filter { it.domain != null })
+                settings.ipv6Enabled, ranges, guard, settings.customDns, rules.filter { it.domain != null },
+                androidDirect)
         }
     }
 }
