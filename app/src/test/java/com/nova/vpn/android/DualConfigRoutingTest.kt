@@ -65,7 +65,14 @@ class DualConfigRoutingTest {
             listOf(first), "/fixtures/paused-dns.db"))
         val route = config.getJSONObject("route")
         val entries = route.getJSONArray("rules")
-        val primaryTag = (0 until entries.length()).map(entries::getJSONObject).last().getString("outbound")
+        val primaryTag = route.getString("final")
+        val rulesInOrder = (0 until entries.length()).map(entries::getJSONObject)
+        assertFalse(rulesInOrder.any {
+            it.optString("action") == "resolve" && !it.has("domain") && !it.has("package_name")
+        })
+        assertFalse(rulesInOrder.any {
+            it.optString("action") == "resolve" && it.optJSONArray("package_name")?.optString(0) == "example.second"
+        })
         for ((selector, value) in listOf("domain" to "second.example.org", "package_name" to "example.second")) {
             val rule = (0 until entries.length()).map(entries::getJSONObject).single {
                 it.optJSONArray(selector)?.optString(0) == value && it.optString("action") == "route"
