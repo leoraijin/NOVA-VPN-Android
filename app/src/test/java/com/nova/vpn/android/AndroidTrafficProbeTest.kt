@@ -36,6 +36,40 @@ class AndroidTrafficProbeTest {
         assertFalse(AndroidTrafficProbe.validTrace("HTTP/1.1 200 OK\n\nip=\n"))
     }
 
+    @Test fun failureOfFirstHttpsDestinationTriesTheOtherOnTheSameListener() {
+        java.net.ServerSocket(0, 2, java.net.InetAddress.getByName("127.0.0.1")).use { listener ->
+            listener.soTimeout = 2_000
+            val thread = java.util.concurrent.Executors.newSingleThreadExecutor()
+            try {
+                val seen = thread.submit<List<Int>> {
+                    List(2) {
+                        listener.accept().use { dial ->
+                            dial.soTimeout = 2_000
+                            val input = java.io.DataInputStream(dial.getInputStream())
+                            val output = dial.getOutputStream()
+                            input.readFully(ByteArray(3))
+                            output.write(byteArrayOf(5, 2))
+                            assertEquals(1, input.readUnsignedByte())
+                            input.readFully(ByteArray(input.readUnsignedByte()))
+                            input.readFully(ByteArray(input.readUnsignedByte()))
+                            output.write(byteArrayOf(1, 0))
+                            assertEquals(5, input.readUnsignedByte())
+                            input.readFully(ByteArray(2))
+                            val address = input.readUnsignedByte()
+                            input.readFully(ByteArray(if (address == 1) 4 else input.readUnsignedByte()))
+                            input.readUnsignedShort()
+                            output.write(byteArrayOf(5, 4))
+                            address
+                        }
+                    }
+                }
+                val probe = AndroidTrafficProbe.channel("{}", listener.localPort, "probe", "password")
+                assertFalse(probe.checkAvailable())
+                assertEquals(listOf(1, 3), seen.get(4, java.util.concurrent.TimeUnit.SECONDS))
+            } finally { thread.shutdownNow() }
+        }
+    }
+
     @Test fun cancelledProbeNeverReportsSuccess() {
         val probe = AndroidTrafficProbe.prepare("""{"outbounds":[{"type":"trojan","tag":"edge"}],"route":{"final":"edge"}}""" )!!
         probe.cancel()

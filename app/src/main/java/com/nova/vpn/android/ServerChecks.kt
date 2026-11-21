@@ -49,16 +49,18 @@ internal class ServerChecks(private val context: Context, private val scope: Cor
         job = scope.launch {
           CHECK_MUTEX.withLock {
             val connectivity = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-            val networkSignature = java.util.concurrent.atomic.AtomicReference<String?>()
+            val underlay = java.util.concurrent.atomic.AtomicReference<PhysicalNetworkSnapshot>()
             val monitor = PhysicalNetworkMonitor(connectivity) { snapshot ->
-                val previous = networkSignature.getAndSet(snapshot.signature)
+                val previous = underlay.getAndSet(snapshot)?.signature
                 if (previous != null && previous != snapshot.signature && generation == batch)
                     cancel("Сеть изменилась. Проверку можно повторить.")
             }
             var client: ServerCheckClient? = null
             try {
                 monitor.start()
-                val physicalSignature = networkSignature.get() ?: error("No ready physical network")
+                val snapshot = underlay.get()
+                val physicalSignature = snapshot?.signature ?: error("No ready physical network")
+                val network = snapshot.network ?: error("No ready physical network")
                 for (profile in profiles) {
                     ensureActive()
                     mutableState.update { it.copy(currentId = profile.id, progressEvents = emptyList()) }
@@ -76,7 +78,7 @@ internal class ServerChecks(private val context: Context, private val scope: Cor
                         }
                         try {
                             client.connect()
-                            val result = client.check(config, diagnostic, engine, quickCheck)
+                            val result = client.check(config, diagnostic, engine, quickCheck, network)
                             ServerCheckResult(if (result.unsupported) CheckOutcome.UNSUPPORTED else if (result.millis != null) CheckOutcome.SUCCESS else CheckOutcome.FAILED,
                                 result.millis, successes = result.successes, attempts = result.attempts, events = result.events)
                         } catch (_: TimeoutCancellationException) {
@@ -94,7 +96,7 @@ internal class ServerChecks(private val context: Context, private val scope: Cor
                 }
                 ensureActive()
                 check(preferences.vpnEngine() == engine) { "Engine changed during check" }
-                if (onBest != null && networkSignature.get() == physicalSignature && generation == batch) {
+                if (onBest != null && underlay.get()?.signature == physicalSignature && generation == batch) {
                     val best = ServerSelectionPolicy.best(profiles, mutableState.value.results, physicalSignature, android.os.SystemClock.elapsedRealtimeNanos(), engine)
                     if (best != null) {
                         val accepted = onBest(best)
@@ -119,7 +121,30 @@ internal class ServerChecks(private val context: Context, private val scope: Cor
           }
         }
     }
-    companion object { private val CHECK_MUTEX = Mutex() }
+    companion object {
+        private val CHECK_MUTEX = Mutex()
+
+        suspend fun confirmActiveExit(context: Context, config: ServerCheckConfig.RecoveryCheck, engine: VpnEngine,
+                                      network: Network): ProbeTarget? = withContext(Dispatchers.Main.immediate) {
+            if (!CHECK_MUTEX.tryLock()) return@withContext null
+            val client = ServerCheckClient(context) {}
+            try {
+                client.connect()
+                client.check(config.config, diagnostic = false, engine = engine, quick = true,
+                    network = network, resolver = config.resolver).successfulTarget
+            } catch (timeout: TimeoutCancellationException) {
+                null
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                null
+            } finally {
+                withContext(NonCancellable) {
+                    try { client.close() } finally { CHECK_MUTEX.unlock() }
+                }
+            }
+        }
+    }
 }
 
 private class ServerCheckClient(private val context: Context, private val onProgress: (List<DiagnosticEvent>) -> Unit) {
@@ -138,7 +163,8 @@ private class ServerCheckClient(private val context: Context, private val onProg
         }
         if (message.what == ServerCheckService.RESULT && message.arg1 == pending?.first) pending?.second?.complete(
             ProbeAssessment(message.arg2.takeIf { it > 0 }, message.data.getInt("successes"), message.data.getInt("attempts"),
-                DiagnosticEventCodec.decode(message.data.getString("diagnostic_events")), message.data.getBoolean("unsupported")))
+                DiagnosticEventCodec.decode(message.data.getString("diagnostic_events")), message.data.getBoolean("unsupported"),
+                ProbeTarget.entries.firstOrNull { it.name == message.data.getString("successful_target") }))
         true
     })
     private val connection = object : ServiceConnection {
@@ -161,15 +187,21 @@ private class ServerCheckClient(private val context: Context, private val onProg
         withTimeout(5_000) { connected.await() }
     }
 
-    suspend fun check(config: String, diagnostic: Boolean, engine: VpnEngine, quick: Boolean): ProbeAssessment {
+    suspend fun check(config: String, diagnostic: Boolean, engine: VpnEngine, quick: Boolean,
+                      network: Network, resolver: String? = null): ProbeAssessment {
         val deferred = CompletableDeferred<ProbeAssessment>()
         val id = ++serial
         pending = id to deferred
         connected.await().send(Message.obtain(null, ServerCheckService.CHECK, id, 0).apply {
-            data = Bundle().apply { putString("config", config); putBoolean("diagnostic", diagnostic); putBoolean("quick", quick); putString("engine", engine.id) }
+            data = Bundle().apply {
+                putString("config", config); putBoolean("diagnostic", diagnostic); putBoolean("quick", quick); putString("engine", engine.id)
+                putParcelable("probe_network", network)
+                if (resolver != null) putString("probe_resolver", resolver)
+            }
             replyTo = replies
         })
-        return try { withTimeout(if (diagnostic) 45_000 else 30_000) { deferred.await() } }
+        val timeout = if (diagnostic) 45_000L else if (quick) 12_000L else 30_000L
+        return try { withTimeout(timeout) { deferred.await() } }
         finally { pending = null }
     }
 

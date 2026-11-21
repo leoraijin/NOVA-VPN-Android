@@ -11,7 +11,7 @@ import io.nekohasekai.libbox.*
 import java.net.NetworkInterface as JNetworkInterface
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
-/** Bound only while the user requested a batch; native state lives in a separate process. */
+/** The checker runs in a separate process for manual checks and active-exit recovery confirmation. */
 class ServerCheckService : Service() {
     private val queue = Executors.newSingleThreadExecutor()
     private val closing = AtomicBoolean(false)
@@ -26,6 +26,9 @@ class ServerCheckService : Service() {
                 val diagnostic = message.data.getBoolean("diagnostic")
                 val quick = message.data.getBoolean("quick") && !diagnostic
                 val selectedEngine = VpnEngine.fromId(message.data.getString("engine"))
+                val resolver = message.data.getString("probe_resolver")
+                @Suppress("DEPRECATION")
+                val pinnedNetwork = message.data.getParcelable<Network>("probe_network") ?: return@Handler true
                 if (!closing.get()) queue.execute {
                     if (closing.get()) return@execute
                     var millis = -1
@@ -44,7 +47,8 @@ class ServerCheckService : Service() {
                     }
                     progress()
                     try {
-                        val platform = CheckPlatform(this)
+                        val platform = CheckPlatform(this, pinnedNetwork)
+                        check(platform.diagnosticNetwork() != null)
                         if (diagnostic) {
                             VpnDiagnostics.record("dns_system_lookup_started")
                             progress()
@@ -55,7 +59,7 @@ class ServerCheckService : Service() {
                             progress()
                         }
                         if (closing.get()) return@execute
-                        val check = AndroidTrafficProbe.prepare(config) ?: error("Unsupported check")
+                        val check = AndroidTrafficProbe.prepare(config, resolver) ?: error("Unsupported check")
                         if (diagnostic) check.onProgress = ::progress
                         probe = check
                         if (closing.get()) { check.cancel(); return@execute }
@@ -90,7 +94,13 @@ class ServerCheckService : Service() {
                         assessment = if (quick) {
                             val preferred = sample(ProbeTarget.GOOGLE)
                             val response = preferred ?: sample(ProbeTarget.CLOUDFLARE)
-                            ProbeAssessment(response, if (response == null) 0 else 1, if (preferred == null) 2 else 1)
+                            val successful = when {
+                                preferred != null -> ProbeTarget.GOOGLE
+                                response != null -> ProbeTarget.CLOUDFLARE
+                                else -> null
+                            }
+                            ProbeAssessment(response, if (response == null) 0 else 1, if (preferred == null) 2 else 1,
+                                successfulTarget = successful)
                         } else {
                             val samples = List(3) { ProbeTarget.entries.map(::sample) }.flatten()
                             ProbeAssessment.from(samples)
@@ -112,6 +122,7 @@ class ServerCheckService : Service() {
                     if (!closing.get()) runCatching { reply.send(Message.obtain(null, RESULT, requestId, millis).apply {
                         data = Bundle().apply { putInt("successes", assessment.successes); putInt("attempts", assessment.attempts)
                             putBoolean("unsupported", unsupported)
+                            assessment.successfulTarget?.let { putString("successful_target", it.name) }
                             putString("diagnostic_events", VpnDiagnostics.exportEvents()) }
                     }) }
                 }
@@ -160,17 +171,15 @@ class ServerCheckService : Service() {
     companion object { internal const val CHECK = 1; internal const val CANCEL = 2; internal const val RESULT = 3; internal const val PROGRESS = 4 }
 }
 /** All sockets and DNS use the physical network; this platform cannot open a VPN interface. */
-private class CheckPlatform(context: Context) : PlatformInterface {
+private class CheckPlatform(context: Context, private val pinnedNetwork: Network) : PlatformInterface {
     fun diagnosticNetwork(): Network? = network()
     private val connectivity = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-    private fun network(): Network? = connectivity.allNetworks.filter { network ->
+    private fun network(): Network? = pinnedNetwork.takeIf { network ->
         connectivity.getNetworkCapabilities(network)?.let {
-            it.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN) && it.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+            it.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN) &&
+                it.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
         } == true
-    }.maxByOrNull { n -> connectivity.getNetworkCapabilities(n)?.let {
-        (if(it.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)) 100 else 0) +
-            (if(it.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) 3 else 1)
-    } ?: 0 }
+    }
     override fun localDNSTransport(): LocalDNSTransport = AndroidLocalDnsTransport(::network)
     override fun usePlatformAutoDetectInterfaceControl() = true
     override fun autoDetectInterfaceControl(fd: Int) {

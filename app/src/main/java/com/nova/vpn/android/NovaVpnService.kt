@@ -47,6 +47,7 @@ import com.nova.vpn.android.data.AppRoutingStore
 import com.nova.vpn.android.data.VpnEngine
 import com.nova.vpn.android.data.RealityConfigFactory
 import com.nova.vpn.android.data.SharedUidExitGuard
+import kotlinx.coroutines.runBlocking
 import org.json.JSONObject
 import java.net.InetAddress
 import java.net.InetSocketAddress
@@ -404,8 +405,8 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
                     updateNotification("VPN подключён")
                 }) { closeEngine(keepTun = commands.view().wanted); return@execute }
                 AutomaticProbePause.settled(request.rollbackFor ?: request.identity.requestId)
-                if (multi != null && commands.current(ticket)) checkManagedExits(multi, request, ticket)
-                if (probe != null && commands.current(ticket)) checkSingleExit(probe, ticket)
+                if (multi != null && commands.current(ticket)) checkManagedExits(multi, runtimeConfig, request, ticket)
+                if (probe != null && commands.current(ticket)) checkSingleExit(probe, runtimeConfig, ticket)
             } catch (error: Throwable) {
                 if (!commands.current(ticket)) {
                     if (nativeMutationStarted) closeEngine(keepTun = commands.view().wanted)
@@ -587,11 +588,11 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
 
     private class InvalidConfiguration : IllegalArgumentException("Неподдерживаемая конфигурация VPN")
 
-    private class ScheduledExitProbe(val primary: Boolean, val check: () -> Boolean?) {
+    private class ScheduledExitProbe(val primary: Boolean, val check: (ExitProbeHistory) -> Boolean?) {
+        val history = ExitProbeHistory()
         var pending: java.util.concurrent.ScheduledFuture<*>? = null
         var generation = 0L
         var running = false
-        var retry = false
         var completedAt = 0L
     }
 
@@ -603,7 +604,7 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
             probeForeground = foreground
             val now = android.os.SystemClock.elapsedRealtime()
             scheduledProbes.forEachIndexed { index, job ->
-                if (job.running || job.retry || job.completedAt == 0L) return@forEachIndexed
+                if (job.running || job.history.failures != 0 || job.completedAt == 0L) return@forEachIndexed
                 val due = if (foreground) job.completedAt + 5_000 else job.completedAt + probeInterval(job)
                 queueExitProbe(job, (due - now).coerceAtLeast(0) + index * 2_000L)
             }
@@ -625,14 +626,14 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
             }
             var outcome: Boolean? = null
             try {
-                outcome = job.check()
+                outcome = job.check(job.history)
             } finally {
                 synchronized(probeLock) {
                     job.running = false
                     if (outcome != null && job in scheduledProbes) {
                         job.completedAt = android.os.SystemClock.elapsedRealtime()
-                        job.retry = outcome == false && !job.retry
-                        queueExitProbe(job, if (job.retry) 15_000 else probeInterval(job))
+                        job.history.complete(outcome)
+                        queueExitProbe(job, job.history.nextDelay(probeInterval(job)))
                     }
                 }
             }
@@ -649,11 +650,43 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
         }
     }
 
-    private fun checkSingleExit(probe: AndroidTrafficProbe, ticket: ConnectionCoordinator.Ticket) {
-        val job = ScheduledExitProbe(primary = true) {
+    private fun checkLiveExit(probe: AndroidTrafficProbe, history: ExitProbeHistory,
+                              ticket: ConnectionCoordinator.Ticket, primary: Boolean,
+                              confirmationConfig: () -> ServerCheckConfig.RecoveryCheck?): Boolean? {
+        val online = probe.checkAvailable()
+        if (!commands.current(ticket)) return null
+        if (primary) checkCoreListener(probe, ticket)
+        if (online || primary && probe.listenerRefused ||
+            !history.shouldConfirmFailure(android.os.SystemClock.elapsedRealtime())) return online
+        val network = selectUnderlay() ?: return false
+        val engine = activeEngine ?: return false
+        val fresh = runCatching(confirmationConfig).getOrNull() ?: return false
+        val target = runBlocking { ServerChecks.confirmActiveExit(applicationContext, fresh, engine, network) }
+            ?: return false
+        if (!commands.current(ticket)) return null
+        // Verify the same destination again, in case the live connection recovered during the isolated check.
+        if (probe.check(5_000, target)) return true
+        if (!commands.current(ticket)) return null
+        serviceQueue.execute {
+            val request = appliedConfiguration ?: return@execute
+            if (request !== desiredConfiguration) return@execute
+            val recovery = commands.recoverStalledExit(ticket, android.os.SystemClock.elapsedRealtime()) ?: return@execute
+            cancelTrafficChecks()
+            VpnDiagnostics.record("recovery_live_exit_confirmed")
+            publishRecovery(recovery, waiting = false)
+            enqueueConfiguration(request, recovery, recovery = true)
+        }
+        return false
+    }
+
+    private fun checkSingleExit(probe: AndroidTrafficProbe, runtimeConfig: String, ticket: ConnectionCoordinator.Ticket) {
+        // Reality may change the final route to direct for other apps. The probe still uses the selected server.
+        val tag = JSONObject(probe.config).getJSONObject("route").getString("final")
+        val job = ScheduledExitProbe(primary = true) { history ->
             if (!commands.current(ticket) || trafficProbe !== probe) return@ScheduledExitProbe null
-            val success = probe.check()
-            checkCoreListener(probe, ticket)
+            val success = checkLiveExit(probe, history, ticket, primary = true) {
+                ServerCheckConfig.forRecovery(runtimeConfig, tag)
+            } ?: return@ScheduledExitProbe null
             commands.accept(ticket) {
                 if (trafficProbe === probe && VpnRuntime.state.value.trafficVerified != success) {
                     VpnRuntime.setTrafficResult(success)
@@ -668,7 +701,8 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
         startProbeBatch(ticket, listOf(job))
     }
 
-    private fun checkManagedExits(multi: MultiExitHealthPlan, request: Configuration, ticket: ConnectionCoordinator.Ticket) {
+    private fun checkManagedExits(multi: MultiExitHealthPlan, runtimeConfig: String, request: Configuration,
+                                  ticket: ConnectionCoordinator.Ticket) {
         val policy = requireNotNull(request.identity.policy)
         val revision = VpnRuntime.state.value.sessionRevision
         commands.accept(ticket) { VpnRuntime.beginExitChecks(multi.bindings, policy, multi.unsupported) }
@@ -677,9 +711,10 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
         commands.accept(ticket) { VpnRuntime.setExitNames(names); updateNotification(VpnRuntime.state.value.exitCheckSummary()) }
         val primaryId = request.identity.profileId
         val jobs = multi.probes.entries.sortedBy { it.key != primaryId }.map { (id, channel) ->
-            ScheduledExitProbe(primary = id == primaryId) {
+            ScheduledExitProbe(primary = id == primaryId) { history ->
                 if (!commands.current(ticket) || exitHealthPlan !== multi) return@ScheduledExitProbe null
-                val fingerprint = multi.bindings.entries.getValue(id).profileSha256
+                val entry = multi.bindings.entries.getValue(id)
+                val fingerprint = entry.profileSha256
                 var checking = false
                 var previous: ExitCheckStatus? = null
                 commands.accept(ticket) {
@@ -689,8 +724,9 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
                     }
                 }
                 if (!checking) return@ScheduledExitProbe null
-                val success = channel.check()
-                if (id == primaryId) checkCoreListener(channel, ticket)
+                val success = checkLiveExit(channel, history, ticket, primary = id == primaryId) {
+                    ServerCheckConfig.forRecovery(runtimeConfig, entry.tag, "dns-${entry.tag}")
+                } ?: return@ScheduledExitProbe null
                 commands.accept(ticket) {
                     if (exitHealthPlan === multi) {
                         VpnRuntime.setExitResult(revision, id, fingerprint, success, channel.responseMillis)
@@ -829,8 +865,8 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
             updateNotification("VPN подключён · Reality Core")
         }) { closeEngine(keepTun = commands.view().wanted); return }
         AutomaticProbePause.settled(request.rollbackFor ?: request.identity.requestId)
-        if (multi != null && commands.current(ticket)) checkManagedExits(multi, request, ticket)
-        if (probe != null && commands.current(ticket)) checkSingleExit(probe, ticket)
+        if (multi != null && commands.current(ticket)) checkManagedExits(multi, runtimeConfig, request, ticket)
+        if (probe != null && commands.current(ticket)) checkSingleExit(probe, runtimeConfig, ticket)
         // Only reads the native terminal-error channel; no periodic network probes.
         realityHealthTask = realityHealthQueue.scheduleWithFixedDelay({
             runCatching { serviceQueue.execute {

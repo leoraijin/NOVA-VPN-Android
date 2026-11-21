@@ -1,7 +1,7 @@
 package com.nova.vpn.android
 
 internal data class ProbeAssessment(val millis: Int?, val successes: Int, val attempts: Int, val events: List<DiagnosticEvent> = emptyList(),
-    val unsupported: Boolean = false) {
+    val unsupported: Boolean = false, val successfulTarget: ProbeTarget? = null) {
     companion object {
         fun from(samples: List<Int?>): ProbeAssessment {
             val successful = samples.filterNotNull().filter { it > 0 }.sorted()

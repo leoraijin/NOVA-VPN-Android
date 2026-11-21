@@ -7,6 +7,8 @@ internal enum class ProbeTarget(val host: String, val path: String) {
     CLOUDFLARE("1.1.1.1", "/cdn-cgi/trace"),
     GOOGLE("www.gstatic.com", "/generate_204");
 
+    fun alternate(): ProbeTarget = if (this == GOOGLE) CLOUDFLARE else GOOGLE
+
     fun socksDestination(): ByteArray {
         val name = host.toByteArray(StandardCharsets.US_ASCII)
         return if (this == CLOUDFLARE) byteArrayOf(5, 1, 0, 1, 1, 1, 1, 1, 1, -69)

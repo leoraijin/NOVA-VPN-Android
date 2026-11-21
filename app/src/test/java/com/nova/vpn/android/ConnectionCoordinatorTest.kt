@@ -48,6 +48,27 @@ class ConnectionCoordinatorTest {
         assertFalse(coordinator.recoverMissingListener(retry, true, 260_000))
     }
 
+    @Test fun confirmedExitStallInvalidatesPendingProbesAndLimitsReloads() {
+        val coordinator = ConnectionCoordinator()
+        coordinator.networkChanged("wifi", true)
+        val initial = coordinator.connect()
+        assertNull(coordinator.recoverStalledExit(initial, 100))
+        assertTrue(coordinator.succeeded(initial))
+        val recovery = coordinator.recoverStalledExit(initial, 1_000)!!
+        assertEquals(ConnectionCoordinator.Phase.RECOVERING, coordinator.view().phase)
+        assertFalse(coordinator.current(initial))
+        assertNull(coordinator.recoverStalledExit(recovery, 1_001))
+        assertTrue(coordinator.succeeded(recovery))
+        assertNull(coordinator.recoverStalledExit(recovery, 120_999))
+        val later = coordinator.recoverStalledExit(recovery, 121_000)!!
+        val cellular = coordinator.networkChanged("cellular", true)!!
+        assertFalse(coordinator.current(later))
+        assertTrue(coordinator.current(cellular))
+        assertTrue(coordinator.succeeded(cellular))
+        coordinator.stop()
+        assertNull(coordinator.recoverStalledExit(cellular, 300_000))
+    }
+
     @Test fun staleQueuedNetworkEffectsCannotCancelLatestRetryOrReviveStop() {
         val coordinator = ConnectionCoordinator()
         coordinator.networkChanged("wifi", true)

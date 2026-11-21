@@ -17,11 +17,12 @@ internal class ConnectionCoordinator {
     private var phase = Phase.STOPPED
     private var refusedListenerChecks = 0
     private var lastListenerRecovery: Long? = null
+    private var lastStallRecovery: Long? = null
     private fun ticket() = Ticket(intent, network, attempt)
 
     @Synchronized fun connect(publishRequest: () -> Unit = {}): Ticket {
         intent++; attempt++; wanted = true; failures = 0
-        refusedListenerChecks = 0; lastListenerRecovery = null
+        refusedListenerChecks = 0; lastListenerRecovery = null; lastStallRecovery = null
         phase = if (ready) Phase.CONNECTING else Phase.WAITING_NETWORK
         publishRequest()
         return ticket()
@@ -68,6 +69,16 @@ internal class ConnectionCoordinator {
         lastListenerRecovery = elapsedMillis
         refusedListenerChecks = 0
         return true
+    }
+
+    /** A fresh check and a repeated failure on the active exit are required before calling this. */
+    @Synchronized fun recoverStalledExit(value: Ticket, elapsedMillis: Long): Ticket? {
+        if (!current(value) || phase != Phase.ACTIVE ||
+            lastStallRecovery?.let { elapsedMillis - it < 120_000L } == true) return null
+        lastStallRecovery = elapsedMillis
+        attempt++
+        phase = Phase.RECOVERING
+        return ticket()
     }
 
     @Synchronized fun failed(value: Ticket, randomUnit: Double = kotlin.random.Random.nextDouble()): Retry? {

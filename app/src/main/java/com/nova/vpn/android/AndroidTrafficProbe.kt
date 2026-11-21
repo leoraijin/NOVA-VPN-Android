@@ -14,6 +14,7 @@ internal class AndroidTrafficProbe private constructor(
     val config: String, private val port: Int, private val username: String, private val password: String
 ) {
     private val cancelled = AtomicBoolean()
+    private var preferredTarget = ProbeTarget.CLOUDFLARE
     var onProgress: (() -> Unit)? = null
     private fun record(code: String, metrics: Map<DiagnosticMetric, Long> = emptyMap()) {
         VpnDiagnostics.record(code, metrics)
@@ -26,6 +27,17 @@ internal class AndroidTrafficProbe private constructor(
         private set
     @Volatile private var socket: Socket? = null
     fun cancel() { cancelled.set(true); runCatching { socket?.close() } }
+    /** One unavailable test destination is not an exit failure. Keep a successful target for the next check. */
+    fun checkAvailable(): Boolean {
+        val first = preferredTarget
+        if (check(8_000, first)) return true
+        if (listenerRefused || cancelled.get()) return false
+        val alternate = first.alternate()
+        if (!check(8_000, alternate)) return false
+        preferredTarget = alternate
+        return true
+    }
+
     fun check(timeoutMillis: Int = 18_000, target: ProbeTarget = ProbeTarget.CLOUDFLARE): Boolean {
         require(timeoutMillis > 0)
         responseMillis = null
@@ -110,6 +122,8 @@ internal class AndroidTrafficProbe private constructor(
     }
     companion object {
         internal const val TAG = "nova-local-health"
+        private val knownProtocols = setOf("vless", "trojan", "shadowsocks", "vmess", "hysteria2", "tuic")
+        private val additionalManagedProtocols = setOf("hysteria", "socks", "http", "anytls")
         internal fun channel(config: String,port: Int,user: String,password: String): AndroidTrafficProbe {
             require(port in 1..65535 && user.length in 1..128 && password.length in 1..128)
             return AndroidTrafficProbe(config,port,user,password)
@@ -117,7 +131,10 @@ internal class AndroidTrafficProbe private constructor(
         internal fun validTrace(response: String): Boolean =
             response.lineSequence().firstOrNull()?.matches(Regex("HTTP/1\\.[01] 200(?: .*)?")) == true &&
                 response.contains("\n\n") && response.substringAfter("\n\n").lineSequence().any { it.startsWith("ip=") && it.length > 3 }
-        fun prepare(config: String): AndroidTrafficProbe? {
+        internal fun supports(type: String, managed: Boolean): Boolean =
+            type in knownProtocols || managed && type in additionalManagedProtocols
+
+        fun prepare(config: String, resolver: String? = null): AndroidTrafficProbe? {
             val json = JSONObject(config)
             val route = json.optJSONObject("route") ?: return null
             val finalTag = route.optString("final")
@@ -125,7 +142,7 @@ internal class AndroidTrafficProbe private constructor(
             val final = (0 until outbounds.length()).mapNotNull(outbounds::optJSONObject)
                 .firstOrNull { it.optString("tag") == finalTag } ?: return null
             // Arbitrary selectors/full configs may contain a direct fallback. Do not certify them.
-            if (final.optString("type") !in setOf("vless", "trojan", "shadowsocks", "vmess", "hysteria2", "tuic")) return null
+            if (!supports(final.optString("type"), managed = resolver != null)) return null
             val inbounds = json.optJSONArray("inbounds") ?: JSONArray()
             if ((0 until inbounds.length()).any { inbounds.optJSONObject(it)?.optString("tag") == TAG }) return null
             val port = ServerSocket(0, 1, java.net.InetAddress.getLoopbackAddress()).use { it.localPort }
@@ -134,7 +151,11 @@ internal class AndroidTrafficProbe private constructor(
                 .put("listen_port", port).put("users", JSONArray().put(JSONObject().put("username", user).put("password", password))))
             json.put("inbounds", inbounds)
             val original = route.optJSONArray("rules") ?: JSONArray()
-            val rules = JSONArray().put(JSONObject().put("inbound", JSONArray().put(TAG)).put("action", "route").put("outbound", finalTag))
+            fun selector() = JSONObject().put("inbound", JSONArray().put(TAG))
+            val rules = JSONArray()
+            if (resolver != null) rules.put(selector().put("action", "resolve").put("server", resolver)
+                .put("strategy", "ipv4_only").put("disable_cache", true))
+            rules.put(selector().put("action", "route").put("outbound", finalTag))
             for (index in 0 until original.length()) rules.put(original.get(index))
             route.put("rules", rules)
             return AndroidTrafficProbe(json.toString(), port, user, password)
