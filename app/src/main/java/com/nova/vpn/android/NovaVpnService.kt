@@ -725,7 +725,7 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
                 }
                 if (!checking) return@ScheduledExitProbe null
                 val success = checkLiveExit(channel, history, ticket, primary = id == primaryId) {
-                    ServerCheckConfig.forRecovery(runtimeConfig, entry.tag, "dns-${entry.tag}")
+                    ServerCheckConfig.forRecovery(runtimeConfig, entry.tag, "dns-${entry.tag}".takeUnless { id == primaryId })
                 } ?: return@ScheduledExitProbe null
                 commands.accept(ticket) {
                     if (exitHealthPlan === multi) {

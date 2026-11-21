@@ -79,6 +79,17 @@ class ServerCheckConfigTest {
         assertNull(ServerCheckConfig.forRecovery(active, "direct"))
     }
 
+    @Test fun primaryManagedSocksRecoveryDoesNotForceLocalDestinationResolution() {
+        val config = """{"route":{"final":"nova-exit-1"},"outbounds":[
+            {"type":"direct","tag":"nova-direct"},{"type":"socks","tag":"nova-exit-1"}]}"""
+        val recovery = ServerCheckConfig.forRecovery(config, "nova-exit-1")!!
+        val rules = JSONObject(AndroidTrafficProbe.prepare(recovery.config, recovery.resolver)!!.config)
+            .getJSONObject("route").getJSONArray("rules")
+        assertEquals(1, rules.length())
+        assertEquals("route", rules.getJSONObject(0).getString("action"))
+        assertEquals("nova-exit-1", rules.getJSONObject(0).getString("outbound"))
+    }
+
     @Test fun recoveryPreservesAnAdaptedNativeBootstrap() {
         val active = ServerCheckConfig.build(profile(), VpnEngine.REALITY_CORE)!!
         val recovery = ServerCheckConfig.forRecovery(active, "proxy")!!

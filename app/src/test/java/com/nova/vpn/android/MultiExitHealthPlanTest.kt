@@ -16,7 +16,7 @@ internal object ExitHealthFixtures {
  fun plan():MultiExitHealthPlan {val config=config();return MultiExitHealthPlan.prepare(config,bindings(config=config),policy)}
 }
 class MultiExitHealthPlanTest {
- @Test fun oneAuthenticatedListenerPinsEachUserAndDnsBeforeDefaultRules(){
+ @Test fun healthOfThePrimaryUsesItsNormalHostnamePathAndSecondaryKeepsItsOwnDns(){
   val source=ExitHealthFixtures.config();val plan=ExitHealthFixtures.plan()
   try {
    val config=JSONObject(plan.config);val ins=config.getJSONArray("inbounds")
@@ -24,15 +24,17 @@ class MultiExitHealthPlanTest {
    val health=ins.getJSONObject(ins.length()-1);assertEquals("127.0.0.1",health.getString("listen"));assertEquals("socks",health.getString("type"))
    val users=health.getJSONArray("users");assertEquals(2,users.length());assertNotEquals(users.getJSONObject(0).getString("password"),users.getJSONObject(1).getString("password"))
    val rules=config.getJSONObject("route").getJSONArray("rules")
-   listOf("nova-exit-0","nova-exit-1").forEachIndexed { i,tag->
-    val resolve=rules.getJSONObject(i*2);val route=rules.getJSONObject(i*2+1)
-    assertEquals("resolve",resolve.getString("action"));assertEquals("dns-$tag",resolve.getString("server"));assertTrue(resolve.getBoolean("disable_cache"))
-    assertEquals("ipv4_only",resolve.getString("strategy"));assertEquals(MultiExitHealthPlan.TAG,route.getJSONArray("inbound").getString(0))
-    assertEquals(users.getJSONObject(i).getString("username"),route.getJSONArray("auth_user").getString(0));assertEquals(tag,route.getString("outbound"))
-   }
-   assertEquals("reject",rules.getJSONObject(4).getString("action"))
+   val primary=rules.getJSONObject(0)
+   assertEquals("route",primary.getString("action"));assertEquals("nova-exit-0",primary.getString("outbound"))
+   assertEquals(users.getJSONObject(0).getString("username"),primary.getJSONArray("auth_user").getString(0))
+   val resolve=rules.getJSONObject(1);val secondary=rules.getJSONObject(2)
+   assertEquals("resolve",resolve.getString("action"));assertEquals("dns-nova-exit-1",resolve.getString("server"))
+   assertTrue(resolve.getBoolean("disable_cache"));assertEquals("ipv4_only",resolve.getString("strategy"))
+   assertEquals(MultiExitHealthPlan.TAG,secondary.getJSONArray("inbound").getString(0))
+   assertEquals(users.getJSONObject(1).getString("username"),secondary.getJSONArray("auth_user").getString(0))
+   assertEquals("nova-exit-1",secondary.getString("outbound"));assertEquals("reject",rules.getJSONObject(3).getString("action"))
    val original=JSONObject(source).getJSONObject("route").getJSONArray("rules")
-   repeat(original.length()){assertEquals(original.getJSONObject(it).toString(),rules.getJSONObject(it+5).toString())}
+   repeat(original.length()){assertEquals(original.getJSONObject(it).toString(),rules.getJSONObject(it+4).toString())}
    assertEquals(setOf("fr","us"),plan.probes.keys);assertTrue(plan.unsupported.isEmpty());assertFalse(source.contains(MultiExitHealthPlan.TAG))
   }finally{plan.cancel()}
  }
@@ -57,14 +59,18 @@ class MultiExitHealthPlanTest {
     val tag = listener.getString("tag")
     assertTrue(ports.add(listener.getInt("listen_port")))
     assertEquals(1, listener.getJSONArray("users").length())
-    val resolve = rules.getJSONObject(index * 3)
-    val route = rules.getJSONObject(index * 3 + 1)
-    val reject = rules.getJSONObject(index * 3 + 2)
-    assertEquals(tag, resolve.getJSONArray("inbound").getString(0))
+    val routeIndex = if (index == 0) 0 else 3
+    val route = rules.getJSONObject(routeIndex)
+    val reject = rules.getJSONObject(routeIndex + 1)
+    assertEquals("route", route.getString("action"))
     assertEquals(tag, route.getJSONArray("inbound").getString(0))
     assertEquals(tag, reject.getJSONArray("inbound").getString(0))
     assertFalse(route.has("auth_user"))
-    assertEquals("dns-nova-exit-$index", resolve.getString("server"))
+    if (index != 0) {
+     val resolve = rules.getJSONObject(routeIndex - 1)
+     assertEquals(tag, resolve.getJSONArray("inbound").getString(0))
+     assertEquals("dns-nova-exit-$index", resolve.getString("server"))
+    }
     assertEquals("nova-exit-$index", route.getString("outbound"))
     assertEquals("reject", reject.getString("action"))
    }

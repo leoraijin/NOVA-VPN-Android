@@ -18,7 +18,7 @@ internal object ServerCheckConfig {
         val outbounds = runtime.getJSONArray("outbounds").objects()
         val exit = outbounds.singleOrNull {
             it.optString("tag") == tag && !it.has("detour") &&
-                AndroidTrafficProbe.supports(it.optString("type"), managed = resolver != null)
+                AndroidTrafficProbe.supports(it.optString("type"), tag)
         } ?: return null
         val direct = outbounds.filter { it.optString("type") == "direct" && !it.has("detour") }
         val dns = runtime.optJSONObject("dns")

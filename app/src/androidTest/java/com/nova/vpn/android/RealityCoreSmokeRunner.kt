@@ -47,6 +47,7 @@ class RealityCoreSmokeRunner : Instrumentation() {
     private var multiLiveReloadOnly=false
     private var multiConcurrentOnly=false
     private var multiExitOnly=false
+    private var primaryDnsFailureOnly = false
     private var idleProbeSeconds = 0
     private var idleExitCount = 10
     private var requireBatteryDischarge = false
@@ -149,7 +150,8 @@ class RealityCoreSmokeRunner : Instrumentation() {
         multiLiveReloadOnly=arguments?.getString("multiLiveReloadOnly")=="true"
         multiConcurrentOnly=arguments?.getString("multiConcurrentOnly")=="true"
         multiExitOnly=arguments?.getString("multiExitOnly")=="true"
-        check(!multiSystemDirectOnly || multiExitOnly)
+        primaryDnsFailureOnly = arguments?.getString("primaryDnsFailureOnly") == "true"
+        check(!(multiSystemDirectOnly || primaryDnsFailureOnly) || multiExitOnly)
         idleProbeSeconds = arguments?.getString("idleProbeSeconds")?.toInt() ?: 0
         idleExitCount = arguments?.getString("idleExitCount")?.toInt() ?: 10
         check(idleExitCount == 1 || idleExitCount == 2 || idleExitCount == 10)
@@ -194,7 +196,7 @@ class RealityCoreSmokeRunner : Instrumentation() {
         check(recoveryCycles in 1..30 && (recoveryOnly || recoveryCycles == 2))
         isolatedEngine = arguments?.getString("isolatedEngine")?.let { VpnEngine.valueOf(it) }
         check(isolatedEngine == null || recoveryOnly || bypassVisibilityOnly ||
-            (multiSystemDirectOnly && isolatedEngine == VpnEngine.SING_BOX) ||
+            ((multiSystemDirectOnly || primaryDnsFailureOnly) && isolatedEngine == VpnEngine.SING_BOX) ||
             (BuildConfig.REALITY_DUAL_SMOKE && multiExitOnly && isolatedEngine == VpnEngine.REALITY_CORE))
         liveReloadOnly = arguments?.getString("liveReloadOnly") == "true"
         allowWifiToggle = arguments?.getString("allowWifiToggle") == "true"
@@ -963,6 +965,67 @@ class RealityCoreSmokeRunner : Instrumentation() {
                                     })
                         }
                     }.toString()
+
+                    if (primaryDnsFailureOnly) {
+                        val primaryDns = requireNotNull(firstDoh)
+                        val backupDns = requireNotNull(secondDoh)
+                        val secondaryHost = "probe-${java.util.UUID.randomUUID()}.native.test"
+                        val preset = "fixture-primary-dns"
+                        var revision = 400L
+                        fun exercise(oldDnsPath: Boolean, paused: Boolean, explicitPrimary: Boolean) {
+                            val primaryHost = "probe-${java.util.UUID.randomUUID()}.native.test"
+                            primaryDns.failQueriesFor(primaryHost)
+                            val assignments = listOfNotNull(
+                                MultiServerRule(domain = secondaryHost, target = ServerRouteTarget(ServerRouteKind.PROFILE, second.id)),
+                                if (explicitPrimary) MultiServerRule(packageName = testPackage,
+                                    target = ServerRouteTarget(ServerRouteKind.DEFAULT)) else null
+                            )
+                            val settings = AppRoutingSettings(multiServer = MultiServerSettings(
+                                revision++, profile.id, assignments, secondaryProfileId = second.id, secondaryPaused = paused
+                            ))
+                            val expected = PreparedVpnConfiguration.prepare(context, profile, settings, preset)
+                            val config = JSONObject(withFixtureDoh(expected.config))
+                            if (oldDnsPath) {
+                                // Recreate the 0.2.88 catch-all while keeping the same two healthy exits.
+                                val route = config.getJSONObject("route")
+                                val tag = route.getString("final")
+                                route.getJSONArray("rules")
+                                    .put(JSONObject().put("action", "resolve").put("server", "dns-$tag").put("strategy", "ipv4_only"))
+                                    .put(JSONObject().put("action", "route").put("outbound", tag))
+                            }
+                            val native = config.toString()
+                            val prepared = PreparedVpnConfiguration(native, "Synthetic TUN", profile.id, preset, expected.policy,
+                                RouteExitBindings.capture(requireNotNull(settings.multiServer), ProfileVault(context).load(), native),
+                                RouteCommitBinding.capture(settings, profile.id, native))
+                            if (routingStore.loadPresets().presets.none { it.id == preset }) routingStore.updatePresets { current ->
+                                current.copy(presets = current.presets + RoutingPreset(preset, "Primary DNS fixture", settings))
+                            }
+                            start(native, presetId = preset, prepared = prepared, preparedSettings = settings)
+                            try {
+                                val first = count(firstKey)
+                                val secondCount = count(secondKey)
+                                val result = routedClientResult(site = true, siteHost = primaryHost)
+                                check((result == "ok") != oldDnsPath) { "Unexpected VPN-1 result: $result" }
+                                check(count(firstKey) == first + if (oldDnsPath) 0 else 1)
+                                check(count(secondKey) == secondCount) { "VPN-1 traffic switched to VPN-2" }
+                                check((primaryDns.queriesFor(primaryHost) > 0) == oldDnsPath) { "VPN-1 used the failed resolver during transport" }
+                                check(backupDns.queriesFor(primaryHost) == 0)
+                                val firstAfter = count(firstKey)
+                                check(routedClientResult(site = true, siteHost = secondaryHost) == "ok") { "VPN-2 route failed" }
+                                check(count(firstKey) == firstAfter + if (paused) 1 else 0)
+                                check(count(secondKey) == secondCount + if (paused) 0 else 1)
+                                check(VpnRuntime.state.value.appliedConfiguration?.policy == expected.policy)
+                            } finally { stop() }
+                        }
+                        exercise(oldDnsPath = true, paused = false, explicitPrimary = false)
+                        exercise(oldDnsPath = false, paused = false, explicitPrimary = false)
+                        exercise(oldDnsPath = false, paused = false, explicitPrimary = true)
+                        exercise(oldDnsPath = false, paused = true, explicitPrimary = false)
+                        sendStatus(0, Bundle().apply {
+                            putString("stream", "PASS VPN-1 DNS failure reproduced and fixed with independent VPN-2 on ${isolatedEngine!!.id}\n")
+                        })
+                        return@use
+                    }
 
                     if (multiSystemDirectOnly) {
                         val companion = "com.nova.vpn.routingprobe"

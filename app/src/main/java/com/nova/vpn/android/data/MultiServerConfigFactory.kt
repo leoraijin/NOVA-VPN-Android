@@ -23,6 +23,7 @@ object MultiServerConfigFactory {
         tun.put("address", JSONArray().put("172.19.0.1/30").put("fdfe:dcba:9876::1/126"))
         val referenced = MultiServerPolicy(settings.revision, settings.defaultProfileId, settings.effectiveRules(), profileOutbounds.keys).referencedProfileIds.sorted()
         val tags = referenced.filter { it in profileOutbounds }.mapIndexed { index, id -> id to "nova-exit-$index" }.toMap()
+        val defaultTag = tags[settings.defaultProfileId]
         val outbounds = JSONArray().put(JSONObject().put("type", "direct").put("tag", DIRECT_TAG).put("domain_resolver", "nova-bootstrap-dns"))
         tags.forEach { (id, tag) ->
             val outbound = JSONObject(profileOutbounds.getValue(id).toString())
@@ -89,7 +90,12 @@ object MultiServerConfigFactory {
         fun appendRoute(match: JSONObject, target: ServerRouteTarget, resolver: String? = null) {
             val tag = exit(target)
             if (tag == null) routeRules.put(JSONObject(match.toString()).put("action","reject")) else {
-                routeRules.put(JSONObject(match.toString()).put("action","resolve").put("server",resolver ?: "dns-$tag").put("strategy",if (ipv6) "prefer_ipv4" else "ipv4_only"))
+                // Ordinary app traffic through VPN-1 uses the original hostname, as in a single-server tunnel.
+                // Site overrides and other exits keep their explicitly routed DNS.
+                if (tag != defaultTag || match.has("domain") || resolver != null) {
+                    routeRules.put(JSONObject(match.toString()).put("action","resolve").put("server",resolver ?: "dns-$tag")
+                        .put("strategy",if (ipv6) "prefer_ipv4" else "ipv4_only"))
+                }
                 routeRules.put(JSONObject(match.toString()).put("action","route").put("outbound",tag))
             }
         }
@@ -110,9 +116,11 @@ object MultiServerConfigFactory {
             routeRules.put(unknownOwner)
             dnsRules.put(JSONObject(unknownOwner.toString()))
         }
-        appendRoute(JSONObject(),ServerRouteTarget(ServerRouteKind.DEFAULT))
-        val defaultTag = tags[settings.defaultProfileId]
-        if (defaultTag == null) dnsRules.put(JSONObject().put("action","reject"))
+        // With a usable VPN-1, route.final sends unmatched traffic through that exit without a DNS prerequisite.
+        if (defaultTag == null) {
+            routeRules.put(JSONObject().put("action","reject"))
+            dnsRules.put(JSONObject().put("action","reject"))
+        }
         config.put("route",JSONObject().put("auto_detect_interface",true).put("default_domain_resolver","nova-bootstrap-dns")
             .put("rules",routeRules).put("final",defaultTag ?: DIRECT_TAG))
         config.put("dns",JSONObject().put("servers",servers).put("rules",dnsRules)

@@ -12,6 +12,8 @@ internal class TestDohFixture(tls:TestTlsFixture, private val quicHost:Boolean=f
     val requests=AtomicInteger()
     private val hosts=java.util.concurrent.ConcurrentHashMap<String,AtomicInteger>()
     fun queriesFor(host:String)=hosts[host]?.get()?:0
+    private val unavailableNames = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+    fun failQueriesFor(host: String) { unavailableNames.add(host) }
     val failures=java.util.concurrent.ConcurrentLinkedQueue<String>()
     private val peers=java.util.concurrent.ConcurrentHashMap.newKeySet<Socket>()
     private val workers=java.util.concurrent.CopyOnWriteArrayList<Thread>()
@@ -113,12 +115,14 @@ internal class TestDohFixture(tls:TestTlsFixture, private val quicHost:Boolean=f
         end++;check(end+4<=query.size)
         val type=(query[end].toInt() and 255)*256+(query[end+1].toInt() and 255)
         val hostname=labels.joinToString(".")
-        val known = ((quicHost && hostname == "one.one.one.one") || hostname == "native.test" ||
+        val failed = hostname in unavailableNames
+        if (failed) hosts.computeIfAbsent(hostname) { AtomicInteger() }.incrementAndGet()
+        val known = !failed && ((quicHost && hostname == "one.one.one.one") || hostname == "native.test" ||
             hostname.matches(Regex("probe-[a-f0-9-]+[.]native[.]test"))) &&
             (type == 1 || type == 28 || type == 16 && txtValue != null)
         end+=4
         val response=query.copyOfRange(0,end).apply {
-            this[2]=0x81.toByte();this[3]=if(known) 0x80.toByte() else 0x83.toByte();this[6]=0;this[7]=if(known && (type==1 || type==16))1 else 0
+            this[2]=0x81.toByte();this[3]=when { failed -> 0x82.toByte(); known -> 0x80.toByte(); else -> 0x83.toByte() };this[6]=0;this[7]=if(known && (type==1 || type==16))1 else 0
             this[8]=0;this[9]=0;this[10]=0;this[11]=0
         }
         if (!known) return response

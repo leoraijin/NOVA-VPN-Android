@@ -131,8 +131,8 @@ internal class AndroidTrafficProbe private constructor(
         internal fun validTrace(response: String): Boolean =
             response.lineSequence().firstOrNull()?.matches(Regex("HTTP/1\\.[01] 200(?: .*)?")) == true &&
                 response.contains("\n\n") && response.substringAfter("\n\n").lineSequence().any { it.startsWith("ip=") && it.length > 3 }
-        internal fun supports(type: String, managed: Boolean): Boolean =
-            type in knownProtocols || managed && type in additionalManagedProtocols
+        internal fun supports(type: String, tag: String): Boolean =
+            type in knownProtocols || tag.startsWith("nova-exit-") && type in additionalManagedProtocols
 
         fun prepare(config: String, resolver: String? = null): AndroidTrafficProbe? {
             val json = JSONObject(config)
@@ -142,7 +142,7 @@ internal class AndroidTrafficProbe private constructor(
             val final = (0 until outbounds.length()).mapNotNull(outbounds::optJSONObject)
                 .firstOrNull { it.optString("tag") == finalTag } ?: return null
             // Arbitrary selectors/full configs may contain a direct fallback. Do not certify them.
-            if (!supports(final.optString("type"), managed = resolver != null)) return null
+            if (!supports(final.optString("type"), finalTag)) return null
             val inbounds = json.optJSONArray("inbounds") ?: JSONArray()
             if ((0 until inbounds.length()).any { inbounds.optJSONObject(it)?.optString("tag") == TAG }) return null
             val port = ServerSocket(0, 1, java.net.InetAddress.getLoopbackAddress()).use { it.localPort }

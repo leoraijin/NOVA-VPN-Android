@@ -15,6 +15,8 @@ internal class MultiExitHealthPlan private constructor(val config: String,val bi
         fun prepare(config: String,bindings: RouteExitBindings,policy: RoutePolicyIdentity, separateListeners: Boolean = false): MultiExitHealthPlan {
             bindings.validate(config,policy.profileIds)
             val root=JSONObject(config);val inbounds=root.getJSONArray("inbounds")
+            val route = root.getJSONObject("route")
+            val primaryTag = route.getString("final")
             require((0 until inbounds.length()).none { inbounds.getJSONObject(it).optString("tag").let { tag -> tag == TAG || tag.startsWith("$TAG-") } })
             val outbounds=root.getJSONArray("outbounds");val outs=(0 until outbounds.length()).map { outbounds.getJSONObject(it) }.associateBy { it.getString("tag") }
             val dns=root.getJSONObject("dns").getJSONArray("servers");val dnsItems=(0 until dns.length()).map { dns.getJSONObject(it) }
@@ -47,8 +49,10 @@ internal class MultiExitHealthPlan private constructor(val config: String,val bi
                         fun selector() = JSONObject().put("inbound", JSONArray().put(tag)).apply {
                             if (!separateListeners) put("auth_user", JSONArray().put(user))
                         }
-                        rules.put(selector().put("action", "resolve").put("server", "dns-${entry.tag}")
-                            .put("strategy", "ipv4_only").put("disable_cache", true))
+                        if (entry.tag != primaryTag) {
+                            rules.put(selector().put("action", "resolve").put("server", "dns-${entry.tag}")
+                                .put("strategy", "ipv4_only").put("disable_cache", true))
+                        }
                         rules.put(selector().put("action", "route").put("outbound", entry.tag))
                     }
                     rules.put(JSONObject().put("inbound", JSONArray().put(tag)).put("action", "reject"))
@@ -58,7 +62,6 @@ internal class MultiExitHealthPlan private constructor(val config: String,val bi
             } finally {
                 reservations.forEach { runCatching { it.close() } }
             }
-            val route = root.getJSONObject("route")
             val original = route.getJSONArray("rules")
             repeat(original.length()) { rules.put(original.get(it)) }
             route.put("rules", rules)
