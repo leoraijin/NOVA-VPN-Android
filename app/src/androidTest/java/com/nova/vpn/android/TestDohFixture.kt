@@ -118,7 +118,7 @@ internal class TestDohFixture(tls:TestTlsFixture, private val quicHost:Boolean=f
         val failed = hostname in unavailableNames
         if (failed) hosts.computeIfAbsent(hostname) { AtomicInteger() }.incrementAndGet()
         val known = !failed && ((quicHost && hostname == "one.one.one.one") || hostname == "native.test" ||
-            hostname.matches(Regex("probe-[a-f0-9-]+[.]native[.]test"))) &&
+            hostname.matches(Regex("probe-[a-f0-9-]+[.]native[.]test|(?:[a-z0-9-]+[.])+nova-routing-fixture[.]ru(?:[.]test)?"))) &&
             (type == 1 || type == 28 || type == 16 && txtValue != null)
         end+=4
         val response=query.copyOfRange(0,end).apply {

@@ -113,7 +113,10 @@ object RealityConfigFactory {
             }?.put("cache_file", "reality-multi-fakeip-v1.txt")
         }
         if (!managedDual) {
-            if (!customDns) prepareSiteDns(route, dns, outbounds)
+            if (!customDns) {
+                prepareSiteDns(route, dns, outbounds)
+                prepareRussianSiteDns(dns)
+            }
             normalizeTerminalDirectRoute(route, dns, outbounds)
         }
         // SingBoxConfigFactory always emits a DNS strategy for managed DNS. Full JSON
@@ -152,8 +155,12 @@ object RealityConfigFactory {
      * Router.route restores either fake address family before matching the site routes.
      */
     private fun prepareSiteDns(route: JSONObject, dns: JSONObject, outbounds: List<JSONObject>) {
-        val routes = route.optJSONArray("rules")?.let(::objects).orEmpty()
-        val originals = dns.optJSONArray("rules")?.let(::objects).orEmpty()
+        val allDnsRules = dns.optJSONArray("rules")?.let(::objects).orEmpty()
+        val russianLookup = allDnsRules.firstOrNull(RussianDomainRouting::isLookup)
+        val routes = route.optJSONArray("rules")?.let(::objects).orEmpty().filterNot {
+            russianLookup != null && RussianDomainRouting.isRoute(it)
+        }
+        val originals = allDnsRules.filterNot { it === russianLookup }
         val siteKeys = setOf("domain", "domain_suffix", "domain_keyword", "domain_regex", "geosite", "rule_set")
         if (routes.none { keys(it).any(siteKeys::contains) } &&
             originals.none { keys(it).any(siteKeys::contains) }) return
@@ -216,9 +223,29 @@ object RealityConfigFactory {
             paired.put(JSONObject(original.toString()).put("server", SITE_FAKEIP))
             paired.put(original)
         }
+        russianLookup?.let(paired::put)
         dns.getJSONArray("servers").put(siteFakeIpServer())
         dns.put("rules", paired)
         // dns.final and every route remain unchanged: non-site names get ordinary DNS.
+    }
+
+    /** Reality Core needs FakeIP to recover a site name after Android resolves it. */
+    private fun prepareRussianSiteDns(dns: JSONObject) {
+        val rules = dns.optJSONArray("rules")?.let(::objects).orEmpty()
+        val fallback = rules.firstOrNull(RussianDomainRouting::isLookup) ?: return
+        val servers = dns.getJSONArray("servers")
+        val fakeIp = objects(servers).firstOrNull { it.opt("type") == "fakeip" || it.opt("address") == "fakeip" }
+            ?: siteFakeIpServer().also(servers::put)
+        dns.put("rules", JSONArray().apply {
+            rules.forEach { rule ->
+                if (rule === fallback) put(RussianDomainRouting.selector()
+                    .put("query_type", JSONArray().put("A").apply {
+                        if (dns.opt("strategy") in setOf("prefer_ipv4", "prefer_ipv6", "ipv6_only")) put("AAAA")
+                    })
+                    .put("action", "route").put("server", fakeIp.getString("tag")))
+                put(rule)
+            }
+        })
     }
 
     private fun prepareTun(tun: JSONObject) {
@@ -410,8 +437,12 @@ object RealityConfigFactory {
         // Native mixed policies still validate their UID rules. Android Builder
         // filtering additionally keeps bypassed applications outside the TUN.
         val others = rules.filterNot { it.has("package_name") }
-        val builderOnly = others.all { isDnsHijack(it) || isProbe(it, route.opt("final")) } &&
-            (dns.optJSONArray("rules")?.length() ?: 0) == 0 && !containsInvert(dns) &&
+        val dnsRules = dns.optJSONArray("rules")?.let(::objects).orEmpty()
+        val hasRussianFallback = dnsRules.any(RussianDomainRouting::isLookup)
+        val builderOnly = others.all {
+            isDnsHijack(it) || isProbe(it, route.opt("final")) ||
+                hasRussianFallback && (RussianDomainRouting.isRoute(it) || keys(it) == setOf("action") && it.opt("action") == "sniff")
+        } && dnsRules.all(RussianDomainRouting::isLookup) && !containsInvert(dns) &&
             rules.takeLast(packages.size) == packages
         require(builderOnly || packageUid != null) {
             "Совместные правила приложений и сайтов требуют Android 10 или новее. Выберите sing-box."

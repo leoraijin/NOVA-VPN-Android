@@ -223,9 +223,9 @@ object SingBoxConfigFactory {
         // DNS is a protocol decision, not an application route. Sending the
         // virtual DNS address to the proxy creates a connected-but-offline VPN.
         prioritized.put(JSONObject().put("protocol", JSONArray().put("dns")).put("action", "hijack-dns"))
+        // Sniff obtains TLS SNI / HTTP Host when DNS metadata is unavailable.
+        prioritized.put(JSONObject().put("action", "sniff"))
         if (routing.sites.isNotEmpty()) {
-            // Sniff obtains TLS SNI / HTTP Host when DNS metadata is unavailable.
-            prioritized.put(JSONObject().put("action", "sniff"))
             routing.sites.sortedWith(compareBy<SiteRoutingRule> { it.target != SiteRoutingTarget.DIRECT }
                 .thenByDescending { it.domain.length }).distinctBy { it.domain }.forEach { site ->
                 val domain = SiteDomain.normalize(site.domain) ?: return@forEach
@@ -240,6 +240,9 @@ object SingBoxConfigFactory {
                     .put("outbound", outbound))
             }
         }
+
+        // Site overrides win even when the whole browser is assigned to a VPN.
+        prioritized.put(RussianDomainRouting.selector().put("action", "route").put("outbound", directTag))
 
         val selectedPackages = routing.packages.filter(String::isNotBlank).distinct().sorted()
         when (routing.mode) {
@@ -328,6 +331,7 @@ object SingBoxConfigFactory {
                     if (site.target == SiteRoutingTarget.DIRECT) put("strategy", "prefer_ipv4")
                 })
         }
+        prioritized.put(RussianDomainRouting.lookup())
         for (index in 0 until existing.length()) existing.optJSONObject(index)?.let(prioritized::put)
         dns.put("rules", prioritized)
     }

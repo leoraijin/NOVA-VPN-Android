@@ -1792,6 +1792,8 @@ internal fun RoutingPage(
     item {
         SoftCard(tutorialTarget = TutorialStep.Sites) {
             Text("Маршрутизация по сайтам", fontWeight = FontWeight.SemiBold)
+            Text("Сайты .ru идут напрямую. Чтобы использовать VPN, добавьте правило для сайта.",
+                style = MaterialTheme.typography.bodySmall)
             Text(if (tabbedRouting) "Правило применяется к домену и поддоменам внутри VPN." else "Введите домен без https://. Правило охватывает домен и его поддомены в приложениях, использующих VPN. Исключённые приложения используют обычную сеть Android.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(

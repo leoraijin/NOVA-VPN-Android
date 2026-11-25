@@ -48,6 +48,7 @@ class RealityCoreSmokeRunner : Instrumentation() {
     private var multiConcurrentOnly=false
     private var multiExitOnly=false
     private var primaryDnsFailureOnly = false
+    private var russianDomainsOnly = false
     private var idleProbeSeconds = 0
     private var idleExitCount = 10
     private var requireBatteryDischarge = false
@@ -151,7 +152,8 @@ class RealityCoreSmokeRunner : Instrumentation() {
         multiConcurrentOnly=arguments?.getString("multiConcurrentOnly")=="true"
         multiExitOnly=arguments?.getString("multiExitOnly")=="true"
         primaryDnsFailureOnly = arguments?.getString("primaryDnsFailureOnly") == "true"
-        check(!(multiSystemDirectOnly || primaryDnsFailureOnly) || multiExitOnly)
+        russianDomainsOnly = arguments?.getString("russianDomainsOnly") == "true"
+        check(!(multiSystemDirectOnly || primaryDnsFailureOnly || russianDomainsOnly) || multiExitOnly)
         idleProbeSeconds = arguments?.getString("idleProbeSeconds")?.toInt() ?: 0
         idleExitCount = arguments?.getString("idleExitCount")?.toInt() ?: 10
         check(idleExitCount == 1 || idleExitCount == 2 || idleExitCount == 10)
@@ -196,7 +198,7 @@ class RealityCoreSmokeRunner : Instrumentation() {
         check(recoveryCycles in 1..30 && (recoveryOnly || recoveryCycles == 2))
         isolatedEngine = arguments?.getString("isolatedEngine")?.let { VpnEngine.valueOf(it) }
         check(isolatedEngine == null || recoveryOnly || bypassVisibilityOnly ||
-            ((multiSystemDirectOnly || primaryDnsFailureOnly) && isolatedEngine == VpnEngine.SING_BOX) ||
+            ((multiSystemDirectOnly || primaryDnsFailureOnly || russianDomainsOnly) && isolatedEngine == VpnEngine.SING_BOX) ||
             (BuildConfig.REALITY_DUAL_SMOKE && multiExitOnly && isolatedEngine == VpnEngine.REALITY_CORE))
         liveReloadOnly = arguments?.getString("liveReloadOnly") == "true"
         allowWifiToggle = arguments?.getString("allowWifiToggle") == "true"
@@ -956,7 +958,7 @@ class RealityCoreSmokeRunner : Instrumentation() {
                                 continue
                             }
                             val directFixture = multiTxtDnsOnly && tag == "dns-nova-direct"
-                            if (!directFixture && !tag.startsWith("dns-nova-exit-")) continue
+                            if (!directFixture && !tag.startsWith("dns-nova-exit-") && !(russianDomainsOnly && tag == "remote-dns")) continue
                             server.put("server", if (directFixture) "127.0.0.1" else if (isolatedEngine == VpnEngine.REALITY_CORE) "localhost" else "203.0.113.53")
                                 .put("server_port", if (directFixture) requireNotNull(firstDoh).port else 443)
                                 .put("tls", JSONObject().put("enabled", true).put("server_name", "localhost")
@@ -965,6 +967,88 @@ class RealityCoreSmokeRunner : Instrumentation() {
                                     })
                         }
                     }.toString()
+
+                    if (russianDomainsOnly) {
+                        val engine = requireNotNull(isolatedEngine)
+                        val primaryDns = requireNotNull(firstDoh)
+                        val secondDns = requireNotNull(secondDoh)
+                        val zone = "${java.util.UUID.randomUUID()}.nova-routing-fixture.ru"
+                        val directHost = "sub.direct.$zone"
+                        val vpnHost = "vpn.$zone"
+                        val dualDirectHost = "dual.direct.$zone"
+                        val dualVpn1Host = "dual1.$zone"
+                        val dualVpn2Host = "dual2.$zone"
+                        val blockedHost = "blocked.$zone"
+                        val otherHost = "other.$zone.test"
+                        val dualOtherHost = "dual-other.$zone.test"
+                        val preset = "fixture-ru-default"
+                        val vpn1 = ServerRouteTarget(ServerRouteKind.DEFAULT)
+                        val vpn2 = ServerRouteTarget(ServerRouteKind.PROFILE, second.id)
+                        val blocked = ServerRouteTarget(ServerRouteKind.BLOCK)
+                        TestDnsFixture(directHost, "10.0.2.2", setOf(dualDirectHost)).use { physicalDns ->
+                            fun activate(settings: AppRoutingSettings) {
+                                if (routingStore.loadPresets().presets.none { it.id == preset }) {
+                                    routingStore.updatePresets { current ->
+                                        current.copy(presets = current.presets + RoutingPreset(preset, "Russian domain fixture", settings))
+                                    }
+                                }
+                                val expected = PreparedVpnConfiguration.prepare(context, profile, settings, preset)
+                                val root = JSONObject(withFixtureDoh(expected.config))
+                                val servers = root.getJSONObject("dns").getJSONArray("servers")
+                                val physical = (0 until servers.length()).map(servers::getJSONObject)
+                                    .single { it.optString("tag") == "nova-bootstrap-dns" }
+                                physical.put("type", "udp").put("server", "127.0.0.1").put("server_port", physicalDns.port)
+                                if (engine == VpnEngine.REALITY_CORE) {
+                                    physical.put("detour", if (settings.multiServer == null) "direct" else "nova-direct")
+                                }
+                                val testConfig = root.toString()
+                                start(testConfig, presetId = preset, preparedSettings = settings,
+                                    prepared = expected.copy(config = testConfig, exits = settings.multiServer?.let {
+                                        RouteExitBindings.capture(it, ProfileVault(context).load(), testConfig)
+                                    }, commitBinding = RouteCommitBinding.capture(settings, profile.id, testConfig)))
+                            }
+                            fun verifyRoute(host: String, expectedExit: String?) {
+                                val before1 = count(firstKey)
+                                val before2 = count(secondKey)
+                                val result = routedClientResult(site = true, siteHost = host)
+                                check(result == "ok") { "Routing fixture $host failed: $result" }
+                                check(count(firstKey) == before1 + if (expectedExit == firstKey) 1 else 0)
+                                check(count(secondKey) == before2 + if (expectedExit == secondKey) 1 else 0)
+                            }
+
+                            activate(AppRoutingSettings(mode = AppRoutingMode.INCLUDE_SELECTED, packages = setOf(testPackage),
+                                sites = listOf(SiteRoutingRule(vpnHost, SiteRoutingTarget.VPN))))
+                            try {
+                                verifyRoute(directHost, null)
+                                check(physicalDns.queriesFor(directHost) > 0 && primaryDns.queriesFor(directHost) == 0)
+                                verifyRoute(vpnHost, firstKey)
+                                check(primaryDns.queriesFor(vpnHost) > 0 && physicalDns.queriesFor(vpnHost) == 0)
+                                verifyRoute(otherHost, firstKey)
+                            } finally { stop() }
+                            sendStatus(0, Bundle().apply { putString("stream", "PASS single VPN .ru direct and site override on ${engine.id}\n") })
+
+                            activate(AppRoutingSettings(multiServer = MultiServerSettings(470, profile.id, listOf(
+                                MultiServerRule(packageName = testPackage, target = vpn2),
+                                MultiServerRule(domain = dualVpn1Host, target = vpn1),
+                                MultiServerRule(domain = dualVpn2Host, target = vpn2),
+                                MultiServerRule(domain = blockedHost, target = blocked)
+                            ), secondaryProfileId = second.id)))
+                            try {
+                                verifyRoute(dualDirectHost, null)
+                                check(physicalDns.queriesFor(dualDirectHost) > 0 && primaryDns.queriesFor(dualDirectHost) == 0 &&
+                                    secondDns.queriesFor(dualDirectHost) == 0)
+                                verifyRoute(dualVpn1Host, firstKey)
+                                verifyRoute(dualVpn2Host, secondKey)
+                                verifyRoute(dualOtherHost, secondKey)
+                                val before1 = count(firstKey)
+                                val before2 = count(secondKey)
+                                check(routedClientResult(site = true, siteHost = blockedHost).startsWith("UnknownHostException@"))
+                                check(count(firstKey) == before1 && count(secondKey) == before2 && physicalDns.queriesFor(blockedHost) == 0)
+                            } finally { stop() }
+                        }
+                        sendStatus(0, Bundle().apply { putString("stream", "PASS dual VPN .ru direct, site overrides and block on ${engine.id}\n") })
+                        return@use
+                    }
 
                     if (primaryDnsFailureOnly) {
                         val primaryDns = requireNotNull(firstDoh)

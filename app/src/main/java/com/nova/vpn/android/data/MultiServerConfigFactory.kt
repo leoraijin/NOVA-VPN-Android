@@ -99,8 +99,10 @@ object MultiServerConfigFactory {
                 routeRules.put(JSONObject(match.toString()).put("action","route").put("outbound",tag))
             }
         }
-        ordered.forEach { rule ->
-            val resolver = "nova-bootstrap-dns".takeIf { usesLocalDns(rule) && rule.target.kind == ServerRouteKind.DIRECT }
+        fun appendAssignment(rule: MultiServerRule) {
+            val resolver = RussianDomainRouting.PHYSICAL_DNS.takeIf {
+                rule.target.kind == ServerRouteKind.DIRECT && (usesLocalDns(rule) || RussianDomainRouting.matches(rule.domain))
+            }
             appendRoute(selector(rule),rule.target,resolver)
             // A/AAAA use FakeIP above. Forwarded queries use site and package priority.
             if (rule.target.kind != ServerRouteKind.BLOCK) {
@@ -110,6 +112,11 @@ object MultiServerConfigFactory {
                 })
             }
         }
+        val (siteAndBlockRules, appRules) = ordered.partition { it.domain != null || it.target.kind == ServerRouteKind.BLOCK }
+        siteAndBlockRules.forEach(::appendAssignment)
+        appendRoute(RussianDomainRouting.selector(), ServerRouteTarget(ServerRouteKind.DIRECT), RussianDomainRouting.PHYSICAL_DNS)
+        dnsRules.put(RussianDomainRouting.lookup())
+        appRules.forEach(::appendAssignment)
         if (hasAppAssignments) {
             val unknownOwner = JSONObject()
                 .put("package_name_regex", JSONArray().put(".+")).put("invert", true).put("action", "reject")

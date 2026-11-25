@@ -209,6 +209,8 @@ internal fun DualRoutingPage(settings: AppRoutingSettings, profiles: List<Import
         error?.let { item { Text(it, color = MaterialTheme.colorScheme.error) } }
         if (tab == 0 || tab >= 22) {
             item {
+                Text("Сайты .ru идут напрямую. Чтобы использовать VPN, добавьте правило для сайта.",
+                    style = MaterialTheme.typography.bodySmall)
                 OutlinedTextField(value = input, onValueChange = { input = it; error = null },
                     label = { Text("Домен сайта") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 Button(enabled = !busy && input.isNotBlank(), onClick = {

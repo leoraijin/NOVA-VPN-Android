@@ -14,7 +14,9 @@ internal class TestDnsFixture(
 ) : AutoCloseable {
     private val hostnames = additionalHostnames + transportHostname
     init {
-        require(hostnames.all { it.matches(Regex("[a-z0-9-]+\\.test")) })
+        require(hostnames.all {
+            it.matches(Regex("[a-z0-9-]+\\.test|(?:[a-z0-9-]+\\.)+nova-routing-fixture\\.ru"))
+        })
         require(transportAddress == "127.0.0.1" || transportAddress == "10.0.2.2")
     }
     private val ipv4Answer = if (transportAddress == "10.0.2.2") byteArrayOf(10, 0, 2, 2) else byteArrayOf(127, 0, 0, 1)

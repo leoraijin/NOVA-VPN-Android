@@ -149,7 +149,11 @@ public final class RealityProbeClientActivity extends Activity {
         final boolean ipv6 = getIntent().getBooleanExtra("ipv6", false);
         final boolean site = getIntent().getBooleanExtra("site", false);
         final String requestedHost = getIntent().getStringExtra("siteHost");
-        final String siteHost = requestedHost != null && requestedHost.matches("probe-[a-f0-9-]+[.]native[.]test") ? requestedHost : "native.test";
+        final boolean russianFixture = requestedHost != null &&
+            requestedHost.matches("(?:[a-z0-9-]+[.])+nova-routing-fixture[.]ru(?:[.]test)?");
+        final String siteHost = russianFixture || (requestedHost != null && requestedHost.matches("probe-[a-f0-9-]+[.]native[.]test"))
+            ? requestedHost : "native.test";
+        final int sitePort = russianFixture ? 18091 : 80;
         final String fixtureHost = getIntent().getStringExtra("lanFixtureHost");
         final int fixturePort = getIntent().getIntExtra("lanFixturePort", 0);
         final boolean lanFixture = fixtureHost != null
@@ -217,7 +221,7 @@ public final class RealityProbeClientActivity extends Activity {
                     } else {
                     socket.setSoTimeout(getIntent().getBooleanExtra("concurrentProbe", false) ? 15000 : 5000);
                     phase = "tcp-connect";
-                    socket.connect(new InetSocketAddress(lanFixture ? fixtureHost : site ? siteHost : ipv6 ? "2001:db8::7" : "198.51.100.7", lanFixture ? fixturePort : 80), 5000);
+                    socket.connect(new InetSocketAddress(lanFixture ? fixtureHost : site ? siteHost : ipv6 ? "2001:db8::7" : "198.51.100.7", lanFixture ? fixturePort : sitePort), 5000);
                     localPort = socket.getLocalPort();
                     phase = "echo-write";
                     byte[] payload = "nova-tun-smoke".getBytes(StandardCharsets.US_ASCII);

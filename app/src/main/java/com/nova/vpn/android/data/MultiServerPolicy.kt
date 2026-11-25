@@ -32,6 +32,10 @@ class MultiServerPolicy(val revision: Long, val defaultProfileId: String,
         val match = rules.filter { it.matches(packageName, host) }.sortedWith(
             compareBy<MultiServerRule> { if (it.target.kind == ServerRouteKind.BLOCK) 0 else if (it.domain != null) 1 else 2 }
                 .thenByDescending { it.domain?.length ?: 0 }.thenBy { it.includeSubdomains }).firstOrNull()
+        if (match?.domain == null && match?.target?.kind != ServerRouteKind.BLOCK && RussianDomainRouting.matches(host)) {
+            val direct = ServerRouteTarget(ServerRouteKind.DIRECT)
+            return MultiServerDecision(direct, direct, "default-ru")
+        }
         val requested = match?.target ?: ServerRouteTarget(ServerRouteKind.DEFAULT)
         if (match == null && !ownerKnown && rules.any { it.packageName != null })
             return MultiServerDecision(requested, ServerRouteTarget(ServerRouteKind.BLOCK), "unknown-owner")

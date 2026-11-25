@@ -57,7 +57,8 @@ class ActiveRoutePreview private constructor(
                 domain != null && server.domains.any { domain == it || domain.endsWith(".$it") }
             }
             if (siteDns != null) return Result("DNS · " + siteDns.name + " · правило сайта")
-            if (uidGuard?.hasAssignment(packageName.orEmpty()) == true && siteRules.none { it.matches(null, domain) }) {
+            if (decision.reason != "default-ru" && uidGuard?.hasAssignment(packageName.orEmpty()) == true &&
+                siteRules.none { it.matches(null, domain) }) {
                 val appDns = customDns.servers.firstOrNull { customDns.appServers[packageName] == it.id }
                 if (appDns != null) return Result("DNS · " + appDns.name + " · правило приложения")
             }
@@ -66,6 +67,7 @@ class ActiveRoutePreview private constructor(
             "site" -> "правило сайта"
             "application" -> "правило приложения"
             "default" -> "основной сервер"
+            "default-ru" -> "домен .ru"
             "missing-profile" -> "назначенный сервер недоступен"
             "unknown-owner" -> "приложение неизвестно"
             else -> "правило маршрутизации"
