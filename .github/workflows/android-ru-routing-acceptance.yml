@@ -1,0 +1,61 @@
+name: Android .ru routes on native TUN
+on:
+  push:
+    branches: ['codex/android-ru-direct-qa']
+permissions:
+  contents: read
+jobs:
+  route:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 28
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+      - uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
+          log-accepted-android-sdk-licenses: false
+      - name: Extract verified native libraries from the last stable APK
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          out=work/ru-acceptance
+          mkdir -p "$out" app/src/main/jniLibs/x86_64
+          gh release download v0.2.89 --repo "$GITHUB_REPOSITORY" --pattern app-x86_64-optimized.apk --dir "$out"
+          for library in libreality.so libnova_reality_jni.so; do
+            unzip -p "$out/app-x86_64-optimized.apk" "lib/x86_64/$library" > "app/src/main/jniLibs/x86_64/$library"
+          done
+          (cd app/src/main/jniLibs/x86_64; printf '%s\n' '5f759999cd7235ab1be784bf9c03a2ed27c96300a69f16d9c0d043b2fad87598  libreality.so' '088e50f77125b5865169012ff96c08b5771847f79a6759dff0ac7572209a67bb  libnova_reality_jni.so' | sha256sum -c)
+          rm "$out/app-x86_64-optimized.apk"
+      - name: Build isolated Android app and traffic fixture
+        run: |
+          set -euo pipefail
+          bash gradlew --no-daemon -PnovaOfficialRepositoriesOnly=true '-Dorg.gradle.jvmargs=-Xmx4g -Dfile.encoding=UTF-8' :app:assembleRealitypreview :app:assembleRealitypreviewAndroidTest -PnovaRealitySmoke -PnovaUsbTest -PnovaUsbTestSlot=completionpreview -PnovaRealityAbi=x86_64 -PnovaRealityDualSmoke 2>&1 | tee work/ru-acceptance/build.log
+      - name: Enable disposable runner KVM
+        run: sudo chmod 666 /dev/kvm
+      - name: Verify default and manual .ru routes in both VPN engines
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: default
+          arch: x86_64
+          profile: pixel_2
+          emulator-port: 5554
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none -memory 2048
+          disable-animations: true
+          script: bash tools/Run-RussianDomainAcceptance.sh
+      - name: Retain tunnel verification evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: android-ru-routing-acceptance
+          path: work/ru-acceptance/*.log
+          if-no-files-found: warn
+          retention-days: 14
