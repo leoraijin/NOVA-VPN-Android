@@ -226,8 +226,7 @@ object SingBoxConfigFactory {
         // Sniff obtains TLS SNI / HTTP Host when DNS metadata is unavailable.
         prioritized.put(JSONObject().put("action", "sniff"))
         if (routing.sites.isNotEmpty()) {
-            routing.sites.sortedWith(compareBy<SiteRoutingRule> { it.target != SiteRoutingTarget.DIRECT }
-                .thenByDescending { it.domain.length }).distinctBy { it.domain }.forEach { site ->
+            orderedSites(routing).forEach { site ->
                 val domain = SiteDomain.normalize(site.domain) ?: return@forEach
                 val outbound = if (site.target == SiteRoutingTarget.DIRECT) directTag else vpnTag
                 prioritized.put(JSONObject()
@@ -321,8 +320,7 @@ object SingBoxConfigFactory {
                 .firstOrNull { it.optString("tag") != BOOTSTRAP_DNS_TAG }?.optString("tag")
         val existing = dns.optJSONArray("rules") ?: JSONArray()
         val prioritized = JSONArray()
-        routing.sites.sortedWith(compareBy<SiteRoutingRule> { it.target != SiteRoutingTarget.DIRECT }
-            .thenByDescending { it.domain.length }).distinctBy { it.domain }.forEach { site ->
+        orderedSites(routing).forEach { site ->
             val domain = SiteDomain.normalize(site.domain) ?: return@forEach
             val server = if (site.target == SiteRoutingTarget.DIRECT) BOOTSTRAP_DNS_TAG else remoteTag
             if (!server.isNullOrBlank()) prioritized.put(JSONObject()
@@ -335,6 +333,17 @@ object SingBoxConfigFactory {
         for (index in 0 until existing.length()) existing.optJSONObject(index)?.let(prioritized::put)
         dns.put("rules", prioritized)
     }
+
+    // A specific .ru exception can override a broader direct site route.
+    private fun orderedSites(routing: AppRoutingSettings): List<SiteRoutingRule> =
+        routing.sites.sortedWith(compareBy<SiteRoutingRule> {
+            when {
+                RussianDomainRouting.matches(it.domain) -> 0
+                it.target == SiteRoutingTarget.DIRECT -> 1
+                else -> 2
+            }
+        }.thenByDescending { it.domain.length }.thenBy { it.target != SiteRoutingTarget.DIRECT })
+            .distinctBy { it.domain }
 
     private const val PROXY_TAG = "proxy"
     private const val DIRECT_TAG = "direct"

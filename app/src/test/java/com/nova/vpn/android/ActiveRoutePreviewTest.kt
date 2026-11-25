@@ -12,6 +12,8 @@ class ActiveRoutePreviewTest {
         val multi = MultiServerSettings(1, "fr", listOf(
             MultiServerRule(packageName = "example.chat", target = ServerRouteTarget(ServerRouteKind.PROFILE, "us")),
             MultiServerRule(domain = "site.example", target = ServerRouteTarget(ServerRouteKind.PROFILE, "us")),
+            MultiServerRule(domain = "vpn.example.ru", target = ServerRouteTarget(ServerRouteKind.PROFILE, "us")),
+            MultiServerRule(domain = "block.example.ru", target = ServerRouteTarget(ServerRouteKind.BLOCK)),
             MultiServerRule(domain = "direct.example", target = ServerRouteTarget(ServerRouteKind.DIRECT))
         ))
         val settings = AppRoutingSettings(multiServer = multi, ipv6Enabled = false)
@@ -22,6 +24,10 @@ class ActiveRoutePreviewTest {
 
         assertEquals("us", preview.explain("203.0.113.9", "example.chat").profileId)
         assertEquals("us", preview.explain("child.site.example", "example.other").profileId)
+        assertEquals("Напрямую · домен .ru", preview.explain("CHILD.EXAMPLE.RU.", "example.chat").text)
+        assertEquals("us", preview.explain("child.vpn.example.ru", "example.chat").profileId)
+        assertEquals("us", preview.explain("example.ru.test", "example.chat").profileId)
+        assertTrue(preview.explain("child.block.example.ru", "example.chat").text.startsWith("Блокируется"))
         val conflicting = preview.explain("direct.example", "example.chat", listOf("example.chat", "example.other"))
         assertNull(conflicting.profileId)
         assertTrue(conflicting.text.contains("общим UID"))

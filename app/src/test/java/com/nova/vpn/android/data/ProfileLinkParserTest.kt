@@ -339,7 +339,7 @@ class ProfileLinkParserTest {
         assertEquals("org.example.direct", tun.getJSONArray("exclude_package").getString(1))
         assertTrue(!tun.has("include_package"))
         assertEquals("edge-out", config.getJSONObject("route").getString("final"))
-        val appRule = config.getJSONObject("route").getJSONArray("rules").getJSONObject(1)
+        val appRule = config.getJSONObject("route").getJSONArray("rules").getJSONObject(3)
         assertEquals("org.example.direct", appRule.getJSONArray("package_name").getString(0))
         assertEquals("direct", appRule.getString("outbound"))
     }
@@ -372,10 +372,10 @@ class ProfileLinkParserTest {
         assertTrue(!tun.has("exclude_package"))
         val rules = config.getJSONObject("route").getJSONArray("rules")
         assertEquals("hijack-dns", rules.getJSONObject(0).getString("action"))
-        assertEquals("proxy", rules.getJSONObject(1).getString("outbound"))
-        assertEquals("org.example.browser", rules.getJSONObject(1).getJSONArray("package_name").getString(0))
-        assertTrue(rules.getJSONObject(2).getBoolean("invert"))
-        assertEquals("direct", rules.getJSONObject(2).getString("outbound"))
+        assertEquals("proxy", rules.getJSONObject(3).getString("outbound"))
+        assertEquals("org.example.browser", rules.getJSONObject(3).getJSONArray("package_name").getString(0))
+        assertTrue(rules.getJSONObject(4).getBoolean("invert"))
+        assertEquals("direct", rules.getJSONObject(4).getString("outbound"))
     }
 
     @Test
@@ -395,7 +395,7 @@ class ProfileLinkParserTest {
         assertEquals("com.nova.vpn.android", tun.getJSONArray("exclude_package").getString(0))
         assertEquals("org.example.direct", tun.getJSONArray("exclude_package").getString(1))
         assertTrue(!tun.has("include_package"))
-        val rule = config.getJSONObject("route").getJSONArray("rules").getJSONObject(1)
+        val rule = config.getJSONObject("route").getJSONArray("rules").getJSONObject(3)
         assertEquals("org.example.direct", rule.getJSONArray("package_name").getString(0))
         assertEquals("direct", rule.getString("outbound"))
     }
@@ -422,8 +422,8 @@ class ProfileLinkParserTest {
         assertEquals("youtube.com", rules.getJSONObject(2).getJSONArray("domain").getString(0))
         assertEquals("proxy", rules.getJSONObject(2).getString("outbound"))
         assertEquals(".youtube.com", rules.getJSONObject(3).getJSONArray("domain_suffix").getString(0))
-        assertEquals("org.example.browser", rules.getJSONObject(4).getJSONArray("package_name").getString(0))
-        assertEquals("direct", rules.getJSONObject(4).getString("outbound"))
+        assertEquals("org.example.browser", rules.getJSONObject(5).getJSONArray("package_name").getString(0))
+        assertEquals("direct", rules.getJSONObject(5).getString("outbound"))
     }
 
     @Test

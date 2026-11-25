@@ -68,7 +68,7 @@ class DualConfigRoutingTest {
         val primaryTag = route.getString("final")
         val rulesInOrder = (0 until entries.length()).map(entries::getJSONObject)
         assertFalse(rulesInOrder.any {
-            it.optString("action") == "resolve" && !it.has("domain") && !it.has("package_name")
+            it.optString("action") == "resolve" && it.keySet() == setOf("action", "server", "strategy")
         })
         assertFalse(rulesInOrder.any {
             it.optString("action") == "resolve" && it.optJSONArray("package_name")?.optString(0) == "example.second"

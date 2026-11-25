@@ -31,7 +31,9 @@ class VpnDnsRoutingTest {
         val config = JSONObject(SingBoxConfigFactory.build(profile(), AppRoutingSettings(AppRoutingMode.INCLUDE_SELECTED)))
         val rules = config.getJSONObject("route").getJSONArray("rules")
         assertEquals("hijack-dns", rules.getJSONObject(0).getString("action"))
-        assertEquals("direct", rules.getJSONObject(1).getString("outbound"))
+        val bypass = rules.getJSONObject(rules.length() - 1)
+        assertEquals(setOf("action", "outbound"), bypass.keySet())
+        assertEquals("direct", bypass.getString("outbound"))
         assertEquals(1500, config.getJSONArray("inbounds").getJSONObject(0).getInt("mtu"))
         assertEquals("gvisor", config.getJSONArray("inbounds").getJSONObject(0).getString("stack"))
     }
@@ -47,6 +49,24 @@ class VpnDnsRoutingTest {
         assertEquals(".example.org", rule.getJSONArray("domain_suffix").getString(0))
         assertTrue(dns.getBoolean("reverse_mapping"))
         assertEquals("nova-bootstrap-dns", config.getJSONObject("route").getJSONObject("default_domain_resolver").getString("server"))
+    }
+
+    @Test fun explicitRuSiteOverridesBroaderDirectRuleAndSuffixPrecedesAppVpn() {
+        val input = AppRoutingSettings(AppRoutingMode.INCLUDE_SELECTED, setOf("org.example.browser"), listOf(
+            SiteRoutingRule("example.ru", SiteRoutingTarget.DIRECT),
+            SiteRoutingRule("proxy.example.ru", SiteRoutingTarget.VPN)
+        ))
+        val config = JSONObject(SingBoxConfigFactory.build(profile(), input))
+        val routes = config.getJSONObject("route").getJSONArray("rules")
+        val defaultDirect = (0 until routes.length()).map(routes::getJSONObject).indexOfFirst(RussianDomainRouting::isRoute)
+        val app = (0 until routes.length()).map(routes::getJSONObject).indexOfFirst { it.has("package_name") }
+        assertTrue(defaultDirect in 1 until app)
+        assertEquals("proxy.example.ru", routes.getJSONObject(2).getJSONArray("domain").getString(0))
+        assertEquals("proxy", routes.getJSONObject(2).getString("outbound"))
+        val dns = config.getJSONObject("dns").getJSONArray("rules")
+        assertEquals("remote-dns", dns.getJSONObject(0).getString("server"))
+        assertEquals("proxy.example.ru", dns.getJSONObject(0).getJSONArray("domain").getString(0))
+        assertEquals("nova-bootstrap-dns", dns.getJSONObject(2).getString("server"))
     }
 
     @Test fun generatedConfigCanBeImportedAgainWithoutDuplicateBootstrap() {

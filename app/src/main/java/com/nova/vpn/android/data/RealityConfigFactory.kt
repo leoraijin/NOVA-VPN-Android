@@ -157,9 +157,13 @@ object RealityConfigFactory {
     private fun prepareSiteDns(route: JSONObject, dns: JSONObject, outbounds: List<JSONObject>) {
         val allDnsRules = dns.optJSONArray("rules")?.let(::objects).orEmpty()
         val russianLookup = allDnsRules.firstOrNull(RussianDomainRouting::isLookup)
-        val routes = route.optJSONArray("rules")?.let(::objects).orEmpty().filterNot {
-            russianLookup != null && RussianDomainRouting.isRoute(it)
+        val directTags = outbounds.filter { it.opt("type") == "direct" && !it.has("detour") }
+            .map { it.opt("tag") }.filterIsInstance<String>().toSet()
+        val allRoutes = route.optJSONArray("rules")?.let(::objects).orEmpty()
+        val russianRoute = if (russianLookup == null) null else allRoutes.firstOrNull {
+            RussianDomainRouting.isRoute(it) && it.opt("outbound") in directTags
         }
+        val routes = allRoutes.filterNot { it === russianRoute }
         val originals = allDnsRules.filterNot { it === russianLookup }
         val siteKeys = setOf("domain", "domain_suffix", "domain_keyword", "domain_regex", "geosite", "rule_set")
         if (routes.none { keys(it).any(siteKeys::contains) } &&
@@ -182,8 +186,6 @@ object RealityConfigFactory {
         // Native UID rules stay after sites. They must not change site DNS pairing.
         val sitePlan = plan.drop(2).toMutableList()
         while (sitePlan.lastOrNull()?.has("user_id") == true) sitePlan.removeAt(sitePlan.lastIndex)
-        val directTags = outbounds.filter { it.opt("type") == "direct" && !it.has("detour") }
-            .map { it.opt("tag") }.filterIsInstance<String>().toSet()
         if (sitePlan.lastOrNull()?.let {
                 keys(it) == setOf("action", "outbound") && it.opt("action") == "route" &&
                     it.opt("outbound") in directTags

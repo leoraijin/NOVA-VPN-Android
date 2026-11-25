@@ -94,8 +94,9 @@ class RealityConfigFactoryTest {
         val dnsRoutes = dns(config).getJSONArray("rules")
         assertEquals(RealityConfigFactory.CONFLICT_UID,
             dnsRoutes.getJSONObject(0).getJSONArray("user_id").getLong(0))
-        assertEquals(10001, dnsRoutes.getJSONObject(1).getJSONArray("user_id").getInt(0))
-        assertEquals(CustomDnsConfig.RESOLVER_PREFIX, dnsRoutes.getJSONObject(1).getString("server"))
+        val app = (0 until dnsRoutes.length()).map(dnsRoutes::getJSONObject)
+            .single { it.optJSONArray("user_id")?.optInt(0) == 10001 }
+        assertEquals(CustomDnsConfig.RESOLVER_PREFIX, app.getString("server"))
     }
 
     @Test fun customSiteAndAppDnsCoexistWithThreeVpnExitsAndBlockRules() {
@@ -195,6 +196,9 @@ class RealityConfigFactoryTest {
     @Test fun bootstrapUsesActualDirectTagWithoutInventingOutbound() {
         val source = generated()
         source.getJSONArray("outbounds").getJSONObject(1).put("tag", "physical")
+        val routes = rules(source)
+        (0 until routes.length()).map(routes::getJSONObject).single(RussianDomainRouting::isRoute)
+            .put("outbound", "physical")
         val output = JSONObject(prepare(source).config)
         assertEquals("physical", servers(output).getJSONObject(1).getString("detour"))
         assertEquals(2, output.getJSONArray("outbounds").length())
@@ -218,7 +222,7 @@ class RealityConfigFactoryTest {
         val result = prepare(generated(AppRoutingSettings(AppRoutingMode.EXCLUDE_SELECTED, apps)))
         assertEquals(emptyList<String>(), result.includedPackages)
         assertEquals((apps + own).sorted(), result.excludedPackages)
-        assertEquals(1, rules(JSONObject(result.config)).length())
+        assertEquals(3, rules(JSONObject(result.config)).length())
         assertEquals("hijack-dns", rules(JSONObject(result.config)).getJSONObject(0).getString("action"))
     }
 
@@ -228,7 +232,7 @@ class RealityConfigFactoryTest {
         assertEquals(emptyList<String>(), result.excludedPackages)
         assertFalse(result.config.contains("package_name"))
         assertFalse(result.config.contains("invert"))
-        assertEquals(1, rules(JSONObject(result.config)).length())
+        assertEquals(3, rules(JSONObject(result.config)).length())
     }
 
     @Test fun includeOnlyOwnApplicationFailsInsteadOfCapturingAllApps() {
@@ -241,7 +245,7 @@ class RealityConfigFactoryTest {
         assertEquals(listOf(own), result.excludedPackages)
         val rules = rules(JSONObject(result.config))
         assertEquals("hijack-dns", rules.getJSONObject(0).getString("action"))
-        assertEquals(1, rules.length())
+        assertEquals(3, rules.length())
         assertEquals("direct", route(JSONObject(result.config)).getString("final"))
     }
 
@@ -251,7 +255,7 @@ class RealityConfigFactoryTest {
         assertSiteDnsPairs(source)
         val output = JSONObject(prepare(source).config)
         assertEquals("direct", route(output).getString("final"))
-        assertEquals(4, rules(output).length())
+        assertEquals(5, rules(output).length())
         assertEquals("proxy", rules(output).getJSONObject(2).getString("outbound"))
         assertEquals("proxy", rules(output).getJSONObject(3).getString("outbound"))
     }
@@ -284,16 +288,16 @@ class RealityConfigFactoryTest {
                 for (index in 2..3) {
                     assertEquals(rules(source).getJSONObject(index).toString(), rules(output).getJSONObject(index).toString())
                 }
-                val first = rules(output).getJSONObject(4)
+                val first = rules(output).getJSONObject(5)
                 assertFalse(first.has("package_name"))
                 assertEquals("[10001,10002]", first.getJSONArray("user_id").toString())
                 assertEquals(if (mode == AppRoutingMode.INCLUDE_SELECTED) "proxy" else "direct", first.getString("outbound"))
                 if (mode == AppRoutingMode.INCLUDE_SELECTED) {
-                    val inverted = rules(output).getJSONObject(5)
+                    val inverted = rules(output).getJSONObject(6)
                     assertTrue(inverted.getBoolean("invert"))
                     assertEquals("direct", inverted.getString("outbound"))
                 }
-                assertEquals(2, dns(output).getJSONArray("rules").length())
+                assertEquals(4, dns(output).getJSONArray("rules").length())
                 assertEquals("nova-site-fakeip", dns(output).getJSONArray("rules").getJSONObject(0).getString("server"))
                 assertEquals(snapshot, source.toString())
             }
@@ -338,7 +342,13 @@ class RealityConfigFactoryTest {
             val fake = pairs.getJSONObject(index * 2)
             assertEquals("nova-site-fakeip", fake.getString("server"))
             assertEquals(original.toString(), pairs.getJSONObject(index * 2 + 1).toString())
-            assertEquals(JSONObject(original.toString()).put("server", "nova-site-fakeip").toString(), fake.toString())
+            val expected = JSONObject(original.toString()).put("server", "nova-site-fakeip")
+            if (RussianDomainRouting.isLookup(original)) {
+                expected.put("query_type", JSONArray().put("A").apply {
+                    if (dns(source).optString("strategy") == "prefer_ipv4") put("AAAA")
+                })
+            }
+            assertEquals(expected.toString(), fake.toString())
         }
         assertEquals(dns(source).get("final"), dns(output).get("final"))
         val expectedRoutes = JSONArray(rules(source).toString())
@@ -451,13 +461,15 @@ class RealityConfigFactoryTest {
         rejected(ambiguous)
     }
 
-    @Test fun nonSiteConfigDoesNotAcquireFakeServerOrChangeDnsFinal() {
+    @Test fun defaultRuRuleAddsOnlySuffixScopedFakeIpAndKeepsRemoteDnsFinal() {
         val source = generated()
+        assertSiteDnsPairs(source)
         val output = JSONObject(prepare(source).config)
-        assertEquals(servers(source).length(), servers(output).length())
-        assertEquals(dns(source).get("final"), dns(output).get("final"))
-        assertEquals(0, dns(output).getJSONArray("rules").length())
-        assertFalse(output.toString().contains("nova-site-fakeip"))
+        val rules = dns(output).getJSONArray("rules")
+        assertEquals(2, rules.length())
+        assertEquals(".ru", rules.getJSONObject(0).getJSONArray("domain_suffix").getString(0))
+        assertEquals("A", rules.getJSONObject(0).getJSONArray("query_type").getString(0))
+        assertEquals("nova-bootstrap-dns", rules.getJSONObject(1).getString("server"))
     }
 
     @Test fun probeSocksAndItsRuleSurviveApplicationConversion() {
@@ -472,7 +484,7 @@ class RealityConfigFactoryTest {
         val output = JSONObject(prepare(source).config)
         assertEquals(socks.toString(), output.getJSONArray("inbounds").getJSONObject(1).toString())
         assertEquals(probe.toString(), rules(output).getJSONObject(0).toString())
-        assertEquals(2, rules(output).length())
+        assertEquals(4, rules(output).length())
     }
 
     @Test fun explicitProxyHealthProbeSurvivesDirectFinalNormalizationWithAndWithoutSites() {
@@ -538,7 +550,7 @@ class RealityConfigFactoryTest {
             .put("address", "https://cloudflare-dns.com/dns-query"))
         val output = JSONObject(prepare(source).config)
         assertEquals("direct", route(output).getString("final"))
-        assertEquals(1, rules(output).length())
+        assertEquals(3, rules(output).length())
         assertEquals("https://cloudflare-dns.com/dns-query", servers(output).getJSONObject(0).getString("address"))
         assertFalse(servers(output).getJSONObject(0).has("detour"))
     }
@@ -553,13 +565,13 @@ class RealityConfigFactoryTest {
             val other = generated(AppRoutingSettings(AppRoutingMode.INCLUDE_SELECTED))
             other.getJSONArray("outbounds").put(JSONObject().put("type", "direct")
                 .put("tag", "decorated-direct").put("fragment", JSONObject()))
-            rules(other).getJSONObject(1).put("outbound", target)
+            rules(other).getJSONObject(rules(other).length() - 1).put("outbound", target)
             val prepared = JSONObject(prepare(other).config)
             assertEquals(rules(other).toString(), rules(prepared).toString())
             assertEquals("proxy", route(prepared).getString("final"))
         }
         val extra = generated(AppRoutingSettings(AppRoutingMode.INCLUDE_SELECTED))
-        rules(extra).getJSONObject(1).put("custom_option", true)
+        rules(extra).getJSONObject(rules(extra).length() - 1).put("custom_option", true)
         assertEquals(rules(extra).toString(), rules(JSONObject(prepare(extra).config)).toString())
     }
 
@@ -574,16 +586,17 @@ class RealityConfigFactoryTest {
         )
         mutations.forEach { mutate ->
             val source = generated(AppRoutingSettings(packages = apps))
-            mutate(rules(source).getJSONObject(1))
+            mutate(rules(source).getJSONObject(rules(source).length() - 1))
             rejected(source)
         }
         val unmatched = generated(AppRoutingSettings(AppRoutingMode.INCLUDE_SELECTED, apps))
-        rules(unmatched).getJSONObject(2).put("package_name", JSONArray().put("org.other.app"))
+        rules(unmatched).getJSONObject(rules(unmatched).length() - 1).put("package_name", JSONArray().put("org.other.app"))
         rejected(unmatched)
         val reordered = generated(AppRoutingSettings(AppRoutingMode.INCLUDE_SELECTED, apps))
         val pair = rules(reordered)
-        val first = pair.get(1)
-        pair.put(1, pair.get(2)).put(2, first)
+        val firstIndex = pair.length() - 2
+        val first = pair.get(firstIndex)
+        pair.put(firstIndex, pair.get(firstIndex + 1)).put(firstIndex + 1, first)
         rejected(reordered)
     }
 
