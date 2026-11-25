@@ -50,10 +50,10 @@ internal class TestDnsFixture(
             require(end + 4 <= query.size)
             val type = (query[end].toInt() and 255) * 256 + (query[end + 1].toInt() and 255)
             val hostname = labels.joinToString(".").lowercase(java.util.Locale.ROOT)
+            hostQueries.getOrPut(hostname) { AtomicInteger() }.incrementAndGet()
             val hostMatches = hostname in hostnames
             if (hostMatches) {
                 transportQueries.incrementAndGet()
-                hostQueries.getOrPut(hostname) { AtomicInteger() }.incrementAndGet()
                 if (type == 1) aQueries.incrementAndGet()
                 if (type == 28) aaaaQueries.incrementAndGet()
             }

@@ -657,6 +657,7 @@ class RealityCoreSmokeRunner : Instrumentation() {
             val endpointPackets=java.util.concurrent.ConcurrentHashMap<Int,AtomicInteger>()
             val pairBarrier=java.util.concurrent.atomic.AtomicReference<java.util.concurrent.CountDownLatch?>(null)
             val exitPackets=java.util.concurrent.ConcurrentHashMap<String,AtomicInteger>()
+            val proxiedTestHosts = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
             val idleProbes = java.util.concurrent.ConcurrentHashMap<String, AtomicInteger>()
             val packets = AtomicInteger()
             val sitePackets = AtomicInteger()
@@ -782,8 +783,9 @@ class RealityCoreSmokeRunner : Instrumentation() {
                                     }
                                     packets.incrementAndGet()
                                     endpointPackets.computeIfAbsent(endpoint.localPort){AtomicInteger()}.incrementAndGet()
-                                    exitPackets.computeIfAbsent(exitKey){AtomicInteger()}.incrementAndGet()
+                                    if (russianDomainsOnly && type == 2) proxiedTestHosts.add(String(destination, Charsets.US_ASCII))
                                     if (type == 2 && String(destination, Charsets.US_ASCII) == "native.test") sitePackets.incrementAndGet()
+                                    exitPackets.computeIfAbsent(exitKey){AtomicInteger()}.incrementAndGet()
                                 }
                                 socket.getOutputStream().write(payload, 0, count)
                                 socket.getOutputStream().flush()
@@ -1012,8 +1014,8 @@ class RealityCoreSmokeRunner : Instrumentation() {
                                 val before2 = count(secondKey)
                                 val result = routedClientResult(site = true, siteHost = host)
                                 check(result == "ok") { "Routing fixture $host failed: $result" }
-                                check(count(firstKey) == before1 + if (expectedExit == firstKey) 1 else 0)
-                                check(count(secondKey) == before2 + if (expectedExit == secondKey) 1 else 0)
+                                check(count(firstKey) == before1 + if (expectedExit == firstKey) 1 else 0) { "VPN-1 route differs for $host" }
+                                check(count(secondKey) == before2 + if (expectedExit == secondKey) 1 else 0) { "VPN-2 route differs for $host" }
                             }
 
                             activate(AppRoutingSettings(mode = AppRoutingMode.INCLUDE_SELECTED, packages = setOf(testPackage),
@@ -1022,7 +1024,10 @@ class RealityCoreSmokeRunner : Instrumentation() {
                                 verifyRoute(directHost, null)
                                 check(physicalDns.queriesFor(directHost) > 0 && primaryDns.queriesFor(directHost) == 0)
                                 verifyRoute(vpnHost, firstKey)
-                                check(primaryDns.queriesFor(vpnHost) > 0 && physicalDns.queriesFor(vpnHost) == 0)
+                                check(physicalDns.queriesFor(vpnHost) == 0) { "A manual VPN site used physical DNS" }
+                                check(primaryDns.queriesFor(vpnHost) > 0 || vpnHost in proxiedTestHosts) {
+                                    "VPN-1 did not receive the DNS query or the original hostname"
+                                }
                                 verifyRoute(otherHost, firstKey)
                             } finally { stop() }
                             sendStatus(0, Bundle().apply { putString("stream", "PASS single VPN .ru direct and site override on ${engine.id}\n") })
@@ -1042,7 +1047,8 @@ class RealityCoreSmokeRunner : Instrumentation() {
                                 verifyRoute(dualOtherHost, secondKey)
                                 val before1 = count(firstKey)
                                 val before2 = count(secondKey)
-                                check(routedClientResult(site = true, siteHost = blockedHost).startsWith("UnknownHostException@"))
+                                val blockedResult = routedClientResult(site = true, siteHost = blockedHost)
+                                check(blockedResult.startsWith("UnknownHostException@")) { "Blocked .ru site result was $blockedResult" }
                                 check(count(firstKey) == before1 && count(secondKey) == before2 && physicalDns.queriesFor(blockedHost) == 0)
                             } finally { stop() }
                         }
